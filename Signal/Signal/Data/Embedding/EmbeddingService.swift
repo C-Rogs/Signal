@@ -1,0 +1,44 @@
+import Foundation
+
+enum EmbeddingKind: Sendable, Equatable {
+    case document
+    case query
+}
+
+extension EmbeddingKind {
+    func prompted(_ text: String) -> String {
+        switch self {
+        case .document:
+            "title: none | text: \(text)"
+        case .query:
+            "task: search result | query: \(text)"
+        }
+    }
+}
+
+enum EmbeddingServiceError: Error, Sendable {
+    case dimensionMismatch(expected: Int, actual: Int)
+    case modelNotLoaded
+    case contextualEmbeddingUnavailable
+    case assetsUnavailable
+}
+
+protocol EmbeddingService: Sendable {
+    var outputDimension: Int { get }
+
+    func embed(_ text: String, kind: EmbeddingKind) async throws -> [Float]
+
+    func embedBatch(_ texts: [String], kind: EmbeddingKind) async throws -> [[Float]]
+}
+
+enum EmbeddingBackend {
+    static var useNLContextualEmbeddingFallback = false
+
+    static func makeService() -> any EmbeddingService {
+        if useNLContextualEmbeddingFallback {
+            NLEmbeddingService.shared
+        } else {
+            GemmaEmbeddingService.shared
+        }
+    }
+}

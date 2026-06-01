@@ -6,6 +6,14 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		F82794392FCDABE400003386 /* MLX in Frameworks */ = {isa = PBXBuildFile; productRef = F82794342FCDABE400003386 /* MLX */; };
+		F827943A2FCDABE400003386 /* MLXEmbedders in Frameworks */ = {isa = PBXBuildFile; productRef = F82794352FCDABE400003386 /* MLXEmbedders */; };
+		F827943B2FCDABE400003386 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = F82794362FCDABE400003386 /* MLXLMCommon */; };
+		F827943C2FCDABE400003386 /* MLXEmbeddersHFAPI in Frameworks */ = {isa = PBXBuildFile; productRef = F82794372FCDABE400003386 /* MLXEmbeddersHFAPI */; };
+		F827943D2FCDABE400003386 /* MLXEmbeddersTokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = F82794382FCDABE400003386 /* MLXEmbeddersTokenizers */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		F82794072FCDABE400003386 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -65,6 +73,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F82794392FCDABE400003386 /* MLX in Frameworks */,
+				F827943A2FCDABE400003386 /* MLXEmbedders in Frameworks */,
+				F827943B2FCDABE400003386 /* MLXLMCommon in Frameworks */,
+				F827943C2FCDABE400003386 /* MLXEmbeddersHFAPI in Frameworks */,
+				F827943D2FCDABE400003386 /* MLXEmbeddersTokenizers in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -125,6 +138,11 @@
 			);
 			name = Signal;
 			packageProductDependencies = (
+				F82794342FCDABE400003386 /* MLX */,
+				F82794352FCDABE400003386 /* MLXEmbedders */,
+				F82794362FCDABE400003386 /* MLXLMCommon */,
+				F82794372FCDABE400003386 /* MLXEmbeddersHFAPI */,
+				F82794382FCDABE400003386 /* MLXEmbeddersTokenizers */,
 			);
 			productName = Signal;
 			productReference = F82793F92FCDABE200003386 /* Signal.app */;
@@ -208,6 +226,13 @@
 			);
 			mainGroup = F82793F02FCDABE200003386;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				F82794302FCDABE400003386 /* XCRemoteSwiftPackageReference "mlx-swift" */,
+				F82794312FCDABE400003386 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
+				F82794322FCDABE400003386 /* XCRemoteSwiftPackageReference "swift-hf-api-mlx" */,
+				F82794332FCDABE400003386 /* XCRemoteSwiftPackageReference "swift-tokenizers-mlx" */,
+				F827943E2FCDABE400003386 /* XCRemoteSwiftPackageReference "swift-tokenizers" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F82793FA2FCDABE200003386 /* Products */;
 			projectDirPath = "";
@@ -636,6 +661,77 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		F82794302FCDABE400003386 /* XCRemoteSwiftPackageReference "mlx-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.31.3;
+			};
+		};
+		F82794312FCDABE400003386 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
+			requirement = {
+				kind = revision;
+				revision = ee5320ddcf8cdc2765165e0350b1f9a76362a24a;
+			};
+		};
+		F82794322FCDABE400003386 /* XCRemoteSwiftPackageReference "swift-hf-api-mlx" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/DePasqualeOrg/swift-hf-api-mlx";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.2.0;
+			};
+		};
+		F82794332FCDABE400003386 /* XCRemoteSwiftPackageReference "swift-tokenizers-mlx" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/DePasqualeOrg/swift-tokenizers-mlx";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.3.0;
+			};
+		};
+		F827943E2FCDABE400003386 /* XCRemoteSwiftPackageReference "swift-tokenizers" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/DePasqualeOrg/swift-tokenizers";
+			requirement = {
+				kind = exactVersion;
+				version = 0.5.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F82794342FCDABE400003386 /* MLX */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F82794302FCDABE400003386 /* XCRemoteSwiftPackageReference "mlx-swift" */;
+			productName = MLX;
+		};
+		F82794352FCDABE400003386 /* MLXEmbedders */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F82794312FCDABE400003386 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXEmbedders;
+		};
+		F82794362FCDABE400003386 /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F82794312FCDABE400003386 /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLMCommon;
+		};
+		F82794372FCDABE400003386 /* MLXEmbeddersHFAPI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F82794322FCDABE400003386 /* XCRemoteSwiftPackageReference "swift-hf-api-mlx" */;
+			productName = MLXEmbeddersHFAPI;
+		};
+		F82794382FCDABE400003386 /* MLXEmbeddersTokenizers */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F82794332FCDABE400003386 /* XCRemoteSwiftPackageReference "swift-tokenizers-mlx" */;
+			productName = MLXEmbeddersTokenizers;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F82793F12FCDABE200003386 /* Project object */;
 }

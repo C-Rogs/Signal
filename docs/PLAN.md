@@ -20,3 +20,11 @@ ObjectBox was dropped (corpus is ~3–4k vectors; brute-force cosine is enough).
 
 ### SPM
 - **MLX Swift** only (M3 embeddings). No ObjectBox.
+
+## V1 M3 embedding service
+
+- `Data/Embedding/`: `EmbeddingService`, `GemmaEmbeddingService`, `NLEmbeddingService`, `EmbeddingVectorStoreBridge`, `EmbeddingDownloadState`
+- Model: `mlx-community/embeddinggemma-300m-4bit`, Hub cache under Application Support
+- Prefixes: `.document` / `.query` per EmbeddingGemma model card
+- Tests: `EmbeddingRetrievalTests` (MLX tests device-only)
+- **SPM (human):** see [M3_SPM_SETUP.md](M3_SPM_SETUP.md)

@@ -37,6 +37,9 @@
 - Never fire concurrent LanguageModelSession requests; gate on isResponding.
 - Always call HealthKit observer completionHandler immediately.
 
+## Git commits
+- Commits are authored only by the human (GitHub user C-Rogs). Never add Co-authored-by, Made-with: Cursor, or any Cursor/agent attribution trailers. Use plain `git commit -m` only; no `--trailer`.
+
 ## Scope and loop control
 - Build only the current milestone. Do not implement future milestones or refactor prior stable code unless named.
 - If a build fails after 2 attempts, STOP and output the full error. Do not run the same command more than twice.
