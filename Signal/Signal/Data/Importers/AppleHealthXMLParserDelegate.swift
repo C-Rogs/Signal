@@ -6,7 +6,7 @@ final class AppleHealthXMLParserDelegate: NSObject, XMLParserDelegate, @unchecke
     private var sourceNames = AppleHealthSourceNames()
     private var currentRecord: [String: String] = [:]
     private var poolCounter = 0
-    private let poolInterval = 500
+    private let poolInterval = 200
 
     private(set) var recordsScanned = 0
     private(set) var tier1RecordsKept = 0
@@ -145,10 +145,25 @@ final class AppleHealthXMLParserDelegate: NSObject, XMLParserDelegate, @unchecke
     }
 }
 
-enum AppleHealthXMLParseError: Error, Sendable {
+enum AppleHealthXMLParseError: LocalizedError, Sendable {
     case cannotOpenStream
     case parseFailed(underlying: Error?)
     case cancelled
+
+    var errorDescription: String? {
+        switch self {
+        case .cannotOpenStream:
+            "Could not open export.xml for reading. Download the file in Files or pick a local copy, then try again."
+        case .parseFailed(let underlying):
+            if let underlying {
+                "Apple Health XML parse failed: \(underlying.localizedDescription)"
+            } else {
+                "Apple Health XML parse failed."
+            }
+        case .cancelled:
+            "Apple Health import cancelled."
+        }
+    }
 }
 
 enum AppleHealthXMLParser {

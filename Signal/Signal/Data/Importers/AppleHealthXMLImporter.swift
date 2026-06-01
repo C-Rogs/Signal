@@ -35,13 +35,11 @@ struct HealthImportResult: Sendable {
 }
 
 enum AppleHealthXMLImporter {
-    private static let embedBatchSize = 24
-    private static let metricBatchSize = 64
-
     static func run(
         fileURL: URL,
         modelContainer: ModelContainer,
         calendar: Calendar,
+        onParseFinished: (@Sendable () -> Void)? = nil,
         onProgress: @Sendable @escaping (HealthImportProgress) -> Void
     ) async throws -> HealthImportResult {
         let started = Date()
@@ -77,9 +75,13 @@ enum AppleHealthXMLImporter {
         progress.recordsScanned = parseDelegate.recordsScanned
         progress.tier1RecordsKept = parseDelegate.tier1RecordsKept
         progress.daysAggregated = aggregation.dayCount
+        onProgress(progress)
+
+        onParseFinished?()
 
         let sanity = sanityCheck(aggregation: aggregation)
         if let sanity {
+            aggregation.releaseParsedData()
             progress.phase = .failed
             onProgress(progress)
             Log.import.error("import sanity failed: \(sanity, privacy: .public)")
@@ -97,60 +99,29 @@ enum AppleHealthXMLImporter {
         onProgress(progress)
 
         let dayStarts = aggregation.allDayStarts()
-        var metricsWritten = 0
+        let metricsWritten = try await DailyImportEmbeddingPipeline.persistMetrics(
+            dayStarts: dayStarts,
+            aggregation: aggregation,
+            modelContainer: modelContainer
+        )
+        aggregation.releaseParsedData()
 
-        for chunk in dayStarts.chunked(into: metricBatchSize) {
-            try Task.checkCancellation()
-            let metrics = chunk.compactMap { aggregation.mergedMetric(for: $0) }
-            let written = try await MainActor.run {
-                let context = ModelContext(modelContainer)
-                return try DailyMetricStore.upsertBatch(metrics, in: context)
-            }
-            metricsWritten += written
-            progress.dailyMetricsWritten = metricsWritten
-            onProgress(progress)
-        }
+        progress.dailyMetricsWritten = metricsWritten
+        onProgress(progress)
 
         progress.phase = .embedding
         onProgress(progress)
 
         let embeddingService = EmbeddingBackend.makeService()
-
-        var vectorsWritten = 0
-        for chunk in dayStarts.chunked(into: embedBatchSize) {
-            try Task.checkCancellation()
-            let metrics = chunk.compactMap { aggregation.mergedMetric(for: $0) }
-            guard !metrics.isEmpty else { continue }
-
-            let texts = metrics.map { metric in
-                Summarizer.summarize(metric: metric, calendar: calendar).embeddingText
-            }
-            let dayKeys = metrics.map { Summarizer.dayKey(for: $0.date, calendar: calendar) }
-
-            let vectors = try await embeddingService.embedBatch(texts, kind: .document)
-            guard vectors.count == metrics.count else {
-                throw EmbeddingServiceError.dimensionMismatch(
-                    expected: metrics.count,
-                    actual: vectors.count
-                )
-            }
-
-            try await MainActor.run {
-                let context = ModelContext(modelContainer)
-                let store = SwiftDataVectorStore(context: context)
-                for index in metrics.indices {
-                    try store.upsert(
-                        dayKey: dayKeys[index],
-                        metricKind: DailyMetricStore.dailyVectorKind,
-                        summaryText: texts[index],
-                        vector: vectors[index]
-                    )
-                }
-                try context.save()
-            }
-
-            vectorsWritten += metrics.count
-            progress.vectorsWritten = vectorsWritten
+        progress.vectorsWritten = try await DailyImportEmbeddingPipeline.embedAndUpsert(
+            dayStarts: dayStarts,
+            modelContainer: modelContainer,
+            calendar: calendar,
+            embeddingService: embeddingService,
+            workoutSource: HevyCSVImporter.importSource,
+            embedBatchSize: DailyImportEmbeddingPipeline.healthEmbedBatchSize
+        ) { count in
+            progress.vectorsWritten = count
             onProgress(progress)
         }
 
@@ -267,20 +238,5 @@ enum MemoryUsage {
         }
         guard result == KERN_SUCCESS else { return nil }
         return info.resident_size
-    }
-}
-
-private extension Array {
-    func chunked(into size: Int) -> [[Element]] {
-        guard size > 0 else { return [self] }
-        var result: [[Element]] = []
-        result.reserveCapacity((count + size - 1) / size)
-        var index = startIndex
-        while index < endIndex {
-            let end = self.index(index, offsetBy: size, limitedBy: endIndex) ?? endIndex
-            result.append(Array(self[index ..< end]))
-            index = end
-        }
-        return result
     }
 }

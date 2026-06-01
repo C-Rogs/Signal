@@ -4,10 +4,15 @@ import SwiftUI
 @main
 struct SignalApp: App {
     private let modelContainer: ModelContainer
+    @State private var healthKitManager: HealthKitManager
 
     init() {
         do {
-            modelContainer = try SignalModelContainer.make()
+            let container = try SignalModelContainer.make()
+            modelContainer = container
+            _healthKitManager = State(
+                wrappedValue: HealthKitManager(modelContainer: container)
+            )
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")
         }
@@ -16,6 +21,7 @@ struct SignalApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                .environment(healthKitManager)
         }
         .modelContainer(modelContainer)
     }

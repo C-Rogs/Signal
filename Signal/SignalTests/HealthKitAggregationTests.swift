@@ -1,0 +1,60 @@
+import Foundation
+import Testing
+@testable import Signal
+
+struct HealthKitAggregationTests {
+    private static var utcCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        return calendar
+    }
+
+    @Test func hrvMeanMatchesXMLRules() {
+        let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
+        let day = Self.utcDay(2024, 6, 10)
+        state.addHRV(value: 40, startDate: day.addingTimeInterval(3600))
+        state.addHRV(value: 60, startDate: day.addingTimeInterval(7200))
+
+        let metric = state.mergedMetric(for: day)
+        #expect(metric?.hrvSDNN_ms == 50)
+    }
+
+    @Test func activeEnergySumMatchesXMLRules() {
+        let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
+        let day = Self.utcDay(2024, 6, 10)
+        state.addActiveEnergy(kcal: 10, startDate: day)
+        state.addActiveEnergy(kcal: 5.5, startDate: day)
+
+        let metric = state.mergedMetric(for: day)
+        #expect(metric?.activeEnergy_kcal == 15.5)
+    }
+
+    @Test func sleepWakeDayMatchesXMLRules() {
+        let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
+        let monday = Self.utcDay(2024, 6, 10)
+        let tuesday = Self.utcDay(2024, 6, 11)
+
+        state.addSleepInterval(
+            start: monday.addingTimeInterval(22 * 3600),
+            end: tuesday.addingTimeInterval(7 * 3600),
+            isLegacy: false
+        )
+        state.addSleepInterval(
+            start: monday.addingTimeInterval(23 * 3600),
+            end: tuesday.addingTimeInterval(6 * 3600),
+            isLegacy: true
+        )
+
+        let mondayMetric = state.mergedMetric(for: monday)
+        let tuesdayMetric = state.mergedMetric(for: tuesday)
+
+        #expect(mondayMetric?.sleepHours == nil)
+        #expect(tuesdayMetric?.sleepHours != nil)
+        #expect(abs((tuesdayMetric?.sleepHours ?? 0) - 9.0) < 0.01)
+    }
+
+    private static func utcDay(_ year: Int, _ month: Int, _ day: Int) -> Date {
+        let components = DateComponents(year: year, month: month, day: day)
+        return utcCalendar.date(from: components)!
+    }
+}

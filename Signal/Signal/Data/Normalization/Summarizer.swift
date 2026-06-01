@@ -1,5 +1,6 @@
 import Foundation
 import os
+import SwiftData
 
 enum Summarizer: Sendable {
     static let jsonEncoder: JSONEncoder = {
@@ -31,20 +32,153 @@ enum Summarizer: Sendable {
         return (summary, text)
     }
 
-    static func encodeJSON(_ summary: DailySummary) throws -> Data {
-        try jsonEncoder.encode(summary)
+    @MainActor
+    static func summarize(
+        metric: DailyMetric,
+        workoutSessions: [WorkoutSession],
+        calendar: Calendar = .current
+    ) -> (summary: DailySummary, embeddingText: String) {
+        let summaries = workoutSessions.map { renderSessionSummary($0) }
+        return summarize(metric: metric, workoutSummaries: summaries, calendar: calendar)
     }
 
-    static func decodeJSON(_ data: Data) throws -> DailySummary {
-        try jsonDecoder.decode(DailySummary.self, from: data)
+    static func renderSessionSummary(_ session: WorkoutSession) -> String {
+        let exercises = session.exercises.sorted { $0.order < $1.order }
+        let parts = exercises.map { renderExerciseSummary($0) }.filter { !$0.isEmpty }
+        if parts.isEmpty {
+            return session.title
+        }
+        return "\(session.title): \(parts.joined(separator: ", "))"
     }
 
-    static func dayKey(for date: Date, calendar: Calendar) -> String {
-        let day = calendar.startOfDay(for: date)
-        let year = calendar.component(.year, from: day)
-        let month = calendar.component(.month, from: day)
-        let dayOfMonth = calendar.component(.day, from: day)
-        return String(format: "%04d-%02d-%02d", year, month, dayOfMonth)
+    static func renderExerciseSummary(_ exercise: WorkoutExercise) -> String {
+        let title = exercise.exerciseTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return "" }
+
+        let sortedSets = exercise.sets.sorted { $0.setIndex < $1.setIndex }
+        let warmups = sortedSets.filter { isWarmup($0) }
+        let working = sortedSets.filter { !isWarmup($0) }
+
+        var segments: [String] = []
+        if !warmups.isEmpty {
+            segments.append("warmup \(renderSetGroup(warmups))")
+        }
+        if !working.isEmpty {
+            segments.append(renderWorkingSets(working))
+        } else if segments.isEmpty, !sortedSets.isEmpty {
+            segments.append(renderSetGroup(sortedSets))
+        }
+
+        var line = title
+        if let notes = exercise.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
+            line += " (\(notes))"
+        }
+        guard !segments.isEmpty else { return line }
+        return "\(line): \(segments.joined(separator: "; "))"
+    }
+
+    static func renderExerciseSummary(parsed: HevyParsedExercise) -> String {
+        let exercise = WorkoutExercise(
+            exerciseTitle: parsed.exerciseTitle,
+            notes: parsed.notes,
+            supersetId: parsed.supersetId,
+            order: parsed.order
+        )
+        for parsedSet in parsed.sets {
+            let entry = SetEntry(
+                setIndex: parsedSet.setIndex,
+                setType: parsedSet.setType,
+                weightKg: parsedSet.weightKg,
+                reps: parsedSet.reps,
+                distanceKm: parsedSet.distanceKm,
+                durationSeconds: parsedSet.durationSeconds,
+                rpe: parsedSet.rpe
+            )
+            exercise.sets.append(entry)
+        }
+        return renderExerciseSummary(exercise)
+    }
+
+    private static func renderWorkingSets(_ sets: [SetEntry]) -> String {
+        let chunks = compressWorkingSets(sets)
+        return chunks.joined(separator: ", ")
+    }
+
+    private static func compressWorkingSets(_ sets: [SetEntry]) -> [String] {
+        guard !sets.isEmpty else { return [] }
+
+        struct Chunk {
+            var sets: [SetEntry]
+        }
+
+        var chunks: [Chunk] = []
+        for set in sets {
+            if let last = chunks.last, canMerge(last.sets.last!, set) {
+                chunks[chunks.count - 1].sets.append(set)
+            } else {
+                chunks.append(Chunk(sets: [set]))
+            }
+        }
+
+        return chunks.map { chunk in
+            let reps = chunk.sets.compactMap(\.reps)
+            let weights = chunk.sets.compactMap(\.weightKg)
+            let count = chunk.sets.count
+            let rpeSuffix = rpeRangeSuffix(chunk.sets)
+
+            if weights.count == count, Set(weights).count == 1, Set(reps).count == 1, let reps = reps.first, let weight = weights.first {
+                return "\(count) x \(reps) @ \(formatWeight(weight))kg\(rpeSuffix)"
+            }
+
+            if weights.count == count, Set(weights).count == 1, let weight = weights.first, reps.count == count {
+                let repList = reps.map(String.init).joined(separator: "/")
+                return "\(formatWeight(weight))kg x \(repList)\(rpeSuffix)"
+            }
+
+            return renderSetGroup(chunk.sets) + rpeSuffix
+        }
+    }
+
+    private static func canMerge(_ left: SetEntry, _ right: SetEntry) -> Bool {
+        left.weightKg == right.weightKg && left.reps == right.reps
+    }
+
+    private static func renderSetGroup(_ sets: [SetEntry]) -> String {
+        sets.map { renderSingleSet($0) }.joined(separator: ", ")
+    }
+
+    private static func renderSingleSet(_ set: SetEntry) -> String {
+        if let weight = set.weightKg, let reps = set.reps {
+            return "\(formatWeight(weight))kg x \(reps)"
+        }
+        if let reps = set.reps {
+            return "\(reps) reps"
+        }
+        if let km = set.distanceKm {
+            return "\(formatWeight(km)) km"
+        }
+        if let seconds = set.durationSeconds, seconds > 0 {
+            return "\(seconds)s"
+        }
+        return "logged"
+    }
+
+    private static func rpeRangeSuffix(_ sets: [SetEntry]) -> String {
+        let values = sets.compactMap(\.rpe)
+        guard !values.isEmpty else { return "" }
+        let minValue = values.min()!
+        let maxValue = values.max()!
+        if minValue == maxValue {
+            return " (RPE \(formatRPE(minValue)))"
+        }
+        return " (RPE \(formatRPE(minValue)) to \(formatRPE(maxValue)))"
+    }
+
+    private static func isWarmup(_ set: SetEntry) -> Bool {
+        let normalized = set.setType
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return normalized == "warmup" || normalized == "warm_up"
     }
 
     private static func workoutsSummary(from workoutSummaries: [String]) -> String? {
@@ -76,6 +210,36 @@ enum Summarizer: Sendable {
             segments.append("Recovery score \(format(recoveryScore, decimals: 0)).")
         }
         return segments.joined(separator: " ")
+    }
+
+    private static func formatWeight(_ value: Double) -> String {
+        if value.rounded() == value {
+            return String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), value)
+        }
+        return String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+
+    private static func formatRPE(_ value: Double) -> String {
+        if value.rounded() == value {
+            return String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), value)
+        }
+        return String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+
+    static func encodeJSON(_ summary: DailySummary) throws -> Data {
+        try jsonEncoder.encode(summary)
+    }
+
+    static func decodeJSON(_ data: Data) throws -> DailySummary {
+        try jsonDecoder.decode(DailySummary.self, from: data)
+    }
+
+    static func dayKey(for date: Date, calendar: Calendar) -> String {
+        let day = calendar.startOfDay(for: date)
+        let year = calendar.component(.year, from: day)
+        let month = calendar.component(.month, from: day)
+        let dayOfMonth = calendar.component(.day, from: day)
+        return String(format: "%04d-%02d-%02d", year, month, dayOfMonth)
     }
 
     private static func format(_ value: Double, decimals: Int) -> String {

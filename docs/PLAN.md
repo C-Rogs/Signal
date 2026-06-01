@@ -34,3 +34,22 @@ ObjectBox was dropped (corpus is ~3–4k vectors; brute-force cosine is enough).
 - `Data/Normalization/DailySummary.swift`: Codable uniform schema (`date`, `hrvSDNN`, `restingHR`, `activeEnergy`, `sleepHours`, `workoutsSummary`, `recoveryScore` nil until M9)
 - `Data/Normalization/Summarizer.swift`: `DailyMetric` + optional workout strings → `DailySummary` JSON + template-stable embedding text; missing metrics omitted
 - Tests: `SummarizerTests` (JSON round-trip, text snapshot, sparse day)
+
+## V1 M6 Hevy CSV importer
+
+- `HevyCSVImporter.swift` + `HevyCSVParser.swift` + `RFC4180CSVParser.swift`
+- Per-set rows grouped into sessions (title + start_time), mapped to local calendar days
+- `DailyImportEmbeddingPipeline` shared with M5 for persist + embed/upsert
+- `Summarizer` workout strings folded into `DailySummary` before `.document` embed
+- Tests: `HevyCSVImporterTests`
+
+## V1 M7 HealthKit live pipeline (foreground only)
+
+- `Data/HealthKit/`: `HealthKitManager`, `HealthKitSyncEngine`, `HealthKitSampleIngestor`, `HealthKitDayAggregator`, `HealthKitLookbackDayIndex`, `HealthKitTier1Types`
+- Tier 1 read: HRV SDNN, resting HR, active energy, sleep analysis
+- `HKAnchoredObjectQuery` per type; anchors in `SyncAnchorStore`
+- Affected days fully re-aggregated via shared `DailyMetricAggregationState` (same rules as M5 XML)
+- `DailyImportEmbeddingPipeline` persist + embed (Hevy workout text preserved)
+- UI: Import tab live sync section; `Sync now`; foreground sync on app active
+- Tests: `HealthKitAggregationTests` (aggregator parity with M5)
+- M8 deferred: `HealthKitBackground.swift`, observer queries, locked-device handling

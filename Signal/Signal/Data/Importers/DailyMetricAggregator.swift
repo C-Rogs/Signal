@@ -22,6 +22,7 @@ struct DayAccumulator: Sendable {
 
 enum DailyMetricAggregator {
     static let importSource = "apple-health-export"
+    static let healthKitLiveSource = "healthkit"
 
     static func overlaps(_ a: SleepInterval, _ b: SleepInterval) -> Bool {
         a.start < b.end && b.start < a.end
@@ -54,7 +55,11 @@ enum DailyMetricAggregator {
         return day.activeEnergyKcalSum
     }
 
-    static func toDailyMetric(wakeDay: Date, day: DayAccumulator) -> DailyMetric? {
+    static func toDailyMetric(
+        wakeDay: Date,
+        day: DayAccumulator,
+        source: String = importSource
+    ) -> DailyMetric? {
         let hrv = meanHRV(day)
         let resting = meanRestingHR(day)
         let energy = activeEnergyKcal(day)
@@ -69,7 +74,7 @@ enum DailyMetricAggregator {
             restingHR: resting,
             activeEnergy_kcal: energy,
             sleepHours: hasSleep ? sleep : nil,
-            source: importSource
+            source: source
         )
     }
 }
@@ -127,15 +132,24 @@ final class DailyMetricAggregationState: @unchecked Sendable {
     }
 
     func mergedMetric(for dayStart: Date) -> DailyMetric? {
+        mergedMetric(for: dayStart, source: DailyMetricAggregator.importSource)
+    }
+
+    func mergedMetric(for dayStart: Date, source: String) -> DailyMetric? {
         var combined = quantityDays[dayStart] ?? DayAccumulator()
         if let sleep = sleepByWakeDay[dayStart] {
             combined.granularSleep = sleep.granularSleep
             combined.legacySleep = sleep.legacySleep
         }
-        return DailyMetricAggregator.toDailyMetric(wakeDay: dayStart, day: combined)
+        return DailyMetricAggregator.toDailyMetric(wakeDay: dayStart, day: combined, source: source)
     }
 
     var dayCount: Int {
         allDayStarts().count
+    }
+
+    func releaseParsedData() {
+        quantityDays.removeAll(keepingCapacity: false)
+        sleepByWakeDay.removeAll(keepingCapacity: false)
     }
 }

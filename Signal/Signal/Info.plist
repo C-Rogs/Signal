@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Signal reads heart rate variability, resting heart rate, active energy, and sleep to build your private on-device health timeline.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Signal does not write health data in this version.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

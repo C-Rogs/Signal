@@ -36,7 +36,7 @@ Read these before building; they correct a few inaccuracies in the source docume
 
 Several frameworks in this build move fast (Foundation Models shipped in iOS 26 and is still evolving in 2026). Do not trust any API signature from memory, including the reference snippets below. They are a **starting point to orient from, not gospel** — some may already be stale.
 
-For every milestone that touches Foundation Models, ObjectBox, NLContextualEmbedding, or HealthKit effort scoring, Composer must:
+For every milestone that touches Foundation Models, MLX/EmbeddingGemma, or HealthKit effort scoring, Composer must:
 
 1. **Fetch the current canonical doc first.** Authoritative source URLs are listed per API below. Read the live signatures, not training memory. Apple docs render via JavaScript, so use Cursor's docs/web tooling or the `@Docs` feature pointed at these URLs; if a fetch returns empty, fall back to Xcode Quick Help and autocomplete on the real symbols.
 2. **Let the compiler be the arbiter.** Write against the real symbols, build, and fix against actual compiler errors. Never paper over a "cannot find symbol" by inventing a plausible API.
@@ -50,7 +50,6 @@ For every milestone that touches Foundation Models, ObjectBox, NLContextualEmbed
 | LanguageModelSession | https://developer.apple.com/documentation/foundationmodels/languagemodelsession |
 | Context window management | https://developer.apple.com/documentation/technotes/tn3193-managing-the-on-device-foundation-model-s-context-window |
 | Generable / Guided generation | https://developer.apple.com/documentation/FoundationModels/generating-content-and-performing-tasks-with-foundation-models |
-| ObjectBox Swift (HNSW) | https://docs.objectbox.io/on-device-vector-search and https://github.com/objectbox/objectbox-swift |
 | EmbeddingGemma (model + prompts) | https://ai.google.dev/gemma/docs/embeddinggemma and https://huggingface.co/google/embeddinggemma-300m |
 | MLX Swift | https://github.com/ml-explore/mlx-swift and https://github.com/ml-explore/mlx-swift-examples |
 | NLContextualEmbedding (fallback) | https://developer.apple.com/documentation/naturallanguage/nlcontextualembedding |
@@ -59,8 +58,8 @@ For every milestone that touches Foundation Models, ObjectBox, NLContextualEmbed
 ### Verified constraints (confirmed June 2026 — design around these)
 
 - **Context window: ~4,096 tokens per `LanguageModelSession`**, covering instructions + all prompts + all responses combined. RAG plus aggressive token budgeting is mandatory. Apple's TN3193 is the official guidance on pruning/summarizing the transcript; follow its recommended pattern rather than improvising.
-- **Embedder is EmbeddingGemma-300M via MLX Swift** (architect's decision; see below). 768-dim native output (truncatable to 512/256/128 via Matryoshka), 2K-token context, state-of-the-art on-device retrieval quality. Set the ObjectBox HNSW `dimensions` to 768 (or the chosen Matryoshka size). The 2K context means daily summaries do not need aggressive chunking. `NLContextualEmbedding` (512-dim, 256-token cap, native/zero-dependency) is the documented fallback only if MLX integration proves troublesome.
-- **ObjectBox 4.x is the robust on-device ANN choice.** `sqlite-vec` still ships brute-force only (no HNSW/ANN index) as of early 2026, so it does not meet the scaling requirement. Do not substitute it.
+- **Embedder is EmbeddingGemma-300M via MLX Swift** (architect's decision; see below). 768-dim native output (truncatable to 512/256/128 via Matryoshka), 2K-token context, state-of-the-art on-device retrieval quality. Store 768-dim vectors (or the chosen Matryoshka size) as `[Float]` in SwiftData. The 2K context means daily summaries do not need aggressive chunking. `NLContextualEmbedding` (512-dim, 256-token cap, native/zero-dependency) is the documented fallback only if MLX integration proves troublesome.
+- **Vector store is pure-Swift brute-force cosine over SwiftData-stored vectors** (Accelerate/vDSP). Decided during the build: at a ~3-4k vector personal corpus, HNSW (ObjectBox) is over-specified and added codegen friction. Brute force is sub-millisecond at this scale. Kept behind the `VectorStore` protocol so ObjectBox/HNSW can be added if the corpus ever reaches the hundreds of thousands.
 - **One in-flight request per session.** A second `respond`/`streamResponse` call before the first completes throws at runtime. Gate strictly on `isResponding`.
 
 ### Reference snippets (orient only — verify against the sources above before relying on them)
@@ -113,36 +112,35 @@ do {
 }
 ```
 
-### ObjectBox Swift HNSW vector index (V1 M2 — partially known, annotation syntax risky)
+### Pure-Swift vector store (V1 M2 — no third-party dependency)
 
-Paste into V1 M2 milestone prompt:
+Store vectors in SwiftData and rank with Accelerate. Orientation only:
 
 ```
-// ObjectBox Swift SPM: https://github.com/objectbox/objectbox-swift
-// Package name: ObjectBox, current stable: 4.x
+import SwiftData
+import Accelerate
 
-// Entity with HNSW vector property
-// objectbox: entity
-class HealthVector: Entity {
-    var id: Id = 0
-    var dayKey: String = ""
-    var metricKind: String = ""
-    var summaryText: String = ""
-
-    // objectbox: hnswIndex dimensions=512, distanceType="euclidean"
-    var vector: [Float]? = nil
+@Model final class HealthVector {
+    var dayKey: String
+    var metricKind: String
+    var summaryText: String
+    var vector: [Float]          // 768-dim (EmbeddingGemma)
+    init(dayKey: String, metricKind: String, summaryText: String, vector: [Float]) {
+        self.dayKey = dayKey; self.metricKind = metricKind
+        self.summaryText = summaryText; self.vector = vector
+    }
 }
-// The HNSW annotation is a source-code comment directive, not a Swift attribute.
-// Dimensions must match NLContextualEmbedding output (measure at runtime and hardcode).
-// Store setup
-let storeURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-let store = try Store(directoryPath: storeURL.path)
-let box: Box<HealthVector> = store.box(for: HealthVector.self)
-// ANN query
-let query = try box.query {
-    HealthVector.vector.nearestNeighbors(queryVector: embeddingFloats, maxCount: 10)
-}.build()
-let results = try query.find()
+
+// Cosine similarity via vDSP; fetch all, score, take top-k.
+func cosine(_ a: [Float], _ b: [Float]) -> Float {
+    var dot: Float = 0, na: Float = 0, nb: Float = 0
+    vDSP_dotpr(a, 1, b, 1, &dot, vDSP_Length(a.count))
+    vDSP_svesq(a, 1, &na, vDSP_Length(a.count))
+    vDSP_svesq(b, 1, &nb, vDSP_Length(b.count))
+    return dot / (sqrt(na) * sqrt(nb) + 1e-8)
+}
+// nearestNeighbors: context.fetch(FetchDescriptor<HealthVector>()), map to (cosine, row),
+// sort desc, prefix(k). Sub-millisecond at a few thousand rows.
 ```
 
 ### EmbeddingGemma via MLX Swift (V1 M3 — primary embedder; research the current integration path)
@@ -229,7 +227,7 @@ iOS 26, Foundation Models, and EmbeddingGemma all sit right at the model's train
 
 ### Risk 2 — live documentation access (this is what JS-rendered Apple docs broke)
 Use Cursor's native mechanisms, in order:
-1. **`@Docs` (primary).** Before starting, add each canonical URL from the research-first source table as an indexed doc (Settings -> Docs -> Add new doc, point at the root). Cursor's crawler indexes the subpages **server-side**, which gets around the JavaScript rendering that defeats raw fetches. The agent then vector-searches the indexed docs. Index at minimum: Foundation Models, LanguageModelSession, TN3193, ObjectBox vector search, EmbeddingGemma model card, MLX Swift examples.
+1. **`@Docs` (primary).** Before starting, add each canonical URL from the research-first source table as an indexed doc (Settings -> Docs -> Add new doc, point at the root). Cursor's crawler indexes the subpages **server-side**, which gets around the JavaScript rendering that defeats raw fetches. The agent then vector-searches the indexed docs. Index at minimum: Foundation Models, LanguageModelSession, TN3193, EmbeddingGemma model card, MLX Swift examples.
 2. **`@Web` (secondary).** On-the-fly search for anything not pre-indexed.
 3. **Apple Xcode MCP doc search (tertiary).** Reads installed-SDK docs and Quick Help directly.
 - In each milestone prompt, explicitly reference the indexed doc, e.g. "Use @Docs FoundationModels to confirm the current LanguageModelSession API before writing."
@@ -254,7 +252,7 @@ HealthCoach/
       Memory/             MemoryEntitlement notes, model lifecycle helpers
     Data/
       Models/             SwiftData models (DailyMetric, RecoverySnapshot; V2: workouts/foods)
-      VectorStore/        ObjectBox entities + VectorStore.swift (HNSW)
+      VectorStore/        VectorStore.swift (protocol) + SwiftDataVectorStore (brute-force cosine via Accelerate)
       Embedding/          EmbeddingService.swift (protocol) + GemmaEmbeddingService (MLX) + NLEmbeddingService (fallback)
       Normalization/      DailySummary.swift (MCP-style JSON schema) + Summarizer
     Health/
@@ -272,7 +270,7 @@ HealthCoach/
   .cursorrules
 ```
 
-`.cursorrules` (create first) should pin: iOS 26 target, SwiftUI + SwiftData + ObjectBox + MLX Swift (the only approved third-party deps), `os.Logger` in every data path, no em/en dashes in code or copy, no concurrent LLM calls, always call HealthKit completion handlers, one version scope per session, do not refactor stable code from prior versions, and a research-first rule: read current official docs for fast-moving APIs (Foundation Models, ObjectBox, NLContextualEmbedding) rather than trusting training memory, and stop rather than invent a signature.
+`.cursorrules` (create first) should pin: iOS 26 target, SwiftUI + SwiftData + MLX Swift (the only approved third-party dep), `os.Logger` in every data path, no em/en dashes in code or copy, no concurrent LLM calls, always call HealthKit completion handlers, one version scope per session, do not refactor stable code from prior versions, and a research-first rule: read current official docs for fast-moving APIs (Foundation Models, MLX/EmbeddingGemma) rather than trusting training memory, and stop rather than invent a signature.
 
 ---
 
@@ -353,7 +351,7 @@ Each milestone below is a discrete Composer task with its own acceptance check. 
 - Add capabilities: HealthKit, Background Modes (Background fetch / Background processing + HealthKit background delivery).
 - Add entitlement `com.apple.developer.kernel.increased-memory-limit`.
 - Add `Info.plist` keys: `NSHealthShareUsageDescription`, `NSHealthUpdateUsageDescription`, and `UILaunchScreen` with the OLED black background token.
-- Add the SPM dependencies (ObjectBox, MLX Swift) and the empty `SignalWidget` target.
+- Add the SPM dependency (MLX Swift) and the empty `SignalWidget` target. (ObjectBox dropped; vector store is pure-Swift in SwiftData.)
 - Add each new Swift file the agent creates to the correct target as it goes.
 
 **Agent (Swift source only):**
@@ -370,14 +368,14 @@ Each milestone below is a discrete Composer task with its own acceptance check. 
   - `DailyMetric` { date (unique day key), hrvSDNN_ms?, restingHR?, activeEnergy_kcal?, sleepHours?, source }
   - `RecoverySnapshot` { date, recoveryScore, hrvBaseline, hrvAcute, notes }
   - Persisted sync anchors store (`SyncAnchorStore`) keyed by HK type.
-- ObjectBox via SPM. Entity `HealthVector` { id, dayKey (date), metricKind, summaryText, vector: [Float] with HNSW index, dims set to the embedding model output }.
-- `VectorStore.swift`: insert, nearestNeighbors(query vector, k), count, deleteAll. Wrap all ops in logged do/catch.
-- **Accept:** unit/manual harness inserts sample vectors and returns ANN results in well under a frame budget; counts visible in Diagnostics (M9).
+- Vector store is **pure-Swift brute-force** (decided during the build: ObjectBox/HNSW is over-specified for a ~3-4k vector personal corpus and added codegen friction). SwiftData model `HealthVector` { dayKey (date), metricKind, summaryText, vector: [Float] (768-dim) }.
+- `VectorStore.swift` behind a protocol: `insert`, `upsert(dayKey:metricKind:...)`, `nearestNeighbors(query:[Float], k:Int)`, `count`, `deleteAll`. `nearestNeighbors` fetches all vectors and computes cosine similarity with Accelerate (`vDSP`), returns top-k. Sub-millisecond at a few thousand vectors. Protocol leaves room to swap in ObjectBox/HNSW if the corpus ever reaches the hundreds of thousands.
+- **Accept:** unit harness inserts sample vectors and `nearestNeighbors` ranks the matching one first; query latency under a frame budget; counts visible in Diagnostics (M9).
 
 ### M3. Embedding service (EmbeddingGemma via MLX Swift)
 - Add MLX Swift + an MLX embeddings helper (mlx-swift-examples or an embeddings community package) via SPM. Research the current robust path against the canonical sources before wiring it.
 - Bundle or first-launch-download the quantized `google/embeddinggemma-300m` weights (4-bit safetensors). Treat the download as a one-time setup step with progress UI; cache to Application Support.
-- `EmbeddingService.swift`: a single protocol-fronted service exposing `embed(_ text: String, kind: EmbeddingKind) -> [Float]` and `embedBatch`. `EmbeddingKind` distinguishes `.document` vs `.query` so the correct EmbeddingGemma task prompt prefix is applied (retrieval quality depends on this: documents and queries use different prompt templates per the model card). Output 768-dim (or chosen Matryoshka size); record the dimension and feed it to the ObjectBox `HealthVector` index config.
+- `EmbeddingService.swift`: a single protocol-fronted service exposing `embed(_ text: String, kind: EmbeddingKind) -> [Float]` and `embedBatch`. `EmbeddingKind` distinguishes `.document` vs `.query` so the correct EmbeddingGemma task prompt prefix is applied (retrieval quality depends on this: documents and queries use different prompt templates per the model card). Output 768-dim (or chosen Matryoshka size); record the dimension and use it as the `HealthVector` vector length.
 - Keep `NLContextualEmbedding` behind the same protocol as a fallback `EmbeddingService` implementation, switchable by a single flag, in case MLX integration stalls V1.
 - **Accept:** embedding a known string returns a stable, correctly-sized vector; a query embedding retrieves its matching document with markedly higher cosine similarity than an unrelated one; the document-vs-query prompt prefixes are applied correctly.
 
@@ -389,19 +387,26 @@ Each milestone below is a discrete Composer task with its own acceptance check. 
 
 ### M5. Apple Health XML importer (one-time historical)
 - `AppleHealthXMLImporter.swift`: streaming `XMLParser` (the export is often hundreds of MB; never load it whole). Filter to Tier 1 types only (HRV SDNN, RestingHR, ActiveEnergy, SleepAnalysis, HeartRate); discard noise.
-- Aggregate records into per-day `DailyMetric` rows, upsert into SwiftData, then `Summarizer` to text, `EmbeddingService.embedBatch`, store in ObjectBox.
+- Aggregate records into per-day `DailyMetric` rows, upsert into SwiftData, then `Summarizer` to text, `EmbeddingService.embedBatch`, store in the vector store.
 - Progress reporting + cancellation; chunked/batched writes; full os.Logger coverage of counts and timings.
 - Import entry point: a settings/onboarding screen with a document picker to select the `export.zip`/`export.xml`.
-- **Accept:** importing the real export populates SwiftData day rows and ObjectBox vectors with matching counts; no OOM; progress completes.
+- **Accept:** importing the real export populates SwiftData day rows and vector rows with matching counts; no OOM; progress completes.
 
-### M6. Hevy CSV importer
-- `HevyCSVImporter.swift`: parse the Hevy workout history CSV into lightweight workout records attached to the matching `DailyMetric` day (full structured workout schema arrives in V2; for V1 store enough to enrich the daily summary and RAG context: date, title, exercises, top sets).
-- Fold workout context into that day's `DailySummary` text before embedding.
-- **Accept:** Hevy sessions appear on the right calendar days; daily summaries for workout days mention the session.
+### M6. Hevy CSV importer (structured, revised during build)
+- **Decision (made during the build):** store workouts **structurally**, not as lossy text. The first pass flattened sets (e.g. "24kg x 10" for what was 3 sets of 10 @ 24kg at RPE 8/8.5/9), which destroys the set/rep/weight/RPE structure a strength coach needs. V2's workout STORAGE models are pulled forward into V1 (storage only, not the logging UI, which stays in V2).
+- The Hevy CSV is one row per set. Columns: `title`, `start_time` ("31 May 2026, 17:53"), `end_time`, `description`, `exercise_title`, `superset_id`, `exercise_notes`, `set_index`, `set_type` (warmup|normal), `weight_kg`, `reps`, `distance_km`, `duration_seconds`, `rpe`.
+- `HevyCSVImporter.swift`: parse and persist EVERY column into SwiftData models (source of truth, lossless):
+  - `WorkoutSession` { title, sessionDescription, startTime, endTime, date (start of day) }
+  - `WorkoutExercise` { exerciseTitle, notes, supersetId, order } belongs to session
+  - `SetEntry` { setIndex, setType, weightKg?, reps?, distanceKm?, durationSeconds?, rpe? } belongs to exercise
+  - Group per-set rows into session -> exercise -> sets. RPE/distance/duration/notes/superset often empty: store nil cleanly. Idempotent: upsert `WorkoutSession` by (title + startTime).
+- The `Summarizer` renders a **faithful** workout summary from the structured data for that day's embedding text (derived; structured rows are source of truth): group by exercise, keep warmups distinct, compress identical working sets as "N x reps @ weightkg" (never drop the set count), list varied reps as "weightkg x r1/r2/r3", include RPE range and notes. Target example: "Seated Incline Curl (Dumbbell): 3 x 10 @ 24kg (RPE 8 to 9)". Re-embed (`.document`) and `VectorStore.upsert` affected days.
+- Distinct "Import Hevy CSV" entry point in the UI (separate from the Health import). Input is the extracted `.csv` (user unzips `HevyExport.zip` in Files).
+- **Accept:** the example (3 sets, 24kg, 10 reps, RPE 8/8.5/9) round-trips to 3 `SetEntry` rows AND renders "3 x 10 @ 24kg (RPE 8 to 9)"; Hevy sessions land on the right days; re-import leaves counts unchanged; spot-checked day summaries show full set detail.
 
 ### M7. HealthKit live pipeline
 - `HealthKitManager.swift`: request read authorization for Tier 1 types. Use `HKAnchoredObjectQuery` for delta reads; persist anchors in `SyncAnchorStore`.
-- `processDelta()`: pull new samples since anchor, upsert `DailyMetric`, re-summarize affected days, re-embed, update ObjectBox.
+- `processDelta()`: pull new samples since anchor, upsert `DailyMetric`, re-summarize affected days, re-embed, update the vector store.
 - **Accept:** after granting auth, a foreground sync ingests recent days and updates the store incrementally (anchors advance, no duplication).
 
 ### M8. Background delivery + locked-device safety
@@ -420,19 +425,22 @@ Each milestone below is a discrete Composer task with its own acceptance check. 
 - **Accept:** typing "how did I sleep last week" or "hard leg days" returns sensibly relevant daily summaries.
 
 ### V1 Definition of Done
-On-device app that: launches with increased memory, imports real Apple Health + Hevy history into SwiftData and an ObjectBox HNSW vector store, keeps itself current via anchored + background HealthKit sync with correct locked-device handling, computes simple recovery baselines, renders a true-OLED dashboard with charts, and proves retrieval relevance via the diagnostics query box. No cloud dependency at runtime.
+On-device app that: launches with increased memory, imports real Apple Health + Hevy history into SwiftData (structured rows plus a pure-Swift brute-force vector store), keeps itself current via anchored + background HealthKit sync with correct locked-device handling, computes simple recovery baselines, renders a true-OLED dashboard with charts, and proves retrieval relevance via the diagnostics query box. No cloud dependency at runtime.
 
 ---
 
 ## Version 2 — Workout logging UI + LLM coaching foundation
 
-### M1. Structured workout schema (SwiftData)
-- `Exercise` (name, primary muscle, equipment, isCustom), `Routine`, `RoutineExercise` (order, target sets/reps), `WorkoutSession` (start/end, title, perceived effort), `SetEntry` (exercise, weight, reps, RPE, isWarmup, completedAt).
-- Migrate/seed the exercise catalog from the Hevy export imported in V1.
+### M1. Workout schema additions (storage moved to V1 M6)
+- The core workout storage models (`WorkoutSession`, `WorkoutExercise`, `SetEntry`) were pulled forward into V1 M6 to preserve Hevy import fidelity. V2 only ADDS what the logging UI needs on top:
+  - `Exercise` catalog (name, primary muscle, equipment, isCustom), seeded/deduped from the distinct `exerciseTitle` values already imported in V1 (115 distinct).
+  - `Routine`, `RoutineExercise` (order, target sets/reps) for templated sessions.
+  - Link live-logged sessions to the catalog `Exercise` rather than a free-text title.
+- No re-import needed; V1 already holds the structured history.
 
 ### M2. Hevy-style logging UI
 - Routine list + start session, in-session screen with add-exercise, per-set weight/reps/RPE entry, mark-set-complete, and a manual rest timer (dynamic auto-extension is V4). Compact, glanceable, gym-friendly layout; OLED dark.
-- Persist live to SwiftData; on finish, fold the session into that day's `DailySummary`, re-embed, update ObjectBox (reuse V1 Summarizer + EmbeddingService).
+- Persist live to SwiftData; on finish, fold the session into that day's `DailySummary`, re-embed, update the vector store (reuse V1 Summarizer + EmbeddingService).
 
 ### M3. HealthKit workout write + Training Load
 - On session completion, build an `HKWorkout` via `HKWorkoutBuilder` and write a calculated `HKQuantityTypeIdentifier.workoutEffortScore` (0 to 10, iOS 18+) so manual lifting influences Apple's native Training Load graphs.

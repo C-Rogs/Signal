@@ -40,6 +40,78 @@ enum DailyMetricStore {
     }
 
     @MainActor
+    static func fetchMetric(for day: Date, in context: ModelContext) throws -> DailyMetric? {
+        var descriptor = FetchDescriptor<DailyMetric>(
+            predicate: #Predicate { $0.date == day }
+        )
+        descriptor.fetchLimit = 1
+        return try context.fetch(descriptor).first
+    }
+
+    @MainActor
+    static func fetchMetric(
+        for day: Date,
+        calendar: Calendar,
+        in context: ModelContext
+    ) throws -> DailyMetric? {
+        try fetchMetric(for: calendar.startOfDay(for: day), in: context)
+    }
+
+    @MainActor
+    static func ensureDayExists(date: Date, source: String, in context: ModelContext) throws {
+        var descriptor = FetchDescriptor<DailyMetric>(
+            predicate: #Predicate { $0.date == date }
+        )
+        descriptor.fetchLimit = 1
+        if try context.fetch(descriptor).first != nil {
+            return
+        }
+        context.insert(DailyMetric(date: date, source: source))
+    }
+
+    @MainActor
+    static func fetchSpotCheckWorkoutDays(
+        in context: ModelContext,
+        days: [Date],
+        calendar: Calendar,
+        limit: Int = 2
+    ) throws -> [DailyMetric] {
+        guard !days.isEmpty else { return [] }
+        let sortedDays = days.sorted(by: >)
+        var metrics: [DailyMetric] = []
+        metrics.reserveCapacity(min(limit, sortedDays.count))
+        for day in sortedDays {
+            let dayStart = calendar.startOfDay(for: day)
+            if let metric = try fetchMetric(for: dayStart, in: context) {
+                metrics.append(metric)
+            }
+            if metrics.count >= limit {
+                break
+            }
+        }
+        return metrics
+    }
+
+    @MainActor
+    static func fetchDayStarts(
+        in context: ModelContext,
+        calendar: Calendar,
+        withinLastDays days: Int,
+        from referenceDate: Date = Date()
+    ) throws -> [Date] {
+        guard days > 0 else { return [] }
+        let end = calendar.startOfDay(for: referenceDate)
+        guard let start = calendar.date(byAdding: .day, value: -(days - 1), to: end) else {
+            return []
+        }
+        let descriptor = FetchDescriptor<DailyMetric>(
+            predicate: #Predicate { $0.date >= start && $0.date <= end },
+            sortBy: [SortDescriptor(\.date, order: .forward)]
+        )
+        return try context.fetch(descriptor).map(\.date)
+    }
+
+    @MainActor
     static func fetchSpotCheckDays(
         in context: ModelContext,
         calendar: Calendar,

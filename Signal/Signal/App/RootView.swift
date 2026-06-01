@@ -2,6 +2,8 @@ import os
 import SwiftUI
 
 struct RootView: View {
+    @Environment(HealthKitManager.self) private var healthKitManager
+    @Environment(\.scenePhase) private var scenePhase
     @Bindable private var downloadState = EmbeddingDownloadState.shared
 
     var body: some View {
@@ -30,6 +32,12 @@ struct RootView: View {
         }
         .onAppear {
             Log.ui.info("Root view appeared")
+            healthKitManager.refreshAccessState()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                healthKitManager.syncOnForegroundIfReady()
+            }
         }
         .task(id: downloadState.retryGeneration) {
             guard !EmbeddingBackend.useNLContextualEmbeddingFallback else { return }

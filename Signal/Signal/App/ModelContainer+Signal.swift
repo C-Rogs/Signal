@@ -6,6 +6,9 @@ enum SignalModelContainer {
         RecoverySnapshot.self,
         SyncAnchor.self,
         HealthVector.self,
+        WorkoutSession.self,
+        WorkoutExercise.self,
+        SetEntry.self,
     ])
 
     static func make(inMemoryOnly: Bool = false) throws -> ModelContainer {
