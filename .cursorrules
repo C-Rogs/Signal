@@ -7,6 +7,8 @@
 
 ## Build and verify (use MCP, not raw xcodebuild)
 - Prefer XcodeBuildMCP tools (build_sim, test_sim, screenshot) over Bash xcodebuild. MCP returns structured JSON; parse it to locate and fix errors.
+- XcodeBuildMCP must show connected (green) in Cursor Settings → MCP. Project config: `.cursor/mcp.json` server name `XcodeBuildMCP`.
+- Build/run against this exact simulator: `-destination 'id=20DDD35B-812A-49BE-9DCF-0685401ACC15'` (iPhone 16 Pro, iOS 26.4). Do not use name-based destinations; duplicates cause failures.
 - Iterate on the iOS 26 Simulator (iPhone 16 Pro). HealthKit real data, the memory entitlement, and Foundation Models are verified by the human on a physical device.
 - Use the Apple Xcode MCP documentation search to read current API docs before coding fast-moving frameworks.
 
