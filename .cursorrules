@@ -2,7 +2,7 @@
 
 ## Project identity
 - App name: Signal. Bundle ID: com.cameronro.signal.
-- iOS 26+ target. Approved deps only: SwiftUI, SwiftData, ObjectBox, MLX Swift. No others without approval.
+- iOS 26+ target. Approved deps only: SwiftUI, SwiftData, MLX Swift. No others without approval.
 - Privacy-first: no network calls at runtime. No cloud SDKs, remote logging, or analytics.
 
 ## Build and verify (use MCP, not raw xcodebuild)
@@ -13,7 +13,7 @@
 - Use the Apple Xcode MCP documentation search to read current API docs before coding fast-moving frameworks.
 
 ## Research-first for fast-moving APIs
-- Before writing against Foundation Models, ObjectBox, MLX/EmbeddingGemma, or HealthKit effort scoring, consult the pre-indexed @Docs for that API. Do not code these from memory.
+- Before writing against Foundation Models, MLX/EmbeddingGemma, or HealthKit effort scoring, consult the pre-indexed @Docs for that API. Do not code these from memory.
 - Treat any snippet in a task prompt as orientation only. The installed SDK and the compiler are the source of truth.
 - If a documented symbol does not exist in the SDK, STOP and report. Never invent a substitute signature.
 

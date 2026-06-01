@@ -5,6 +5,7 @@ enum SignalModelContainer {
         DailyMetric.self,
         RecoverySnapshot.self,
         SyncAnchor.self,
+        HealthVector.self,
     ])
 
     static func make(inMemoryOnly: Bool = false) throws -> ModelContainer {
