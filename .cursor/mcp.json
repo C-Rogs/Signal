@@ -1,9 +1,12 @@
 {
   "mcpServers": {
     "XcodeBuildMCP": {
-      "command": "npx",
+      "command": "/Users/cameronro/.nvm/versions/node/v22.17.1/bin/npx",
       "args": ["-y", "xcodebuildmcp@latest", "mcp"],
-      "env": { "XCODEBUILDMCP_SENTRY_DISABLED": "true" }
+      "env": {
+        "XCODEBUILDMCP_SENTRY_DISABLED": "true",
+        "PATH": "/Users/cameronro/.nvm/versions/node/v22.17.1/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"
+      }
     },
     "xcode": { "command": "xcrun", "args": ["mcpbridge"] }
   }
