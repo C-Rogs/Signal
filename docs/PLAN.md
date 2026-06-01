@@ -28,3 +28,9 @@ ObjectBox was dropped (corpus is ~3–4k vectors; brute-force cosine is enough).
 - Prefixes: `.document` / `.query` per EmbeddingGemma model card
 - Tests: `EmbeddingRetrievalTests` (MLX tests device-only)
 - **SPM (human):** see [M3_SPM_SETUP.md](M3_SPM_SETUP.md)
+
+## V1 M4 normalization layer
+
+- `Data/Normalization/DailySummary.swift`: Codable uniform schema (`date`, `hrvSDNN`, `restingHR`, `activeEnergy`, `sleepHours`, `workoutsSummary`, `recoveryScore` nil until M9)
+- `Data/Normalization/Summarizer.swift`: `DailyMetric` + optional workout strings → `DailySummary` JSON + template-stable embedding text; missing metrics omitted
+- Tests: `SummarizerTests` (JSON round-trip, text snapshot, sparse day)
