@@ -3,6 +3,7 @@ import SwiftData
 import Testing
 @testable import Signal
 
+@MainActor
 struct DailyMetricStoreTests {
     @Test func insertAndFetchDailyMetric() throws {
         let container = try SignalModelContainer.make(inMemoryOnly: true)
