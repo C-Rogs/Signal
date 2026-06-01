@@ -5,19 +5,27 @@ struct RootView: View {
     @Bindable private var downloadState = EmbeddingDownloadState.shared
 
     var body: some View {
-        ZStack {
-            Color("Background")
-                .ignoresSafeArea()
-            VStack(spacing: 16) {
-                Text("Signal")
-                    .font(.displayLarge)
-                    .foregroundStyle(Color("TextPrimary"))
+        NavigationStack {
+            ZStack {
+                Color("Background")
+                    .ignoresSafeArea()
+                VStack(spacing: 16) {
+                    Text("Signal")
+                        .font(.displayLarge)
+                        .foregroundStyle(Color("TextPrimary"))
 
-                embeddingStatusLine
-            }
+                    embeddingStatusLine
 
-            if downloadState.isDownloading {
-                EmbeddingDownloadOverlay(state: downloadState)
+                    NavigationLink("Import Health Data") {
+                        ImportView()
+                    }
+                    .font(.cardLabel)
+                    .foregroundStyle(Color("Primary"))
+                }
+
+                if downloadState.isDownloading {
+                    EmbeddingDownloadOverlay(state: downloadState)
+                }
             }
         }
         .onAppear {

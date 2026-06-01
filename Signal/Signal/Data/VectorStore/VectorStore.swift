@@ -16,6 +16,13 @@ protocol VectorStore: AnyObject {
         vector: [Float]
     ) throws
 
+    func upsert(
+        dayKey: String,
+        metricKind: String,
+        summaryText: String,
+        vector: [Float]
+    ) throws
+
     func nearestNeighbors(query: [Float], k: Int) throws -> [VectorNeighbor]
 
     func count() throws -> Int
@@ -49,6 +56,39 @@ final class SwiftDataVectorStore: VectorStore {
             Log.vectorstore.info("inserted vector dayKey=\(dayKey, privacy: .public)")
         } catch {
             Log.vectorstore.error("insert failed: \(String(describing: error), privacy: .public)")
+            throw error
+        }
+    }
+
+    func upsert(
+        dayKey: String,
+        metricKind: String,
+        summaryText: String,
+        vector: [Float]
+    ) throws {
+        do {
+            let kind = metricKind
+            var descriptor = FetchDescriptor<HealthVector>(
+                predicate: #Predicate { $0.dayKey == dayKey && $0.metricKind == kind }
+            )
+            descriptor.fetchLimit = 1
+
+            if let existing = try context.fetch(descriptor).first {
+                existing.summaryText = summaryText
+                existing.vector = vector
+                Log.vectorstore.info("upserted vector dayKey=\(dayKey, privacy: .public)")
+            } else {
+                let row = HealthVector(
+                    dayKey: dayKey,
+                    metricKind: metricKind,
+                    summaryText: summaryText,
+                    vector: vector
+                )
+                context.insert(row)
+                Log.vectorstore.info("inserted vector dayKey=\(dayKey, privacy: .public)")
+            }
+        } catch {
+            Log.vectorstore.error("upsert failed: \(String(describing: error), privacy: .public)")
             throw error
         }
     }
