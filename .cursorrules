@@ -1,45 +1,40 @@
-# HealthCoach .cursorrules
-# These rules govern every Composer session in this project.
-# Do not override or remove them.
+# Signal .cursorrules
 
 ## Project identity
-- iOS 26+ target, SwiftUI, SwiftData, ObjectBox (via SPM). No other persistence frameworks.
-- Deployment device: iPhone 16 Pro (A18 Pro, Apple Intelligence enabled).
-- Privacy-first: no health data leaves the device at runtime. No cloud SDKs, remote logging, analytics, or telemetry packages.
+- App name: Signal. Bundle ID: com.cameronro.signal.
+- iOS 26+ target. Approved deps only: SwiftUI, SwiftData, ObjectBox, MLX Swift. No others without approval.
+- Privacy-first: no network calls at runtime. No cloud SDKs, remote logging, or analytics.
 
-## Scope discipline
-- Build ONLY the milestone explicitly stated in the current task prompt.
-- Do not implement milestones that have not been requested yet.
-- Do not refactor, rename, or restructure files from previous milestones unless the current milestone explicitly names them.
-- Do not add features, abstractions, error handling, or comments not required by the current milestone's accept criteria.
-- If the milestone does not mention a file, do not touch it.
+## Build and verify (use MCP, not raw xcodebuild)
+- Prefer XcodeBuildMCP tools (build_sim, test_sim, screenshot) over Bash xcodebuild. MCP returns structured JSON; parse it to locate and fix errors.
+- Iterate on the iOS 26 Simulator (iPhone 16 Pro). HealthKit real data, the memory entitlement, and Foundation Models are verified by the human on a physical device.
+- Use the Apple Xcode MCP documentation search to read current API docs before coding fast-moving frameworks.
 
-## Loop and cost guardrails
-- If a build or test fails after 2 attempts, STOP. Output the full error verbatim and wait for instruction.
-- Do not run the same terminal command more than twice. If it fails twice, report and stop.
-- If an SPM package, framework, or API is unavailable or does not compile, STOP and report. Do not search for or propose alternative packages.
-- Do not install SPM packages not listed in the approved plan.
-- Do not make any network requests at runtime.
+## Research-first for fast-moving APIs
+- Before writing against Foundation Models, ObjectBox, MLX/EmbeddingGemma, or HealthKit effort scoring, consult the pre-indexed @Docs for that API. Do not code these from memory.
+- Treat any snippet in a task prompt as orientation only. The installed SDK and the compiler are the source of truth.
+- If a documented symbol does not exist in the SDK, STOP and report. Never invent a substitute signature.
 
-## Swift and iOS conventions
-- Use os.Logger for all logging. Every data-path function must log entry, key counts, and exit.
-  Logger categories: healthkit, import, vectorstore, embedding, sync, ui, recovery.
-- Never load the Apple Health export.xml into memory whole. Use streaming XMLParser.
-- Always call the HealthKit observer query completionHandler immediately after setting the dirty flag.
-  Skipping it permanently disables background delivery.
-- Never fire concurrent requests to a LanguageModelSession (V2+).
-  Bind all submit UI to session.isResponding.
-- Use Color.black for OLED dark mode backgrounds, not system dark gray.
-- No em dashes, en dashes, or double dashes in any code, comments, strings, or UI copy. Rewrite the sentence.
+## Protected files (never edit)
+- Do not touch .pbxproj, .xcodeproj, .xcworkspace, .entitlements, .xib, .storyboard. Create Swift files and tell the human which target to add them to. The human owns capabilities, signing, and SPM dependency setup.
 
-## Code style
-- No comments explaining what code does. Only add a comment when the why is non-obvious.
-- No trailing summaries or change-log comments at the top of files.
-- No unused imports.
-- Prefer editing existing files to creating new ones.
+## Modern Swift only (do not regress to deprecated patterns)
+- @Observable, never ObservableObject/@Published.
+- NavigationStack + navigationDestination(for:), never NavigationView.
+- View models @MainActor; Swift 6 strict concurrency; async/await only; Sendable value types across actors.
+- Break large SwiftUI views into subviews to avoid type-check timeouts.
+- HealthKit: always check HKHealthStore.isHealthDataAvailable(); never assume authorization.
+- SwiftData: @Query in views, modelContext.fetch() elsewhere; declare deletion rules.
 
-## Commit gate
-- After completing a milestone and confirming the accept criteria pass, output exactly:
-  MILESTONE COMPLETE: <milestone name>
-  READY TO COMMIT
-  Do not proceed to the next milestone until instructed.
+## Style
+- os.Logger in every data path (categories: healthkit, import, vectorstore, embedding, sync, ui, recovery).
+- No comments explaining what code does; only why when non-obvious.
+- No em dashes, en dashes, or double dashes anywhere. Rewrite the sentence.
+- Color.black for OLED dark backgrounds, not system gray.
+- Never fire concurrent LanguageModelSession requests; gate on isResponding.
+- Always call HealthKit observer completionHandler immediately.
+
+## Scope and loop control
+- Build only the current milestone. Do not implement future milestones or refactor prior stable code unless named.
+- If a build fails after 2 attempts, STOP and output the full error. Do not run the same command more than twice.
+- After a milestone passes its accept criteria, output "MILESTONE COMPLETE: <name>, READY TO COMMIT" and wait.
