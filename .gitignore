@@ -1,0 +1,23 @@
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Logs
+logs
+*.log
+
+# Editors
+.idea/
+.vscode/
+
+# Xcode
+DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Local CI / agent Xcode builds
+.derivedData_ci/
+build/
+
+# Ad-hoc xcodebuild output dirs at repo root (do not commit)
+/build_*/

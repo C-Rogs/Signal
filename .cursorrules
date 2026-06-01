@@ -1,0 +1,45 @@
+# HealthCoach .cursorrules
+# These rules govern every Composer session in this project.
+# Do not override or remove them.
+
+## Project identity
+- iOS 26+ target, SwiftUI, SwiftData, ObjectBox (via SPM). No other persistence frameworks.
+- Deployment device: iPhone 16 Pro (A18 Pro, Apple Intelligence enabled).
+- Privacy-first: no health data leaves the device at runtime. No cloud SDKs, remote logging, analytics, or telemetry packages.
+
+## Scope discipline
+- Build ONLY the milestone explicitly stated in the current task prompt.
+- Do not implement milestones that have not been requested yet.
+- Do not refactor, rename, or restructure files from previous milestones unless the current milestone explicitly names them.
+- Do not add features, abstractions, error handling, or comments not required by the current milestone's accept criteria.
+- If the milestone does not mention a file, do not touch it.
+
+## Loop and cost guardrails
+- If a build or test fails after 2 attempts, STOP. Output the full error verbatim and wait for instruction.
+- Do not run the same terminal command more than twice. If it fails twice, report and stop.
+- If an SPM package, framework, or API is unavailable or does not compile, STOP and report. Do not search for or propose alternative packages.
+- Do not install SPM packages not listed in the approved plan.
+- Do not make any network requests at runtime.
+
+## Swift and iOS conventions
+- Use os.Logger for all logging. Every data-path function must log entry, key counts, and exit.
+  Logger categories: healthkit, import, vectorstore, embedding, sync, ui, recovery.
+- Never load the Apple Health export.xml into memory whole. Use streaming XMLParser.
+- Always call the HealthKit observer query completionHandler immediately after setting the dirty flag.
+  Skipping it permanently disables background delivery.
+- Never fire concurrent requests to a LanguageModelSession (V2+).
+  Bind all submit UI to session.isResponding.
+- Use Color.black for OLED dark mode backgrounds, not system dark gray.
+- No em dashes, en dashes, or double dashes in any code, comments, strings, or UI copy. Rewrite the sentence.
+
+## Code style
+- No comments explaining what code does. Only add a comment when the why is non-obvious.
+- No trailing summaries or change-log comments at the top of files.
+- No unused imports.
+- Prefer editing existing files to creating new ones.
+
+## Commit gate
+- After completing a milestone and confirming the accept criteria pass, output exactly:
+  MILESTONE COMPLETE: <milestone name>
+  READY TO COMMIT
+  Do not proceed to the next milestone until instructed.
