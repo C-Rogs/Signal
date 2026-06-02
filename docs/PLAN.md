@@ -52,4 +52,16 @@ ObjectBox was dropped (corpus is ~3–4k vectors; brute-force cosine is enough).
 - `DailyImportEmbeddingPipeline` persist + embed (Hevy workout text preserved)
 - UI: Import tab live sync section; `Sync now`; foreground sync on app active
 - Tests: `HealthKitAggregationTests` (aggregator parity with M5)
-- M8 deferred: `HealthKitBackground.swift`, observer queries, locked-device handling
+## V1 M8 background delivery
+
+- `HealthKitBackground.swift`: `HKObserverQuery` + `enableBackgroundDelivery` (hourly) for all Tier 1 types
+- Observer sets `HealthKitDirtyFlagStore` only; always calls `completionHandler`
+- Deferred `processDelta()` on `protectedDataDidBecomeAvailable` and foreground when dirty and unlocked
+- Expanded Tier 1 metrics + `AppleWorkout` model (see metric expansion in repo)
+
+## V1 metric expansion (pre-M8)
+
+- `DailyMetric` optional fields: body mass, VO2 max, sleep respiratory rate, wrist temp delta, SpO2, HR max/avg, steps, basal energy
+- `AppleWorkout` SwiftData model; XML export + live HK workout ingest (separate from Hevy)
+- Shared `DailyMetricAggregationState` rules in XML import and `HealthKitSampleIngestor`
+- `Summarizer` / `DailySummary` include new fields when present

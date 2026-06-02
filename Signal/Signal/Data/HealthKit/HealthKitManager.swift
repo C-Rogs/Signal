@@ -24,6 +24,7 @@ final class HealthKitManager {
     private let modelContainer: ModelContainer
     private let calendar: Calendar
     private var syncTask: Task<Void, Never>?
+    private var backgroundCoordinator: HealthKitBackgroundCoordinator?
 
     init(modelContainer: ModelContainer, calendar: Calendar? = nil) {
         self.modelContainer = modelContainer
@@ -35,38 +36,21 @@ final class HealthKitManager {
             self.calendar = defaultCalendar
         }
         refreshAccessState()
+        let coordinator = HealthKitBackgroundCoordinator(healthStore: healthStore) { [weak self] in
+            self?.syncDeferredIfDirty()
+        }
+        backgroundCoordinator = coordinator
+        coordinator.start()
     }
 
     func refreshAccessState() {
-        guard HKHealthStore.isHealthDataAvailable() else {
-            accessState = .unavailable
-            Log.healthkit.warning("Health data unavailable on this device")
-            return
+        Task {
+            await refreshAccessStateAsync()
         }
+    }
 
-        var sawNotDetermined = false
-        var sawAuthorized = false
-        for kind in HealthKitTier1Kind.allCases {
-            let status = healthStore.authorizationStatus(for: kind.sampleType)
-            switch status {
-            case .notDetermined:
-                sawNotDetermined = true
-            case .sharingAuthorized:
-                sawAuthorized = true
-            case .sharingDenied:
-                break
-            @unknown default:
-                break
-            }
-        }
-
-        if sawNotDetermined {
-            accessState = .notDetermined
-        } else if sawAuthorized {
-            accessState = .ready
-        } else {
-            accessState = .denied
-        }
+    func refreshAccessStateAsync() async {
+        accessState = await HealthKitAuthorization.resolveAccessState(healthStore: healthStore)
     }
 
     func requestAuthorization() async {
@@ -81,41 +65,52 @@ final class HealthKitManager {
                 read: HealthKitTier1Kind.readObjectTypes
             )
             Log.healthkit.info("HealthKit read authorization requested for Tier 1 types")
+            accessState = .ready
         } catch {
             Log.healthkit.error(
                 "HealthKit authorization request failed: \(String(describing: error), privacy: .public)"
             )
             lastSyncErrorMessage = error.localizedDescription
+            if HealthKitAuthorization.isAuthorizationDeniedError(error) {
+                accessState = .denied
+            } else {
+                await refreshAccessStateAsync()
+            }
         }
-        refreshAccessState()
     }
 
     func syncNow() {
         guard !isSyncing else { return }
         syncTask?.cancel()
         syncTask = Task {
-            await performForegroundSync(trigger: "manual")
+            await performSync(trigger: "manual", clearDirtyOnSuccess: true)
         }
     }
 
     func syncOnForegroundIfReady() {
-        guard accessState != .unavailable, !isSyncing else { return }
+        syncDeferredIfDirty()
+    }
+
+    func syncDeferredIfDirty() {
+        guard HealthKitDirtyFlagStore.isDirty else { return }
+        guard !isSyncing else { return }
         syncTask?.cancel()
         syncTask = Task {
-            await performForegroundSync(trigger: "foreground")
+            await performSync(trigger: "deferred", clearDirtyOnSuccess: true)
         }
     }
 
-    private func performForegroundSync(trigger: String) async {
+    private func performSync(trigger: String, clearDirtyOnSuccess: Bool) async {
         guard HKHealthStore.isHealthDataAvailable() else {
             accessState = .unavailable
             return
         }
 
-        refreshAccessState()
+        await refreshAccessStateAsync()
         if accessState == .notDetermined {
             await requestAuthorization()
         }
+        guard accessState != .unavailable else { return }
 
         isSyncing = true
         lastSyncErrorMessage = nil
@@ -137,18 +132,23 @@ final class HealthKitManager {
                 embeddingService: embeddingService
             )
             lastSyncOutcome = outcome
-            refreshAccessState()
+            await refreshAccessStateAsync()
+            if clearDirtyOnSuccess {
+                backgroundCoordinator?.clearDirtyFlagAfterSuccessfulSync()
+            }
             Log.sync.info(
                 "sync finished trigger=\(trigger, privacy: .public) noOp=\(outcome.noOp, privacy: .public) elapsedSec=\(Date().timeIntervalSince(started), format: .fixed(precision: 2), privacy: .public)"
             )
         } catch {
             lastSyncErrorMessage = error.localizedDescription
+            if HealthKitAuthorization.isAuthorizationDeniedError(error) {
+                accessState = .denied
+            } else if HealthKitAuthorization.isAuthorizationNotDeterminedError(error) {
+                accessState = .notDetermined
+            }
             Log.sync.error(
                 "sync failed trigger=\(trigger, privacy: .public) error=\(String(describing: error), privacy: .public)"
             )
         }
     }
-
-    private static let deniedMessage =
-        "Health access is off. Open Settings > Health > Data Access & Devices > Signal and allow the Tier 1 metrics."
 }

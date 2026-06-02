@@ -81,7 +81,10 @@ private struct HealthLiveSyncSection: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(Color("Primary"))
-                .disabled(healthKitManager.accessState == .unavailable || healthKitManager.isSyncing)
+                .disabled(
+                    healthKitManager.accessState == .unavailable
+                        || healthKitManager.isSyncing
+                )
 
                 if healthKitManager.isSyncing {
                     ProgressView()
@@ -219,6 +222,14 @@ private struct HealthImportSection: View {
                 if viewModel.isImportingHealth {
                     ProgressView()
                         .tint(Color("Primary"))
+                }
+                if viewModel.healthProgress.phase == .parsing {
+                    Text(
+                        viewModel.healthProgress.recordsScanned == 0
+                            ? "Streaming export.xml. Large files can take many minutes before the scanned count moves."
+                            : "Parsing export.xml. Scanned count updates about every 10,000 records."
+                    )
+                    .foregroundStyle(Color("TextSecondary"))
                 }
                 Text("Records scanned: \(viewModel.healthProgress.recordsScanned)")
                 Text("Tier 1 kept: \(viewModel.healthProgress.tier1RecordsKept)")

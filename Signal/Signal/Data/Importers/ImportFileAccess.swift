@@ -46,6 +46,7 @@ enum ImportFileAccess {
         }
 
         if canOpenInputStream(at: pickedURL) {
+            try ensureUbiquitousItemIsDownloaded(at: pickedURL)
             let size = fileSize(of: pickedURL) ?? 0
             Log.import.info(
                 "import file will stream in place \(pickedURL.lastPathComponent, privacy: .public) sizeMB=\(Double(size) / 1_048_576, format: .fixed(precision: 1), privacy: .public)"
@@ -135,12 +136,32 @@ enum ImportFileAccess {
         }
         try FileManager.default.startDownloadingUbiquitousItem(at: url)
     }
+
+    private static func ensureUbiquitousItemIsDownloaded(at url: URL) throws {
+        guard let values = try? url.resourceValues(forKeys: [
+            .isUbiquitousItemKey,
+            .ubiquitousItemDownloadingStatusKey,
+        ]),
+            values.isUbiquitousItem == true
+        else {
+            return
+        }
+
+        switch values.ubiquitousItemDownloadingStatus {
+        case .current, .downloaded:
+            return
+        default:
+            try FileManager.default.startDownloadingUbiquitousItem(at: url)
+            throw ImportFileAccessError.cloudItemNotDownloaded(name: url.lastPathComponent)
+        }
+    }
 }
 
 enum ImportFileAccessError: LocalizedError {
     case notReadable(String)
     case copyFailed(String)
     case fileTooLargeToCopy(name: String, sizeBytes: Int64)
+    case cloudItemNotDownloaded(name: String)
 
     var errorDescription: String? {
         switch self {
@@ -148,6 +169,8 @@ enum ImportFileAccessError: LocalizedError {
             return "Could not read \(name). Download it in Files (tap the cloud icon) or move export.xml onto the device, then try again."
         case .copyFailed(let detail):
             return "Could not copy the selected file for import: \(detail)"
+        case .cloudItemNotDownloaded(let name):
+            return "\(name) is still downloading from iCloud. Open Files, wait until the cloud icon clears, then import again."
         case .fileTooLargeToCopy(let name, let sizeBytes):
             let megabytes = Double(sizeBytes) / 1_048_576
             let sizeLabel = String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), megabytes)

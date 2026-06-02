@@ -13,7 +13,7 @@ enum HealthKitLookbackDayIndex {
             options: .strictStartDate
         )
         var days: Set<Date> = []
-        for kind in HealthKitTier1Kind.allCases {
+        for kind in HealthKitTier1Kind.metricKinds {
             let samples = try await HealthKitSampleFetcher.fetchSamples(
                 kind: kind,
                 predicate: predicate,

@@ -7,6 +7,14 @@ enum AppleHealthRecordTypes {
         "HKQuantityTypeIdentifierRestingHeartRate",
         "HKQuantityTypeIdentifierActiveEnergyBurned",
         "HKCategoryTypeIdentifierSleepAnalysis",
+        "HKQuantityTypeIdentifierBodyMass",
+        "HKQuantityTypeIdentifierVO2Max",
+        "HKQuantityTypeIdentifierRespiratoryRate",
+        "HKQuantityTypeIdentifierOxygenSaturation",
+        "HKQuantityTypeIdentifierAppleSleepingWristTemperature",
+        "HKQuantityTypeIdentifierHeartRate",
+        "HKQuantityTypeIdentifierStepCount",
+        "HKQuantityTypeIdentifierBasalEnergyBurned",
     ]
 
     static let legacyAsleep = "HKCategoryValueSleepAnalysisAsleep"
@@ -48,15 +56,19 @@ enum AppleHealthUnitNormalizer {
     }
 
     static func normalizedRestingHR(value: Double, unit: String?) -> Double? {
+        normalizedHeartRate(value: value, unit: unit)
+    }
+
+    static func normalizedHeartRate(value: Double, unit: String?) -> Double? {
         guard let unit, !unit.isEmpty else {
-            Log.import.warning("resting HR record missing unit; assuming count/min")
+            Log.import.warning("heart rate record missing unit; assuming count/min")
             return value
         }
         let normalized = unit.lowercased()
         if normalized == "count/min" {
             return value
         }
-        Log.import.warning("unexpected resting HR unit=\(unit, privacy: .public); skipped sample")
+        Log.import.warning("unexpected heart rate unit=\(unit, privacy: .public); skipped sample")
         return nil
     }
 
@@ -75,6 +87,86 @@ enum AppleHealthUnitNormalizer {
             Log.import.warning("unexpected active energy unit=\(unit, privacy: .public); skipped sample")
             return nil
         }
+    }
+
+    static func normalizedBasalEnergyKcal(value: Double, unit: String?) -> Double? {
+        normalizedActiveEnergyKcal(value: value, unit: unit)
+    }
+
+    static func normalizedBodyMassKg(value: Double, unit: String?) -> Double? {
+        guard let unit, !unit.isEmpty else {
+            Log.import.warning("body mass record missing unit; assuming kg")
+            return value
+        }
+        switch unit.lowercased() {
+        case "kg":
+            return value
+        case "lb", "lbs":
+            return value * 0.45359237
+        default:
+            Log.import.warning("unexpected body mass unit=\(unit, privacy: .public); skipped sample")
+            return nil
+        }
+    }
+
+    static func normalizedVO2Max(value: Double, unit: String?) -> Double? {
+        guard let unit, !unit.isEmpty else {
+            return value
+        }
+        let normalized = unit.lowercased()
+        if normalized.contains("ml") || normalized == "ml/kg*min" || normalized == "ml/kg/min" {
+            return value
+        }
+        Log.import.warning("unexpected VO2 max unit=\(unit, privacy: .public); skipped sample")
+        return nil
+    }
+
+    static func normalizedRespiratoryRate(value: Double, unit: String?) -> Double? {
+        guard let unit, !unit.isEmpty else {
+            return value
+        }
+        if unit.lowercased() == "count/min" {
+            return value
+        }
+        Log.import.warning("unexpected respiratory rate unit=\(unit, privacy: .public); skipped sample")
+        return nil
+    }
+
+    static func normalizedBloodOxygenPct(value: Double, unit: String?) -> Double? {
+        guard let unit, !unit.isEmpty else {
+            return value <= 1 ? value * 100 : value
+        }
+        switch unit.lowercased() {
+        case "%":
+            return value
+        default:
+            if value <= 1 {
+                return value * 100
+            }
+            return value
+        }
+    }
+
+    static func normalizedWristTemperatureDeltaC(value: Double, unit: String?) -> Double? {
+        guard let unit, !unit.isEmpty else {
+            return value
+        }
+        if unit.lowercased() == "degc" || unit.lowercased() == "c" {
+            return value
+        }
+        Log.import.warning("unexpected wrist temperature unit=\(unit, privacy: .public); skipped sample")
+        return nil
+    }
+
+    static func normalizedStepCount(value: Double, unit: String?) -> Double? {
+        guard let unit, !unit.isEmpty else {
+            return value
+        }
+        if unit.lowercased() == "count" {
+            return value
+        }
+        Log.import.warning("unexpected step count unit=\(unit, privacy: .public); skipped sample")
+        return nil
     }
 }
 
@@ -119,6 +211,14 @@ struct AppleHealthSourceNames: Sendable {
     private(set) var restingHR: Set<String> = []
     private(set) var activeEnergy: Set<String> = []
     private(set) var sleep: Set<String> = []
+    private(set) var bodyMass: Set<String> = []
+    private(set) var vo2Max: Set<String> = []
+    private(set) var respiratory: Set<String> = []
+    private(set) var oxygen: Set<String> = []
+    private(set) var wristTemp: Set<String> = []
+    private(set) var heartRate: Set<String> = []
+    private(set) var steps: Set<String> = []
+    private(set) var basalEnergy: Set<String> = []
 
     mutating func record(type: String, sourceName: String?) {
         guard let sourceName, !sourceName.isEmpty else { return }
@@ -131,6 +231,22 @@ struct AppleHealthSourceNames: Sendable {
             activeEnergy.insert(sourceName)
         case "HKCategoryTypeIdentifierSleepAnalysis":
             sleep.insert(sourceName)
+        case "HKQuantityTypeIdentifierBodyMass":
+            bodyMass.insert(sourceName)
+        case "HKQuantityTypeIdentifierVO2Max":
+            vo2Max.insert(sourceName)
+        case "HKQuantityTypeIdentifierRespiratoryRate":
+            respiratory.insert(sourceName)
+        case "HKQuantityTypeIdentifierOxygenSaturation":
+            oxygen.insert(sourceName)
+        case "HKQuantityTypeIdentifierAppleSleepingWristTemperature":
+            wristTemp.insert(sourceName)
+        case "HKQuantityTypeIdentifierHeartRate":
+            heartRate.insert(sourceName)
+        case "HKQuantityTypeIdentifierStepCount":
+            steps.insert(sourceName)
+        case "HKQuantityTypeIdentifierBasalEnergyBurned":
+            basalEnergy.insert(sourceName)
         default:
             break
         }
@@ -141,6 +257,14 @@ struct AppleHealthSourceNames: Sendable {
         Log.import.info("distinct sourceName restingHR count=\(restingHR.count, privacy: .public) sources=\(Self.sortedList(restingHR), privacy: .public)")
         Log.import.info("distinct sourceName activeEnergy count=\(activeEnergy.count, privacy: .public) sources=\(Self.sortedList(activeEnergy), privacy: .public)")
         Log.import.info("distinct sourceName sleep count=\(sleep.count, privacy: .public) sources=\(Self.sortedList(sleep), privacy: .public)")
+        Log.import.info("distinct sourceName bodyMass count=\(bodyMass.count, privacy: .public) sources=\(Self.sortedList(bodyMass), privacy: .public)")
+        Log.import.info("distinct sourceName vo2Max count=\(vo2Max.count, privacy: .public) sources=\(Self.sortedList(vo2Max), privacy: .public)")
+        Log.import.info("distinct sourceName respiratory count=\(respiratory.count, privacy: .public) sources=\(Self.sortedList(respiratory), privacy: .public)")
+        Log.import.info("distinct sourceName oxygen count=\(oxygen.count, privacy: .public) sources=\(Self.sortedList(oxygen), privacy: .public)")
+        Log.import.info("distinct sourceName wristTemp count=\(wristTemp.count, privacy: .public) sources=\(Self.sortedList(wristTemp), privacy: .public)")
+        Log.import.info("distinct sourceName heartRate count=\(heartRate.count, privacy: .public) sources=\(Self.sortedList(heartRate), privacy: .public)")
+        Log.import.info("distinct sourceName steps count=\(steps.count, privacy: .public) sources=\(Self.sortedList(steps), privacy: .public)")
+        Log.import.info("distinct sourceName basalEnergy count=\(basalEnergy.count, privacy: .public) sources=\(Self.sortedList(basalEnergy), privacy: .public)")
     }
 
     private static func sortedList(_ names: Set<String>) -> String {

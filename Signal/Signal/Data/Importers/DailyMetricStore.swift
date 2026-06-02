@@ -18,6 +18,15 @@ enum DailyMetricStore {
             existing.restingHR = metric.restingHR
             existing.activeEnergy_kcal = metric.activeEnergy_kcal
             existing.sleepHours = metric.sleepHours
+            existing.bodyMassKg = metric.bodyMassKg
+            existing.vo2Max = metric.vo2Max
+            existing.respiratoryRate = metric.respiratoryRate
+            existing.wristTemperatureDeltaC = metric.wristTemperatureDeltaC
+            existing.bloodOxygenPct = metric.bloodOxygenPct
+            existing.heartRateMax = metric.heartRateMax
+            existing.heartRateAvg = metric.heartRateAvg
+            existing.stepCount = metric.stepCount
+            existing.basalEnergyKcal = metric.basalEnergyKcal
             existing.source = metric.source
         } else {
             context.insert(metric)

@@ -56,7 +56,19 @@ enum AppleHealthXMLImporter {
                 try AppleHealthXMLParser.parse(
                     fileURL: fileURL,
                     aggregation: aggregation,
-                    isCancelled: cancelled
+                    isCancelled: cancelled,
+                    onParseProgress: { scanned, tier1 in
+                        var snapshot = HealthImportProgress()
+                        snapshot.phase = .parsing
+                        snapshot.recordsScanned = scanned
+                        snapshot.tier1RecordsKept = tier1
+                        onProgress(snapshot)
+                        if scanned % 50_000 == 0 {
+                            Log.import.info(
+                                "parse progress scanned=\(scanned, privacy: .public) tier1=\(tier1, privacy: .public)"
+                            )
+                        }
+                    }
                 )
             }.value
         } catch AppleHealthXMLParseError.cancelled {
@@ -104,6 +116,13 @@ enum AppleHealthXMLImporter {
             aggregation: aggregation,
             modelContainer: modelContainer
         )
+
+        let workoutsWritten = try await MainActor.run {
+            let context = ModelContext(modelContainer)
+            return try AppleWorkoutStore.upsertBatch(parseDelegate.parsedWorkouts, in: context)
+        }
+        Log.import.info("apple workouts persisted count=\(workoutsWritten, privacy: .public)")
+
         aggregation.releaseParsedData()
 
         progress.dailyMetricsWritten = metricsWritten

@@ -12,7 +12,7 @@ enum HealthKitDayAggregator {
         let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(86400)
         let source = DailyMetricAggregator.healthKitLiveSource
 
-        for kind in HealthKitTier1Kind.allCases {
+        for kind in HealthKitTier1Kind.metricKinds {
             let predicate: NSPredicate
             switch kind {
             case .sleepAnalysis:

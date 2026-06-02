@@ -24,6 +24,15 @@ enum Summarizer: Sendable {
             restingHR: metric.restingHR,
             activeEnergy: metric.activeEnergy_kcal,
             sleepHours: metric.sleepHours,
+            bodyMassKg: metric.bodyMassKg,
+            vo2Max: metric.vo2Max,
+            respiratoryRate: metric.respiratoryRate,
+            wristTemperatureDeltaC: metric.wristTemperatureDeltaC,
+            bloodOxygenPct: metric.bloodOxygenPct,
+            heartRateMax: metric.heartRateMax,
+            heartRateAvg: metric.heartRateAvg,
+            stepCount: metric.stepCount,
+            basalEnergyKcal: metric.basalEnergyKcal,
             workoutsSummary: workoutsSummary,
             recoveryScore: nil
         )
@@ -202,6 +211,33 @@ enum Summarizer: Sendable {
         }
         if let sleepHours = summary.sleepHours {
             segments.append("Sleep \(format(sleepHours, decimals: 2)) hours.")
+        }
+        if let bodyMassKg = summary.bodyMassKg {
+            segments.append("Body mass \(format(bodyMassKg, decimals: 1)) kg.")
+        }
+        if let vo2Max = summary.vo2Max {
+            segments.append("VO2 max \(format(vo2Max, decimals: 1)) ml/kg/min.")
+        }
+        if let respiratoryRate = summary.respiratoryRate {
+            segments.append("Sleep respiratory rate \(format(respiratoryRate, decimals: 1)) brpm.")
+        }
+        if let wristTemperatureDeltaC = summary.wristTemperatureDeltaC {
+            segments.append("Sleep wrist temperature delta \(format(wristTemperatureDeltaC, decimals: 2)) C.")
+        }
+        if let bloodOxygenPct = summary.bloodOxygenPct {
+            segments.append("Sleep blood oxygen \(format(bloodOxygenPct, decimals: 1)) pct.")
+        }
+        if let heartRateMax = summary.heartRateMax {
+            segments.append("Heart rate max \(format(heartRateMax, decimals: 0)) bpm.")
+        }
+        if let heartRateAvg = summary.heartRateAvg {
+            segments.append("Heart rate avg \(format(heartRateAvg, decimals: 0)) bpm.")
+        }
+        if let stepCount = summary.stepCount {
+            segments.append("Steps \(format(stepCount, decimals: 0)).")
+        }
+        if let basalEnergyKcal = summary.basalEnergyKcal {
+            segments.append("Basal energy \(format(basalEnergyKcal, decimals: 0)) kcal.")
         }
         if let workoutsSummary = summary.workoutsSummary {
             segments.append("Workouts: \(workoutsSummary).")

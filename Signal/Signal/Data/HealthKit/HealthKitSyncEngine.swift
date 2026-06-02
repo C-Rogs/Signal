@@ -42,7 +42,7 @@ enum HealthKitSyncEngine {
         )
 
         var deltas: [HealthKitAnchoredDelta] = []
-        for kind in HealthKitTier1Kind.allCases {
+        for kind in HealthKitTier1Kind.metricKinds {
             let delta = try await fetchAnchoredDelta(
                 kind: kind,
                 predicate: syncPredicate,
@@ -60,6 +60,18 @@ enum HealthKitSyncEngine {
             }
         }
 
+        let workoutDelta = try await fetchAnchoredDelta(
+            kind: .workout,
+            predicate: syncPredicate,
+            healthStore: healthStore,
+            modelContainer: modelContainer
+        )
+        deltas.append(workoutDelta)
+        let workoutKey = HealthKitTier1Kind.workout.anchorTypeIdentifier
+        samplesFetchedByType[workoutKey] = workoutDelta.addedSamples.count
+        deletedSamplesByType[workoutKey] = workoutDelta.deletedObjectCount
+        anchorsAdvanced[workoutKey] = workoutDelta.newAnchor != nil
+
         let hadDeletions = deltas.contains { $0.deletedObjectCount > 0 }
         if hadDeletions {
             let hkDays = try await HealthKitLookbackDayIndex.dayStarts(
@@ -70,6 +82,11 @@ enum HealthKitSyncEngine {
             affectedDays.formUnion(hkDays)
         }
 
+        let workoutsWritten = try await persistWorkouts(
+            from: workoutDelta.addedSamples,
+            modelContainer: modelContainer
+        )
+
         if affectedDays.isEmpty {
             try await persistAnchors(from: deltas, modelContainer: modelContainer)
             let elapsed = Date().timeIntervalSince(started)
@@ -79,6 +96,7 @@ enum HealthKitSyncEngine {
                 affectedDayCount: 0,
                 metricsWritten: 0,
                 vectorsWritten: 0,
+                workoutsWritten: workoutsWritten,
                 anchorsAdvanced: anchorsAdvanced,
                 elapsedSeconds: elapsed,
                 noOp: true
@@ -132,6 +150,7 @@ enum HealthKitSyncEngine {
             affectedDayCount: sortedDays.count,
             metricsWritten: metricsWritten,
             vectorsWritten: vectorsWritten,
+            workoutsWritten: workoutsWritten,
             anchorsAdvanced: anchorsAdvanced,
             elapsedSeconds: elapsed,
             noOp: false
@@ -197,6 +216,19 @@ enum HealthKitSyncEngine {
     }
 
     @MainActor
+    private static func persistWorkouts(
+        from samples: [HKSample],
+        modelContainer: ModelContainer
+    ) throws -> Int {
+        let workouts = samples.compactMap { $0 as? HKWorkout }.compactMap { AppleWorkoutMapper.from(hkWorkout: $0) }
+        guard !workouts.isEmpty else { return 0 }
+        let context = ModelContext(modelContainer)
+        let written = try AppleWorkoutStore.upsertBatch(workouts, in: context)
+        Log.sync.info("apple workouts upserted count=\(written, privacy: .public)")
+        return written
+    }
+
+    @MainActor
     private static func persistAnchors(
         from deltas: [HealthKitAnchoredDelta],
         modelContainer: ModelContainer
@@ -222,6 +254,7 @@ enum HealthKitSyncEngine {
         affectedDayCount: Int,
         metricsWritten: Int,
         vectorsWritten: Int,
+        workoutsWritten: Int,
         anchorsAdvanced: [String: Bool],
         elapsedSeconds: TimeInterval,
         noOp: Bool
@@ -239,7 +272,7 @@ enum HealthKitSyncEngine {
             .map { "\($0.key)=\($0.value)" }
             .joined(separator: " ")
         Log.sync.info(
-            "processDelta finished noOp=\(noOp, privacy: .public) fetched {\(fetchedSummary, privacy: .public)} deleted {\(deletedSummary, privacy: .public)} daysAffected=\(affectedDayCount, privacy: .public) metricsWritten=\(metricsWritten, privacy: .public) vectorsUpdated=\(vectorsWritten, privacy: .public) anchors {\(anchorSummary, privacy: .public)} elapsedSec=\(elapsedSeconds, format: .fixed(precision: 2), privacy: .public)"
+            "processDelta finished noOp=\(noOp, privacy: .public) fetched {\(fetchedSummary, privacy: .public)} deleted {\(deletedSummary, privacy: .public)} daysAffected=\(affectedDayCount, privacy: .public) metricsWritten=\(metricsWritten, privacy: .public) vectorsUpdated=\(vectorsWritten, privacy: .public) workoutsWritten=\(workoutsWritten, privacy: .public) anchors {\(anchorSummary, privacy: .public)} elapsedSec=\(elapsedSeconds, format: .fixed(precision: 2), privacy: .public)"
         )
     }
 }

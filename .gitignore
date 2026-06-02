@@ -21,3 +21,7 @@ build/
 
 # Ad-hoc xcodebuild output dirs at repo root (do not commit)
 /build_*/
+
+# Local Apple Health / Hevy fixtures (large; keep README only)
+fixtures/*
+!fixtures/README.md

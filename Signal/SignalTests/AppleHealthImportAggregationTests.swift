@@ -144,6 +144,95 @@ struct AppleHealthImportAggregationTests {
         #expect(rows.first?.summaryText == "second")
     }
 
+    @Test func bodyMassKeepsLatestSampleThatDay() {
+        let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
+        let day = Self.utcDay(2024, 6, 10)
+        state.addBodyMass(kg: 80, sampleDate: day.addingTimeInterval(3600))
+        state.addBodyMass(kg: 81, sampleDate: day.addingTimeInterval(7200))
+        state.addBodyMass(kg: 79, sampleDate: day.addingTimeInterval(5400))
+
+        let metric = state.mergedMetric(for: day)
+        #expect(metric?.bodyMassKg == 81)
+    }
+
+    @Test func stepCountAndBasalEnergySum() {
+        let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
+        let day = Self.utcDay(2024, 6, 10)
+        state.addStepCount(count: 1000, startDate: day)
+        state.addStepCount(count: 500, startDate: day)
+        state.addBasalEnergy(kcal: 1200, startDate: day)
+        state.addBasalEnergy(kcal: 300, startDate: day)
+
+        let metric = state.mergedMetric(for: day)
+        #expect(metric?.stepCount == 1500)
+        #expect(metric?.basalEnergyKcal == 1500)
+    }
+
+    @Test func heartRateDailyMaxAndMean() {
+        let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
+        let day = Self.utcDay(2024, 6, 10)
+        state.addHeartRate(bpm: 120, sampleDate: day)
+        state.addHeartRate(bpm: 80, sampleDate: day)
+
+        let metric = state.mergedMetric(for: day)
+        #expect(metric?.heartRateMax == 120)
+        #expect(metric?.heartRateAvg == 100)
+    }
+
+    @Test func sleepTimeMetricsAverageOnWakeDay() {
+        let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
+        let wakeDay = Self.utcDay(2024, 6, 11)
+        state.addSleepInterval(
+            start: wakeDay.addingTimeInterval(-8 * 3600),
+            end: wakeDay.addingTimeInterval(3600),
+            isLegacy: false
+        )
+        let duringSleep = wakeDay.addingTimeInterval(-4 * 3600)
+        state.addRespiratoryRate(brpm: 14, sampleDate: duringSleep)
+        state.addRespiratoryRate(brpm: 16, sampleDate: duringSleep.addingTimeInterval(60))
+        state.addBloodOxygenPct(pct: 96, sampleDate: duringSleep)
+        state.addBloodOxygenPct(pct: 98, sampleDate: duringSleep.addingTimeInterval(120))
+
+        let metric = state.mergedMetric(for: wakeDay)
+        #expect(metric?.respiratoryRate == 15)
+        #expect(metric?.bloodOxygenPct == 97)
+    }
+
+    @Test func appleWorkoutUpsertIsIdempotent() throws {
+        let container = try SignalModelContainer.make(inMemoryOnly: true)
+        let context = ModelContext(container)
+        let start = Self.utcDay(2024, 6, 10)
+        let end = start.addingTimeInterval(3600)
+        let first = AppleWorkout(
+            stableID: "test-run",
+            workoutTypeName: "Running",
+            startDate: start,
+            endDate: end,
+            durationSec: 3600,
+            activeEnergyKcal: 400,
+            distanceKm: 8,
+            source: AppleWorkoutStore.exportSource
+        )
+        try AppleWorkoutStore.upsertBatch([first], in: context)
+        #expect(try AppleWorkoutStore.count(in: context) == 1)
+
+        let second = AppleWorkout(
+            stableID: "test-run",
+            workoutTypeName: "Running",
+            startDate: start,
+            endDate: end,
+            durationSec: 3600,
+            activeEnergyKcal: 450,
+            distanceKm: 9,
+            source: AppleWorkoutStore.exportSource
+        )
+        try AppleWorkoutStore.upsertBatch([second], in: context)
+        #expect(try AppleWorkoutStore.count(in: context) == 1)
+        let fetched = try context.fetch(FetchDescriptor<AppleWorkout>()).first
+        #expect(fetched?.activeEnergyKcal == 450)
+        #expect(fetched?.distanceKm == 9)
+    }
+
     @Test func minimalXMLImport() throws {
         let xml = """
         <?xml version="1.0" encoding="UTF-8"?>

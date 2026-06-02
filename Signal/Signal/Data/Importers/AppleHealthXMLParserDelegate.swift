@@ -5,18 +5,28 @@ final class AppleHealthXMLParserDelegate: NSObject, XMLParserDelegate, @unchecke
     private let aggregation: DailyMetricAggregationState
     private var sourceNames = AppleHealthSourceNames()
     private var currentRecord: [String: String] = [:]
+    private var currentWorkout: [String: String] = [:]
     private var poolCounter = 0
     private let poolInterval = 200
+    private let progressInterval = 10_000
+    private var onParseProgress: (@Sendable (_ recordsScanned: Int, _ tier1RecordsKept: Int) -> Void)?
 
     private(set) var recordsScanned = 0
     private(set) var tier1RecordsKept = 0
+    private(set) var workoutsScanned = 0
+    private(set) var workoutsKept = 0
     private(set) var skippedUnitCount = 0
     private(set) var skippedDateCount = 0
+    private(set) var parsedWorkouts: [AppleWorkout] = []
 
     var isCancelled: () -> Bool = { false }
 
-    init(aggregation: DailyMetricAggregationState) {
+    init(
+        aggregation: DailyMetricAggregationState,
+        onParseProgress: (@Sendable (_ recordsScanned: Int, _ tier1RecordsKept: Int) -> Void)? = nil
+    ) {
         self.aggregation = aggregation
+        self.onParseProgress = onParseProgress
     }
 
     func parser(
@@ -26,8 +36,14 @@ final class AppleHealthXMLParserDelegate: NSObject, XMLParserDelegate, @unchecke
         qualifiedName qName: String?,
         attributes attributeDict: [String: String] = [:]
     ) {
-        guard elementName == "Record" else { return }
-        currentRecord = attributeDict
+        switch elementName {
+        case "Record":
+            currentRecord = attributeDict
+        case "Workout":
+            currentWorkout = attributeDict
+        default:
+            break
+        }
     }
 
     func parser(
@@ -36,9 +52,30 @@ final class AppleHealthXMLParserDelegate: NSObject, XMLParserDelegate, @unchecke
         namespaceURI: String?,
         qualifiedName qName: String?
     ) {
-        guard elementName == "Record" else { return }
+        switch elementName {
+        case "Record":
+            endRecord(parser)
+        case "Workout":
+            endWorkout(parser)
+        default:
+            break
+        }
+    }
+
+    func finishLogging() {
+        sourceNames.logDistinctSources()
+        Log.import.info(
+            "export workouts kept=\(self.workoutsKept, privacy: .public) scanned=\(self.workoutsScanned, privacy: .public)"
+        )
+    }
+
+    private func endRecord(_ parser: XMLParser) {
         recordsScanned += 1
         poolCounter += 1
+
+        if recordsScanned % progressInterval == 0 {
+            onParseProgress?(recordsScanned, tier1RecordsKept)
+        }
 
         if poolCounter >= poolInterval {
             poolCounter = 0
@@ -65,6 +102,22 @@ final class AppleHealthXMLParserDelegate: NSObject, XMLParserDelegate, @unchecke
             ingestQuantity(type: type, apply: ingestRestingHR)
         case "HKQuantityTypeIdentifierActiveEnergyBurned":
             ingestQuantity(type: type, apply: ingestActiveEnergy)
+        case "HKQuantityTypeIdentifierBodyMass":
+            ingestQuantity(type: type, apply: ingestBodyMass)
+        case "HKQuantityTypeIdentifierVO2Max":
+            ingestQuantity(type: type, apply: ingestVO2Max)
+        case "HKQuantityTypeIdentifierRespiratoryRate":
+            ingestQuantity(type: type, apply: ingestRespiratoryRate)
+        case "HKQuantityTypeIdentifierOxygenSaturation":
+            ingestQuantity(type: type, apply: ingestBloodOxygen)
+        case "HKQuantityTypeIdentifierAppleSleepingWristTemperature":
+            ingestQuantity(type: type, apply: ingestWristTemperature)
+        case "HKQuantityTypeIdentifierHeartRate":
+            ingestQuantity(type: type, apply: ingestHeartRate)
+        case "HKQuantityTypeIdentifierStepCount":
+            ingestQuantity(type: type, apply: ingestStepCount)
+        case "HKQuantityTypeIdentifierBasalEnergyBurned":
+            ingestQuantity(type: type, apply: ingestBasalEnergy)
         case "HKCategoryTypeIdentifierSleepAnalysis":
             ingestSleep()
         default:
@@ -74,8 +127,24 @@ final class AppleHealthXMLParserDelegate: NSObject, XMLParserDelegate, @unchecke
         currentRecord = [:]
     }
 
-    func finishLogging() {
-        sourceNames.logDistinctSources()
+    private func endWorkout(_ parser: XMLParser) {
+        workoutsScanned += 1
+        poolCounter += 1
+
+        if poolCounter >= poolInterval {
+            poolCounter = 0
+            autoreleasepool {}
+            if isCancelled() {
+                parser.abortParsing()
+                return
+            }
+        }
+
+        if let workout = AppleWorkoutMapper.fromExportAttributes(currentWorkout) {
+            parsedWorkouts.append(workout)
+            workoutsKept += 1
+        }
+        currentWorkout = [:]
     }
 
     private typealias QuantityIngest = (Double, Date) -> Void
@@ -102,6 +171,22 @@ final class AppleHealthXMLParserDelegate: NSObject, XMLParserDelegate, @unchecke
             normalized = AppleHealthUnitNormalizer.normalizedRestingHR(value: rawValue, unit: unit)
         case "HKQuantityTypeIdentifierActiveEnergyBurned":
             normalized = AppleHealthUnitNormalizer.normalizedActiveEnergyKcal(value: rawValue, unit: unit)
+        case "HKQuantityTypeIdentifierBodyMass":
+            normalized = AppleHealthUnitNormalizer.normalizedBodyMassKg(value: rawValue, unit: unit)
+        case "HKQuantityTypeIdentifierVO2Max":
+            normalized = AppleHealthUnitNormalizer.normalizedVO2Max(value: rawValue, unit: unit)
+        case "HKQuantityTypeIdentifierRespiratoryRate":
+            normalized = AppleHealthUnitNormalizer.normalizedRespiratoryRate(value: rawValue, unit: unit)
+        case "HKQuantityTypeIdentifierOxygenSaturation":
+            normalized = AppleHealthUnitNormalizer.normalizedBloodOxygenPct(value: rawValue, unit: unit)
+        case "HKQuantityTypeIdentifierAppleSleepingWristTemperature":
+            normalized = AppleHealthUnitNormalizer.normalizedWristTemperatureDeltaC(value: rawValue, unit: unit)
+        case "HKQuantityTypeIdentifierHeartRate":
+            normalized = AppleHealthUnitNormalizer.normalizedHeartRate(value: rawValue, unit: unit)
+        case "HKQuantityTypeIdentifierStepCount":
+            normalized = AppleHealthUnitNormalizer.normalizedStepCount(value: rawValue, unit: unit)
+        case "HKQuantityTypeIdentifierBasalEnergyBurned":
+            normalized = AppleHealthUnitNormalizer.normalizedBasalEnergyKcal(value: rawValue, unit: unit)
         default:
             normalized = nil
         }
@@ -123,6 +208,42 @@ final class AppleHealthXMLParserDelegate: NSObject, XMLParserDelegate, @unchecke
 
     private func ingestActiveEnergy(value: Double, startDate: Date) {
         aggregation.addActiveEnergy(kcal: value, startDate: startDate)
+    }
+
+    private func ingestBodyMass(value: Double, startDate: Date) {
+        let endString = currentRecord["endDate"]
+        let sampleDate = endString.flatMap { AppleHealthDateParser.parse($0) } ?? startDate
+        aggregation.addBodyMass(kg: value, sampleDate: sampleDate)
+    }
+
+    private func ingestVO2Max(value: Double, startDate: Date) {
+        let endString = currentRecord["endDate"]
+        let sampleDate = endString.flatMap { AppleHealthDateParser.parse($0) } ?? startDate
+        aggregation.addVO2Max(value: value, sampleDate: sampleDate)
+    }
+
+    private func ingestRespiratoryRate(value: Double, startDate: Date) {
+        aggregation.addRespiratoryRate(brpm: value, sampleDate: startDate)
+    }
+
+    private func ingestBloodOxygen(value: Double, startDate: Date) {
+        aggregation.addBloodOxygenPct(pct: value, sampleDate: startDate)
+    }
+
+    private func ingestWristTemperature(value: Double, startDate: Date) {
+        aggregation.addWristTemperatureDeltaC(delta: value, sampleDate: startDate)
+    }
+
+    private func ingestHeartRate(value: Double, startDate: Date) {
+        aggregation.addHeartRate(bpm: value, sampleDate: startDate)
+    }
+
+    private func ingestStepCount(value: Double, startDate: Date) {
+        aggregation.addStepCount(count: value, startDate: startDate)
+    }
+
+    private func ingestBasalEnergy(value: Double, startDate: Date) {
+        aggregation.addBasalEnergy(kcal: value, startDate: startDate)
     }
 
     private func ingestSleep() {
@@ -170,7 +291,8 @@ enum AppleHealthXMLParser {
     nonisolated static func parse(
         fileURL: URL,
         aggregation: DailyMetricAggregationState,
-        isCancelled: @escaping () -> Bool
+        isCancelled: @escaping () -> Bool,
+        onParseProgress: (@Sendable (_ recordsScanned: Int, _ tier1RecordsKept: Int) -> Void)? = nil
     ) throws -> AppleHealthXMLParserDelegate {
         let hasScope = fileURL.startAccessingSecurityScopedResource()
         if !hasScope {
@@ -188,7 +310,10 @@ enum AppleHealthXMLParser {
         stream.open()
         defer { stream.close() }
 
-        let delegate = AppleHealthXMLParserDelegate(aggregation: aggregation)
+        let delegate = AppleHealthXMLParserDelegate(
+            aggregation: aggregation,
+            onParseProgress: onParseProgress
+        )
         delegate.isCancelled = isCancelled
 
         let parser = XMLParser(stream: stream)

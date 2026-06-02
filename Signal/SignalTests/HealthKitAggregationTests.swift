@@ -29,6 +29,26 @@ struct HealthKitAggregationTests {
         #expect(metric?.activeEnergy_kcal == 15.5)
     }
 
+    @Test func bodyMassLatestMatchesXMLRules() {
+        let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
+        let day = Self.utcDay(2024, 6, 10)
+        state.addBodyMass(kg: 77, sampleDate: day)
+        state.addBodyMass(kg: 78, sampleDate: day.addingTimeInterval(100))
+
+        let metric = state.mergedMetric(for: day)
+        #expect(metric?.bodyMassKg == 78)
+    }
+
+    @Test func stepCountSumMatchesXMLRules() {
+        let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
+        let day = Self.utcDay(2024, 6, 10)
+        state.addStepCount(count: 200, startDate: day)
+        state.addStepCount(count: 300, startDate: day)
+
+        let metric = state.mergedMetric(for: day)
+        #expect(metric?.stepCount == 500)
+    }
+
     @Test func sleepWakeDayMatchesXMLRules() {
         let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
         let monday = Self.utcDay(2024, 6, 10)
