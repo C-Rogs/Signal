@@ -17,6 +17,16 @@ final class DailyMetric {
     var heartRateAvg: Double?
     var stepCount: Double?
     var basalEnergyKcal: Double?
+    var bodyFatPercentage: Double?
+    var leanBodyMassKg: Double?
+    var walkingHeartRateAvg: Double?
+    var appleExerciseMinutes: Double?
+    var appleStandHours: Double?
+    var physicalEffort: Double?
+    var timeInDaylightMin: Double?
+    var sleepingBreathingDisturbances: Double?
+    var bloodPressureSystolic: Double?
+    var bloodPressureDiastolic: Double?
     var source: String
 
     init(
@@ -34,6 +44,16 @@ final class DailyMetric {
         heartRateAvg: Double? = nil,
         stepCount: Double? = nil,
         basalEnergyKcal: Double? = nil,
+        bodyFatPercentage: Double? = nil,
+        leanBodyMassKg: Double? = nil,
+        walkingHeartRateAvg: Double? = nil,
+        appleExerciseMinutes: Double? = nil,
+        appleStandHours: Double? = nil,
+        physicalEffort: Double? = nil,
+        timeInDaylightMin: Double? = nil,
+        sleepingBreathingDisturbances: Double? = nil,
+        bloodPressureSystolic: Double? = nil,
+        bloodPressureDiastolic: Double? = nil,
         source: String
     ) {
         self.date = date
@@ -50,6 +70,16 @@ final class DailyMetric {
         self.heartRateAvg = heartRateAvg
         self.stepCount = stepCount
         self.basalEnergyKcal = basalEnergyKcal
+        self.bodyFatPercentage = bodyFatPercentage
+        self.leanBodyMassKg = leanBodyMassKg
+        self.walkingHeartRateAvg = walkingHeartRateAvg
+        self.appleExerciseMinutes = appleExerciseMinutes
+        self.appleStandHours = appleStandHours
+        self.physicalEffort = physicalEffort
+        self.timeInDaylightMin = timeInDaylightMin
+        self.sleepingBreathingDisturbances = sleepingBreathingDisturbances
+        self.bloodPressureSystolic = bloodPressureSystolic
+        self.bloodPressureDiastolic = bloodPressureDiastolic
         self.source = source
     }
 }

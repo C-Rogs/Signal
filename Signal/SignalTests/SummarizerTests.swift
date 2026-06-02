@@ -67,6 +67,46 @@ Health day 2024-06-15. HRV SDNN 48.5 ms. Resting HR 54 bpm. Active energy 450 kc
 """)
     }
 
+    @Test func nutritionOnlyDayProducesNonEmptySummary() {
+        let day = SummarizerTestFixtures.utcDay(year: 2024, month: 7, day: 1)
+        let nutrition = DailyNutrition(
+            date: day,
+            dietaryEnergyKcal: 2100,
+            proteinG: 140,
+            source: "unit-test"
+        )
+        let (_, text) = Summarizer.summarize(
+            day: day,
+            metric: nil,
+            nutrition: nutrition,
+            calendar: SummarizerTestFixtures.utcCalendar
+        )
+        #expect(text.contains("Health day 2024-07-01."))
+        #expect(text.contains("Nutrition:"))
+        #expect(text.contains("2100 kcal"))
+    }
+
+    @Test func workoutOnlyDayProducesNonEmptySummary() {
+        let day = SummarizerTestFixtures.utcDay(year: 2024, month: 7, day: 2)
+        let workout = AppleWorkout(
+            stableID: "unit-run",
+            activityType: "Running",
+            startDate: day.addingTimeInterval(3600),
+            endDate: day.addingTimeInterval(7200),
+            durationSec: 3600,
+            distanceKm: 10,
+            source: "unit-test"
+        )
+        let (_, text) = Summarizer.summarize(
+            day: day,
+            metric: nil,
+            appleWorkouts: [workout],
+            calendar: SummarizerTestFixtures.utcCalendar
+        )
+        #expect(text.contains("Apple workouts:"))
+        #expect(text.contains("Running"))
+    }
+
     @Test func missingMetricsProduceCleanSummary() throws {
         let metric = DailyMetric(
             date: SummarizerTestFixtures.utcDay(year: 2024, month: 1, day: 2),

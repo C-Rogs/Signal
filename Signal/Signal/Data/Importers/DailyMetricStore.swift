@@ -27,6 +27,16 @@ enum DailyMetricStore {
             existing.heartRateAvg = metric.heartRateAvg
             existing.stepCount = metric.stepCount
             existing.basalEnergyKcal = metric.basalEnergyKcal
+            existing.bodyFatPercentage = metric.bodyFatPercentage
+            existing.leanBodyMassKg = metric.leanBodyMassKg
+            existing.walkingHeartRateAvg = metric.walkingHeartRateAvg
+            existing.appleExerciseMinutes = metric.appleExerciseMinutes
+            existing.appleStandHours = metric.appleStandHours
+            existing.physicalEffort = metric.physicalEffort
+            existing.timeInDaylightMin = metric.timeInDaylightMin
+            existing.sleepingBreathingDisturbances = metric.sleepingBreathingDisturbances
+            existing.bloodPressureSystolic = metric.bloodPressureSystolic
+            existing.bloodPressureDiastolic = metric.bloodPressureDiastolic
             existing.source = metric.source
         } else {
             context.insert(metric)

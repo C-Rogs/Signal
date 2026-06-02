@@ -61,7 +61,9 @@ ObjectBox was dropped (corpus is ~3–4k vectors; brute-force cosine is enough).
 
 ## V1 metric expansion (pre-M8)
 
-- `DailyMetric` optional fields: body mass, VO2 max, sleep respiratory rate, wrist temp delta, SpO2, HR max/avg, steps, basal energy
-- `AppleWorkout` SwiftData model; XML export + live HK workout ingest (separate from Hevy)
-- Shared `DailyMetricAggregationState` rules in XML import and `HealthKitSampleIngestor`
-- `Summarizer` / `DailySummary` include new fields when present
+- `DailyMetric` expanded scalars (body comp, cardio, activity/load, sleep recovery, BP)
+- `DailyNutrition` model (daily macro sums, ~Cronometer/MyFitnessPal days)
+- `AppleWorkout` with `activityType`, run mechanics, XML + live HK ingest (separate from Hevy)
+- Shared `DailyMetricAggregationState` + `DailyNutritionAggregationState` in XML and `HealthKitSampleIngestor`
+- `Summarizer` / `DailySummary`: nutrition, load, recovery, Apple workouts; embed union of metric/nutrition/workout days
+- Re-import: delete app, reinstall, re-grant HealthKit, import `export.xml` (no SwiftData migration for schema changes)

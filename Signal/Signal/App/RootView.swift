@@ -1,71 +1,84 @@
 import os
 import SwiftUI
+import UIKit
 
 struct RootView: View {
     @Environment(HealthKitManager.self) private var healthKitManager
     @Environment(\.scenePhase) private var scenePhase
     @Bindable private var downloadState = EmbeddingDownloadState.shared
+    @State private var showImport = false
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Color("Background")
-                    .ignoresSafeArea()
-                VStack(spacing: 16) {
-                    Text("Signal")
-                        .font(.displayLarge)
-                        .foregroundStyle(Color("TextPrimary"))
+        ZStack {
+            Color.black
+                .ignoresSafeArea()
 
-                    embeddingStatusLine
+            VStack(spacing: 20) {
+                Text("Signal")
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
 
-                    NavigationLink("Import Health Data") {
-                        ImportView()
-                    }
-                    .font(.cardLabel)
-                    .foregroundStyle(Color("Primary"))
+                embeddingStatusLine
+
+                Button {
+                    showImport = true
+                } label: {
+                    Text("Import Health Data")
+                        .font(.cardLabel)
+                        .frame(maxWidth: .infinity)
                 }
-
-                if downloadState.isDownloading {
-                    EmbeddingDownloadOverlay(state: downloadState)
-                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color("Primary"))
+                .disabled(downloadState.isLoadingEmbeddings)
             }
+            .padding(.horizontal, 24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
+        .preferredColorScheme(.dark)
         .onAppear {
+            paintHostWindowBlack()
             Log.ui.info("Root view appeared")
             healthKitManager.refreshAccessState()
+            healthKitManager.activateBackgroundObserversIfNeeded()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
+                paintHostWindowBlack()
                 healthKitManager.refreshAccessState()
                 healthKitManager.syncOnForegroundIfReady()
             }
         }
+        .fullScreenCover(isPresented: $showImport) {
+            NavigationStack {
+                ImportView()
+            }
+            .preferredColorScheme(.dark)
+        }
         .task(id: downloadState.retryGeneration) {
             guard !EmbeddingBackend.useNLContextualEmbeddingFallback else { return }
-            await preloadEmbeddingModel()
+            await runEmbeddingPreloadDeferred()
         }
     }
 
     @ViewBuilder
     private var embeddingStatusLine: some View {
         switch downloadState.phase {
-        case .idle:
-            if !EmbeddingBackend.useNLContextualEmbeddingFallback {
-                Text("Preparing on-device embeddings…")
-                    .font(.cardLabel)
-                    .foregroundStyle(Color("TextSecondary"))
-            }
-        case .downloading:
-            EmptyView()
+        case .idle, .downloading:
+            EmbeddingLoadProgressView(
+                fractionCompleted: downloadState.fractionCompleted,
+                message: downloadState.statusMessage.isEmpty
+                    ? "Preparing on-device embeddings"
+                    : downloadState.statusMessage
+            )
         case .ready:
             Text("Embeddings ready")
                 .font(.cardLabel)
-                .foregroundStyle(Color("TextSecondary"))
+                .foregroundStyle(.white.opacity(0.72))
         case .failed:
             VStack(spacing: 12) {
                 Text(downloadState.errorMessage ?? "Embedding model could not load.")
                     .font(.cardLabel)
-                    .foregroundStyle(Color("TextSecondary"))
+                    .foregroundStyle(.white.opacity(0.72))
                     .multilineTextAlignment(.center)
                 Button("Retry") {
                     downloadState.requestRetry()
@@ -73,11 +86,14 @@ struct RootView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(Color("Primary"))
             }
-            .padding(.horizontal, 24)
         }
     }
 
-    private func preloadEmbeddingModel() async {
+    private func runEmbeddingPreloadDeferred() async {
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(500))
+        downloadState.begin(message: "Preparing on-device embeddings")
+        Log.ui.info("embedding preload started")
         do {
             _ = try await GemmaEmbeddingService.shared.ensureLoaded()
             Log.ui.info("embedding preload finished")
@@ -87,39 +103,51 @@ struct RootView: View {
             )
         }
     }
-}
 
-private struct EmbeddingDownloadOverlay: View {
-    let state: EmbeddingDownloadState
-
-    var body: some View {
-        VStack(spacing: 12) {
-            if state.fractionCompleted > 0 {
-                ProgressView(value: state.fractionCompleted)
-                    .progressViewStyle(.linear)
-                    .tint(Color("Primary"))
-            } else {
-                ProgressView()
-                    .tint(Color("Primary"))
-            }
-            Text(state.statusMessage)
-                .font(.cardLabel)
-                .foregroundStyle(Color("TextSecondary"))
-                .multilineTextAlignment(.center)
+    private func paintHostWindowBlack() {
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
+            return
         }
-        .padding(24)
-        .background(Color("SurfaceElevated"))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .padding(32)
+        for window in scene.windows {
+            window.backgroundColor = .black
+        }
     }
 }
 
-#Preview("Light") {
-    RootView()
-        .preferredColorScheme(.light)
+private struct EmbeddingLoadProgressView: View {
+    let fractionCompleted: Double
+    let message: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            if fractionCompleted > 0 {
+                ProgressView(value: fractionCompleted)
+                    .progressViewStyle(.linear)
+                    .tint(Color("Primary"))
+                    .frame(height: 6)
+                Text("\(Int(fractionCompleted * 100))%")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.6))
+            } else {
+                ProgressView()
+                    .controlSize(.regular)
+                    .tint(Color("Primary"))
+                    .frame(width: 28, height: 28)
+            }
+            Text(message)
+                .font(.cardLabel)
+                .foregroundStyle(.white.opacity(0.72))
+                .multilineTextAlignment(.center)
+            Text("First launch can take a few minutes. The app is still working.")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.45))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: 360)
+    }
 }
 
 #Preview("Dark") {
     RootView()
-        .preferredColorScheme(.dark)
+        .environment(HealthKitManager(modelContainer: try! SignalModelContainer.make(inMemoryOnly: true)))
 }

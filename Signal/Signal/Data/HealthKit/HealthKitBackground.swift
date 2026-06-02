@@ -9,6 +9,7 @@ final class HealthKitBackgroundCoordinator {
     private var observerQueries: [HKObserverQuery] = []
     private var protectedDataObserver: NSObjectProtocol?
     private var foregroundObserver: NSObjectProtocol?
+    private var hasStarted = false
     private let onDeferredSync: @MainActor () -> Void
 
     init(healthStore: HKHealthStore, onDeferredSync: @escaping @MainActor () -> Void) {
@@ -16,11 +17,14 @@ final class HealthKitBackgroundCoordinator {
         self.onDeferredSync = onDeferredSync
     }
 
-    func start() {
+    func startIfNeeded() {
         guard HKHealthStore.isHealthDataAvailable() else { return }
+        guard !hasStarted else { return }
+        hasStarted = true
         registerObservers()
         enableBackgroundDelivery()
         observeUnlockAndForeground()
+        Log.sync.info("HealthKit background observers started after authorization")
     }
 
     func stop() {
@@ -43,17 +47,22 @@ final class HealthKitBackgroundCoordinator {
             let sampleType = kind.sampleType
             let typeIdentifier = kind.anchorTypeIdentifier
             let query = HKObserverQuery(sampleType: sampleType, predicate: nil) { _, completionHandler, error in
+                defer { completionHandler() }
                 if let error {
+                    if HealthKitAuthorization.isAuthorizationNotDeterminedError(error) {
+                        Log.sync.debug(
+                            "observer skipped type=\(typeIdentifier, privacy: .public); authorization not determined"
+                        )
+                        return
+                    }
                     Log.sync.error(
                         "observer error type=\(typeIdentifier, privacy: .public) error=\(String(describing: error), privacy: .public)"
                     )
-                } else {
-                    Log.sync.info("observer fired type=\(typeIdentifier, privacy: .public)")
+                    return
                 }
+                Log.sync.info("observer fired type=\(typeIdentifier, privacy: .public)")
                 HealthKitDirtyFlagStore.setDirty()
                 Log.sync.info("dirty flag set type=\(typeIdentifier, privacy: .public)")
-                completionHandler()
-                Log.sync.info("completionHandler called type=\(typeIdentifier, privacy: .public)")
             }
             observerQueries.append(query)
             healthStore.execute(query)
@@ -63,6 +72,7 @@ final class HealthKitBackgroundCoordinator {
 
     private func enableBackgroundDelivery() {
         for kind in HealthKitTier1Kind.allCases {
+            guard kind.supportsBackgroundDelivery else { continue }
             let sampleType = kind.sampleType
             healthStore.enableBackgroundDelivery(for: sampleType, frequency: .hourly) { success, error in
                 if let error {

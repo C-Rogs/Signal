@@ -8,7 +8,7 @@ enum HealthKitAuthorization {
             return .unavailable
         }
 
-        let readTypes = HealthKitTier1Kind.readObjectTypes
+        let readTypes = HealthKitTier1Kind.authorizationReadTypes
         return await withCheckedContinuation { continuation in
             healthStore.getRequestStatusForAuthorization(toShare: [], read: readTypes) { status, error in
                 if let error {

@@ -35,12 +35,11 @@ final class HealthKitManager {
             defaultCalendar.timeZone = .current
             self.calendar = defaultCalendar
         }
-        refreshAccessState()
         let coordinator = HealthKitBackgroundCoordinator(healthStore: healthStore) { [weak self] in
             self?.syncDeferredIfDirty()
         }
         backgroundCoordinator = coordinator
-        coordinator.start()
+        refreshAccessState()
     }
 
     func refreshAccessState() {
@@ -53,6 +52,11 @@ final class HealthKitManager {
         accessState = await HealthKitAuthorization.resolveAccessState(healthStore: healthStore)
     }
 
+    func activateBackgroundObserversIfNeeded() {
+        guard accessState == .ready else { return }
+        backgroundCoordinator?.startIfNeeded()
+    }
+
     func requestAuthorization() async {
         guard HKHealthStore.isHealthDataAvailable() else {
             accessState = .unavailable
@@ -62,10 +66,11 @@ final class HealthKitManager {
         do {
             try await healthStore.requestAuthorization(
                 toShare: [],
-                read: HealthKitTier1Kind.readObjectTypes
+                read: HealthKitTier1Kind.authorizationReadTypes
             )
             Log.healthkit.info("HealthKit read authorization requested for Tier 1 types")
             accessState = .ready
+            activateBackgroundObserversIfNeeded()
         } catch {
             Log.healthkit.error(
                 "HealthKit authorization request failed: \(String(describing: error), privacy: .public)"
@@ -88,10 +93,12 @@ final class HealthKitManager {
     }
 
     func syncOnForegroundIfReady() {
+        guard accessState == .ready else { return }
         syncDeferredIfDirty()
     }
 
     func syncDeferredIfDirty() {
+        guard accessState == .ready else { return }
         guard HealthKitDirtyFlagStore.isDirty else { return }
         guard !isSyncing else { return }
         syncTask?.cancel()
@@ -108,9 +115,13 @@ final class HealthKitManager {
 
         await refreshAccessStateAsync()
         if accessState == .notDetermined {
+            guard trigger == "manual" else {
+                Log.sync.info("sync skipped trigger=\(trigger, privacy: .public); HealthKit authorization not granted")
+                return
+            }
             await requestAuthorization()
         }
-        guard accessState != .unavailable else { return }
+        guard accessState == .ready else { return }
 
         isSyncing = true
         lastSyncErrorMessage = nil

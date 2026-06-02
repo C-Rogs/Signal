@@ -205,7 +205,7 @@ struct AppleHealthImportAggregationTests {
         let end = start.addingTimeInterval(3600)
         let first = AppleWorkout(
             stableID: "test-run",
-            workoutTypeName: "Running",
+            activityType: "Running",
             startDate: start,
             endDate: end,
             durationSec: 3600,
@@ -218,7 +218,7 @@ struct AppleHealthImportAggregationTests {
 
         let second = AppleWorkout(
             stableID: "test-run",
-            workoutTypeName: "Running",
+            activityType: "Running",
             startDate: start,
             endDate: end,
             durationSec: 3600,
@@ -231,6 +231,126 @@ struct AppleHealthImportAggregationTests {
         let fetched = try context.fetch(FetchDescriptor<AppleWorkout>()).first
         #expect(fetched?.activeEnergyKcal == 450)
         #expect(fetched?.distanceKm == 9)
+    }
+
+    @Test func bodyFatNormalizesFractionToPercent() {
+        #expect(AppleHealthUnitNormalizer.normalizedBodyFatPercentage(value: 0.14, unit: "%") == 14)
+        let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
+        let day = Self.utcDay(2024, 6, 10)
+        state.addBodyFatPercentage(pct: 14, sampleDate: day)
+        let metric = state.mergedMetric(for: day)
+        #expect(metric?.bodyFatPercentage == 14)
+    }
+
+    @Test func nutritionSumsPerDay() {
+        let state = DailyNutritionAggregationState(calendar: Self.utcCalendar)
+        let day = Self.utcDay(2024, 6, 10)
+        state.addDietaryEnergy(kcal: 100, startDate: day)
+        state.addDietaryEnergy(kcal: 50, startDate: day)
+        state.addProtein(g: 30, startDate: day)
+        let nutrition = state.mergedNutrition(for: day)
+        #expect(nutrition?.dietaryEnergyKcal == 150)
+        #expect(nutrition?.proteinG == 30)
+    }
+
+    @Test func standHourCountsStoodOnly() {
+        let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
+        let day = Self.utcDay(2024, 6, 10)
+        state.addAppleStandHour(stood: true, startDate: day)
+        state.addAppleStandHour(stood: true, startDate: day.addingTimeInterval(3600))
+        state.addAppleStandHour(stood: false, startDate: day.addingTimeInterval(7200))
+        let metric = state.mergedMetric(for: day)
+        #expect(metric?.appleStandHours == 2)
+    }
+
+    @Test func bloodPressureKeepsLatestPair() {
+        let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
+        let day = Self.utcDay(2024, 6, 10)
+        state.addBloodPressure(systolic: 120, diastolic: 80, sampleDate: day)
+        state.addBloodPressure(systolic: 130, diastolic: 85, sampleDate: day.addingTimeInterval(3600))
+        let metric = state.mergedMetric(for: day)
+        #expect(metric?.bloodPressureSystolic == 130)
+        #expect(metric?.bloodPressureDiastolic == 85)
+    }
+
+    @Test func sleepVitalCalendarDayFallbackWithoutSleep() {
+        let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
+        let day = Self.utcDay(2024, 6, 10)
+        state.addRespiratoryRate(brpm: 15, sampleDate: day.addingTimeInterval(3600))
+        let metric = state.mergedMetric(for: day)
+        #expect(metric?.respiratoryRate == 15)
+    }
+
+    @Test func physicalEffortMeanOfNonZeroSamples() {
+        let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
+        let day = Self.utcDay(2024, 6, 10)
+        state.addPhysicalEffort(value: 0, startDate: day)
+        state.addPhysicalEffort(value: 4, startDate: day)
+        state.addPhysicalEffort(value: 6, startDate: day)
+        let metric = state.mergedMetric(for: day)
+        #expect(metric?.physicalEffort == 5)
+    }
+
+    @Test func nutritionOnlyDayEmbedsVector() async throws {
+        let container = try SignalModelContainer.make(inMemoryOnly: true)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let day = Self.utcDay(2024, 8, 1)
+        let nutrition = DailyNutrition(
+            date: day,
+            dietaryEnergyKcal: 1800,
+            proteinG: 120,
+            source: DailyMetricAggregator.importSource
+        )
+        try await MainActor.run {
+            let context = ModelContext(container)
+            try DailyNutritionStore.upsertBatch([nutrition], in: context)
+        }
+
+        let service = DeterministicHashEmbeddingService()
+        let written = try await DailyImportEmbeddingPipeline.embedAndUpsert(
+            dayStarts: [day],
+            modelContainer: container,
+            calendar: calendar,
+            embeddingService: service
+        ) { _ in }
+
+        #expect(written == 1)
+        let vectorCount = try await MainActor.run {
+            let context = ModelContext(container)
+            return try SwiftDataVectorStore(context: context).count()
+        }
+        #expect(vectorCount == 1)
+    }
+
+    @Test func workoutOnlyDayEmbedsVector() async throws {
+        let container = try SignalModelContainer.make(inMemoryOnly: true)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let day = Self.utcDay(2024, 8, 2)
+        let workout = AppleWorkout(
+            stableID: "embed-run",
+            activityType: "Running",
+            startDate: day.addingTimeInterval(3600),
+            endDate: day.addingTimeInterval(5400),
+            durationSec: 1800,
+            distanceKm: 5,
+            source: AppleWorkoutStore.exportSource
+        )
+        try await MainActor.run {
+            let context = ModelContext(container)
+            try AppleWorkoutStore.upsertBatch([workout], in: context)
+        }
+
+        let service = DeterministicHashEmbeddingService()
+        let written = try await DailyImportEmbeddingPipeline.embedAndUpsert(
+            dayStarts: [day],
+            modelContainer: container,
+            calendar: calendar,
+            embeddingService: service
+        ) { _ in }
+
+        #expect(written == 1)
     }
 
     @Test func minimalXMLImport() throws {
@@ -246,7 +366,12 @@ struct AppleHealthImportAggregationTests {
         defer { try? FileManager.default.removeItem(at: url) }
 
         let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
-        let delegate = try AppleHealthXMLParser.parse(fileURL: url, aggregation: state) { false }
+        let nutrition = DailyNutritionAggregationState(calendar: Self.utcCalendar)
+        let delegate = try AppleHealthXMLParser.parse(
+            fileURL: url,
+            aggregation: state,
+            nutritionAggregation: nutrition
+        ) { false }
         #expect(delegate.recordsScanned == 2)
         #expect(delegate.tier1RecordsKept == 2)
         #expect(state.dayCount >= 1)
@@ -262,6 +387,33 @@ private enum VectorStoreTestsHelper {
     static func unitVector(axis: Int) -> [Float] {
         var values = [Float](repeating: 0, count: HealthVectorDimension.embeddingGemma)
         values[axis] = 1
+        return values
+    }
+}
+
+private struct DeterministicHashEmbeddingService: EmbeddingService {
+    let outputDimension = HealthVectorDimension.embeddingGemma
+
+    func embed(_ text: String, kind: EmbeddingKind) async throws -> [Float] {
+        var vector = [Float](repeating: 0, count: outputDimension)
+        let hash = abs(text.hashValue)
+        vector[hash % outputDimension] = 1
+        return vector
+    }
+
+    func embedBatch(_ texts: [String], kind: EmbeddingKind) async throws -> [[Float]] {
+        try await texts.asyncMap { try await embed($0, kind: kind) }
+    }
+}
+
+private extension Sequence {
+    func asyncMap<T>(
+        _ transform: (Element) async throws -> T
+    ) async rethrows -> [T] {
+        var values: [T] = []
+        for element in self {
+            try await values.append(transform(element))
+        }
         return values
     }
 }

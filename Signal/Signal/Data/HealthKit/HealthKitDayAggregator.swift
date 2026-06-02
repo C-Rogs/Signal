@@ -45,7 +45,50 @@ enum HealthKitDayAggregator {
             }
         }
 
+        let bpPredicate = HKQuery.predicateForSamples(
+            withStart: dayStart,
+            end: dayEnd,
+            options: .strictStartDate
+        )
+        let bloodPressure = try await HealthKitSampleFetcher.fetchSamples(
+            kind: .bloodPressure,
+            predicate: bpPredicate,
+            healthStore: healthStore
+        )
+        for sample in bloodPressure {
+            guard let correlation = sample as? HKCorrelation else { continue }
+            HealthKitSampleIngestor.ingestBloodPressure(correlation, into: state)
+        }
+
         return state.mergedMetric(for: dayStart, source: source)
+    }
+
+    static func aggregateNutrition(
+        dayStart: Date,
+        healthStore: HKHealthStore,
+        calendar: Calendar
+    ) async throws -> DailyNutrition? {
+        let state = DailyNutritionAggregationState(calendar: calendar)
+        let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) ?? dayStart.addingTimeInterval(86400)
+        let predicate = HKQuery.predicateForSamples(
+            withStart: dayStart,
+            end: dayEnd,
+            options: .strictStartDate
+        )
+
+        for kind in HealthKitTier1Kind.nutritionKinds {
+            let samples = try await HealthKitSampleFetcher.fetchSamples(
+                kind: kind,
+                predicate: predicate,
+                healthStore: healthStore
+            )
+            for sample in samples {
+                guard calendar.startOfDay(for: sample.startDate) == dayStart else { continue }
+                HealthKitSampleIngestor.ingestNutrition(sample, into: state)
+            }
+        }
+
+        return state.mergedNutrition(for: dayStart, source: DailyMetricAggregator.healthKitLiveSource)
     }
 }
 

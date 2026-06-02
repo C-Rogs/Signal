@@ -22,10 +22,72 @@ enum HealthKitSampleIngestor {
         case let quantity as HKQuantitySample:
             ingestQuantity(quantity, into: aggregation)
         case let category as HKCategorySample:
-            ingestSleep(category, into: aggregation)
+            if category.categoryType == HKCategoryType(.appleStandHour) {
+                ingestStandHour(category, into: aggregation)
+            } else {
+                ingestSleep(category, into: aggregation)
+            }
         default:
             break
         }
+    }
+
+    static func ingestNutrition(_ sample: HKSample, into aggregation: DailyNutritionAggregationState) {
+        guard let quantity = sample as? HKQuantitySample else { return }
+        let identifier = quantity.quantityType.identifier
+        switch identifier {
+        case HKQuantityTypeIdentifier.dietaryEnergyConsumed.rawValue:
+            guard let value = normalizedActiveEnergyKcal(from: quantity.quantity) else { return }
+            aggregation.addDietaryEnergy(kcal: value, startDate: quantity.startDate)
+        case HKQuantityTypeIdentifier.dietaryProtein.rawValue:
+            guard let value = normalizedGrams(from: quantity.quantity) else { return }
+            aggregation.addProtein(g: value, startDate: quantity.startDate)
+        case HKQuantityTypeIdentifier.dietaryCarbohydrates.rawValue:
+            guard let value = normalizedGrams(from: quantity.quantity) else { return }
+            aggregation.addCarbs(g: value, startDate: quantity.startDate)
+        case HKQuantityTypeIdentifier.dietaryFatTotal.rawValue:
+            guard let value = normalizedGrams(from: quantity.quantity) else { return }
+            aggregation.addFatTotal(g: value, startDate: quantity.startDate)
+        case HKQuantityTypeIdentifier.dietaryFatSaturated.rawValue:
+            guard let value = normalizedGrams(from: quantity.quantity) else { return }
+            aggregation.addFatSaturated(g: value, startDate: quantity.startDate)
+        case HKQuantityTypeIdentifier.dietaryFiber.rawValue:
+            guard let value = normalizedGrams(from: quantity.quantity) else { return }
+            aggregation.addFiber(g: value, startDate: quantity.startDate)
+        case HKQuantityTypeIdentifier.dietarySugar.rawValue:
+            guard let value = normalizedGrams(from: quantity.quantity) else { return }
+            aggregation.addSugar(g: value, startDate: quantity.startDate)
+        case HKQuantityTypeIdentifier.dietarySodium.rawValue:
+            guard let value = normalizedMilligrams(from: quantity.quantity) else { return }
+            aggregation.addSodium(mg: value, startDate: quantity.startDate)
+        default:
+            break
+        }
+    }
+
+    static func ingestBloodPressure(_ correlation: HKCorrelation, into aggregation: DailyMetricAggregationState) {
+        var systolic: Double?
+        var diastolic: Double?
+        for object in correlation.objects {
+            guard let sample = object as? HKQuantitySample else { continue }
+            let mmHg = HKUnit.millimeterOfMercury()
+            let value = sample.quantity.doubleValue(for: mmHg)
+            guard value.isFinite, value > 0 else { continue }
+            switch sample.quantityType.identifier {
+            case HKQuantityTypeIdentifier.bloodPressureSystolic.rawValue:
+                systolic = value
+            case HKQuantityTypeIdentifier.bloodPressureDiastolic.rawValue:
+                diastolic = value
+            default:
+                break
+            }
+        }
+        guard let systolic, let diastolic else { return }
+        aggregation.addBloodPressure(
+            systolic: systolic,
+            diastolic: diastolic,
+            sampleDate: correlation.startDate
+        )
     }
 
     static func ingestQuantity(_ sample: HKQuantitySample, into aggregation: DailyMetricAggregationState) {
@@ -64,9 +126,37 @@ enum HealthKitSampleIngestor {
         case HKQuantityTypeIdentifier.basalEnergyBurned.rawValue:
             guard let value = normalizedActiveEnergyKcal(from: sample.quantity) else { return }
             aggregation.addBasalEnergy(kcal: value, startDate: sample.startDate)
+        case HKQuantityTypeIdentifier.bodyFatPercentage.rawValue:
+            guard let value = normalizedBodyFatPercentage(from: sample.quantity) else { return }
+            aggregation.addBodyFatPercentage(pct: value, sampleDate: sample.endDate)
+        case HKQuantityTypeIdentifier.leanBodyMass.rawValue:
+            guard let value = normalizedBodyMassKg(from: sample.quantity) else { return }
+            aggregation.addLeanBodyMass(kg: value, sampleDate: sample.endDate)
+        case HKQuantityTypeIdentifier.walkingHeartRateAverage.rawValue:
+            guard let value = normalizedHeartRate(from: sample.quantity) else { return }
+            aggregation.addWalkingHeartRate(bpm: value, startDate: sample.startDate)
+        case HKQuantityTypeIdentifier.appleExerciseTime.rawValue:
+            guard let value = normalizedMinutes(from: sample.quantity) else { return }
+            aggregation.addAppleExerciseTime(minutes: value, startDate: sample.startDate)
+        case HKQuantityTypeIdentifier.physicalEffort.rawValue:
+            guard let value = normalizedPhysicalEffort(from: sample.quantity) else { return }
+            aggregation.addPhysicalEffort(value: value, startDate: sample.startDate)
+        case HKQuantityTypeIdentifier.timeInDaylight.rawValue:
+            guard let value = normalizedMinutes(from: sample.quantity) else { return }
+            aggregation.addTimeInDaylight(minutes: value, startDate: sample.startDate)
+        case HKQuantityTypeIdentifier.appleSleepingBreathingDisturbances.rawValue:
+            let count = HKUnit.count()
+            let value = sample.quantity.doubleValue(for: count)
+            guard value.isFinite else { return }
+            aggregation.addSleepingBreathingDisturbances(count: value, sampleDate: sample.startDate)
         default:
             break
         }
+    }
+
+    static func ingestStandHour(_ sample: HKCategorySample, into aggregation: DailyMetricAggregationState) {
+        guard sample.value == HKCategoryValueAppleStandHour.stood.rawValue else { return }
+        aggregation.addAppleStandHour(stood: true, startDate: sample.startDate)
     }
 
     static func ingestSleep(_ sample: HKCategorySample, into aggregation: DailyMetricAggregationState) {
@@ -169,6 +259,41 @@ enum HealthKitSampleIngestor {
     static func normalizedStepCount(from quantity: HKQuantity) -> Double? {
         let count = HKUnit.count()
         let value = quantity.doubleValue(for: count)
+        guard value.isFinite, value > 0 else { return nil }
+        return value
+    }
+
+    static func normalizedBodyFatPercentage(from quantity: HKQuantity) -> Double? {
+        let percent = HKUnit.percent()
+        let value = quantity.doubleValue(for: percent)
+        guard value.isFinite, value > 0 else { return nil }
+        return DailyMetricAggregator.normalizedBodyFatPercentage(value: value, unit: "%")
+    }
+
+    static func normalizedMinutes(from quantity: HKQuantity) -> Double? {
+        let minutes = HKUnit.minute()
+        let value = quantity.doubleValue(for: minutes)
+        guard value.isFinite, value > 0 else { return nil }
+        return value
+    }
+
+    static func normalizedPhysicalEffort(from quantity: HKQuantity) -> Double? {
+        let unit = HKUnit.kilocalorie().unitDivided(by: HKUnit.gramUnit(with: .kilo)).unitDivided(by: .hour())
+        let value = quantity.doubleValue(for: unit)
+        guard value.isFinite else { return nil }
+        return value
+    }
+
+    static func normalizedGrams(from quantity: HKQuantity) -> Double? {
+        let grams = HKUnit.gram()
+        let value = quantity.doubleValue(for: grams)
+        guard value.isFinite, value > 0 else { return nil }
+        return value
+    }
+
+    static func normalizedMilligrams(from quantity: HKQuantity) -> Double? {
+        let mg = HKUnit.gramUnit(with: .milli)
+        let value = quantity.doubleValue(for: mg)
         guard value.isFinite, value > 0 else { return nil }
         return value
     }

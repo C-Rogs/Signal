@@ -48,6 +48,7 @@ enum AppleHealthXMLImporter {
         onProgress(progress)
 
         let aggregation = DailyMetricAggregationState(calendar: calendar)
+        let nutritionAggregation = DailyNutritionAggregationState(calendar: calendar)
         let cancelled = { Task.isCancelled }
 
         let parseDelegate: AppleHealthXMLParserDelegate
@@ -56,6 +57,7 @@ enum AppleHealthXMLImporter {
                 try AppleHealthXMLParser.parse(
                     fileURL: fileURL,
                     aggregation: aggregation,
+                    nutritionAggregation: nutritionAggregation,
                     isCancelled: cancelled,
                     onParseProgress: { scanned, tier1 in
                         var snapshot = HealthImportProgress()
@@ -110,12 +112,30 @@ enum AppleHealthXMLImporter {
         progress.phase = .persistingMetrics
         onProgress(progress)
 
-        let dayStarts = aggregation.allDayStarts()
+        let metricDayStarts = aggregation.allDayStarts()
+        let nutritionDayStarts = nutritionAggregation.allDayStarts()
+        let workoutDayStarts = ImportDayUnion.workoutDayStarts(
+            from: parseDelegate.parsedWorkouts,
+            calendar: calendar
+        )
+        let dayStarts = ImportDayUnion.unionDayStarts(
+            metricDays: metricDayStarts,
+            nutritionDays: nutritionDayStarts,
+            workoutDays: workoutDayStarts
+        )
+
         let metricsWritten = try await DailyImportEmbeddingPipeline.persistMetrics(
-            dayStarts: dayStarts,
+            dayStarts: metricDayStarts,
             aggregation: aggregation,
             modelContainer: modelContainer
         )
+
+        let nutritionWritten = try await persistNutrition(
+            dayStarts: nutritionDayStarts,
+            aggregation: nutritionAggregation,
+            modelContainer: modelContainer
+        )
+        Log.import.info("daily nutrition persisted count=\(nutritionWritten, privacy: .public)")
 
         let workoutsWritten = try await MainActor.run {
             let context = ModelContext(modelContainer)
@@ -124,6 +144,7 @@ enum AppleHealthXMLImporter {
         Log.import.info("apple workouts persisted count=\(workoutsWritten, privacy: .public)")
 
         aggregation.releaseParsedData()
+        nutritionAggregation.releaseParsedData()
 
         progress.dailyMetricsWritten = metricsWritten
         onProgress(progress)
@@ -155,6 +176,25 @@ enum AppleHealthXMLImporter {
             cancelled: false,
             sanityWarning: nil
         )
+    }
+
+    private static func persistNutrition(
+        dayStarts: [Date],
+        aggregation: DailyNutritionAggregationState,
+        modelContainer: ModelContainer
+    ) async throws -> Int {
+        var written = 0
+        for chunk in dayStarts.chunked(into: DailyImportEmbeddingPipeline.metricBatchSize) {
+            try Task.checkCancellation()
+            let items = chunk.compactMap { aggregation.mergedNutrition(for: $0) }
+            guard !items.isEmpty else { continue }
+            let batchWritten = try await MainActor.run {
+                let context = ModelContext(modelContainer)
+                return try DailyNutritionStore.upsertBatch(items, in: context)
+            }
+            written += batchWritten
+        }
+        return written
     }
 
     private static func sanityCheck(aggregation: DailyMetricAggregationState) -> String? {
@@ -209,7 +249,19 @@ enum AppleHealthXMLImporter {
         var spotLines: [String] = []
         if let spotMetrics = try? DailyMetricStore.fetchSpotCheckDays(in: context, calendar: calendar) {
             for metric in spotMetrics {
-                let (summary, text) = Summarizer.summarize(metric: metric, calendar: calendar)
+                let nutrition = try? DailyNutritionStore.fetch(for: metric.date, in: context)
+                let appleWorkouts = (try? AppleWorkoutStore.fetchWorkouts(
+                    for: metric.date,
+                    calendar: calendar,
+                    in: context
+                )) ?? []
+                let (summary, text) = Summarizer.summarize(
+                    day: metric.date,
+                    metric: metric,
+                    nutrition: nutrition,
+                    appleWorkouts: appleWorkouts,
+                    calendar: calendar
+                )
                 if let data = try? Summarizer.encodeJSON(summary),
                    let json = String(data: data, encoding: .utf8)
                 {

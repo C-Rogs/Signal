@@ -42,7 +42,8 @@ enum HealthKitSyncEngine {
         )
 
         var deltas: [HealthKitAnchoredDelta] = []
-        for kind in HealthKitTier1Kind.metricKinds {
+        var workoutDelta: HealthKitAnchoredDelta?
+        for kind in HealthKitTier1Kind.anchoredSyncKinds {
             let delta = try await fetchAnchoredDelta(
                 kind: kind,
                 predicate: syncPredicate,
@@ -55,22 +56,22 @@ enum HealthKitSyncEngine {
             deletedSamplesByType[key] = delta.deletedObjectCount
             anchorsAdvanced[key] = delta.newAnchor != nil
 
+            if kind == .workout {
+                workoutDelta = delta
+                continue
+            }
+
             for sample in delta.addedSamples {
                 affectedDays.insert(HealthKitSampleIngestor.affectedWakeDay(for: sample, calendar: calendar))
             }
         }
 
-        let workoutDelta = try await fetchAnchoredDelta(
+        let resolvedWorkoutDelta = workoutDelta ?? HealthKitAnchoredDelta(
             kind: .workout,
-            predicate: syncPredicate,
-            healthStore: healthStore,
-            modelContainer: modelContainer
+            addedSamples: [],
+            deletedObjectCount: 0,
+            newAnchor: nil
         )
-        deltas.append(workoutDelta)
-        let workoutKey = HealthKitTier1Kind.workout.anchorTypeIdentifier
-        samplesFetchedByType[workoutKey] = workoutDelta.addedSamples.count
-        deletedSamplesByType[workoutKey] = workoutDelta.deletedObjectCount
-        anchorsAdvanced[workoutKey] = workoutDelta.newAnchor != nil
 
         let hadDeletions = deltas.contains { $0.deletedObjectCount > 0 }
         if hadDeletions {
@@ -82,8 +83,12 @@ enum HealthKitSyncEngine {
             affectedDays.formUnion(hkDays)
         }
 
+        for sample in resolvedWorkoutDelta.addedSamples {
+            affectedDays.insert(HealthKitSampleIngestor.affectedWakeDay(for: sample, calendar: calendar))
+        }
+
         let workoutsWritten = try await persistWorkouts(
-            from: workoutDelta.addedSamples,
+            from: resolvedWorkoutDelta.addedSamples,
             modelContainer: modelContainer
         )
 
@@ -115,7 +120,9 @@ enum HealthKitSyncEngine {
 
         let sortedDays = affectedDays.sorted()
         var metrics: [DailyMetric] = []
+        var nutritionItems: [DailyNutrition] = []
         metrics.reserveCapacity(sortedDays.count)
+        nutritionItems.reserveCapacity(sortedDays.count)
         for dayStart in sortedDays {
             if let metric = try await HealthKitDayAggregator.aggregate(
                 dayStart: dayStart,
@@ -125,12 +132,25 @@ enum HealthKitSyncEngine {
             ) {
                 metrics.append(metric)
             }
+            if let nutrition = try await HealthKitDayAggregator.aggregateNutrition(
+                dayStart: dayStart,
+                healthStore: healthStore,
+                calendar: calendar
+            ) {
+                nutritionItems.append(nutrition)
+            }
         }
 
         let metricsWritten = try await DailyImportEmbeddingPipeline.persistMetrics(
             metrics,
             modelContainer: modelContainer
         )
+
+        let nutritionWritten = try await MainActor.run {
+            let context = ModelContext(modelContainer)
+            return try DailyNutritionStore.upsertBatch(nutritionItems, in: context)
+        }
+        Log.sync.info("daily nutrition upserted count=\(nutritionWritten, privacy: .public)")
 
         let vectorsWritten = try await DailyImportEmbeddingPipeline.embedAndUpsert(
             dayStarts: sortedDays,
@@ -220,7 +240,10 @@ enum HealthKitSyncEngine {
         from samples: [HKSample],
         modelContainer: ModelContainer
     ) throws -> Int {
-        let workouts = samples.compactMap { $0 as? HKWorkout }.compactMap { AppleWorkoutMapper.from(hkWorkout: $0) }
+        let workouts = samples.compactMap { sample -> AppleWorkout? in
+            guard let hkWorkout = sample as? HKWorkout else { return nil }
+            return AppleWorkoutMapper.from(hkWorkout: hkWorkout)
+        }
         guard !workouts.isEmpty else { return 0 }
         let context = ModelContext(modelContainer)
         let written = try AppleWorkoutStore.upsertBatch(workouts, in: context)

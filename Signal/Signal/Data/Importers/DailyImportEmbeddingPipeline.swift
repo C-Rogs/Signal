@@ -57,21 +57,36 @@ enum DailyImportEmbeddingPipeline {
                 items.reserveCapacity(chunk.count)
                 for day in chunk {
                     let dayStart = calendar.startOfDay(for: day)
-                    guard let metric = try DailyMetricStore.fetchMetric(for: dayStart, in: context) else {
-                        continue
-                    }
+                    let metric = try DailyMetricStore.fetchMetric(for: dayStart, in: context)
+                    let nutrition = try DailyNutritionStore.fetch(for: dayStart, in: context)
                     let sessions = try WorkoutStore.fetchSessions(
                         for: dayStart,
                         source: workoutSource,
                         in: context
                     )
-                    let workoutSummaries = sessions.map { Summarizer.renderSessionSummary($0) }
+                    let appleWorkouts = try AppleWorkoutStore.fetchWorkouts(
+                        for: dayStart,
+                        calendar: calendar,
+                        in: context
+                    )
+                    let hevySummaries = sessions.map { Summarizer.renderSessionSummary($0) }
+
+                    guard metric != nil || nutrition != nil || !sessions.isEmpty || !appleWorkouts.isEmpty else {
+                        continue
+                    }
+
                     let (_, text) = Summarizer.summarize(
+                        day: dayStart,
                         metric: metric,
-                        workoutSummaries: workoutSummaries,
+                        nutrition: nutrition,
+                        workoutSummaries: hevySummaries,
+                        appleWorkouts: appleWorkouts,
                         calendar: calendar
                     )
-                    let dayKey = Summarizer.dayKey(for: metric.date, calendar: calendar)
+                    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        continue
+                    }
+                    let dayKey = Summarizer.dayKey(for: dayStart, calendar: calendar)
                     items.append((dayKey, text))
                 }
                 return items
@@ -100,7 +115,7 @@ enum DailyImportEmbeddingPipeline {
     }
 }
 
-private extension Array {
+extension Array {
     func chunked(into size: Int) -> [[Element]] {
         guard size > 0 else { return [self] }
         var result: [[Element]] = []

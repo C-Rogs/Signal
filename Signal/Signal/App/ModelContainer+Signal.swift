@@ -3,6 +3,7 @@ import SwiftData
 enum SignalModelContainer {
     static let schema = Schema([
         DailyMetric.self,
+        DailyNutrition.self,
         AppleWorkout.self,
         RecoverySnapshot.self,
         SyncAnchor.self,

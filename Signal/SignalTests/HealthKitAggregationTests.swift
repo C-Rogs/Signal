@@ -49,6 +49,43 @@ struct HealthKitAggregationTests {
         #expect(metric?.stepCount == 500)
     }
 
+    @Test func standHourCountMatchesXMLRules() {
+        let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
+        let day = Self.utcDay(2024, 6, 10)
+        state.addAppleStandHour(stood: true, startDate: day)
+        state.addAppleStandHour(stood: true, startDate: day)
+        let metric = state.mergedMetric(for: day)
+        #expect(metric?.appleStandHours == 2)
+    }
+
+    @Test func nutritionSumMatchesXMLRules() {
+        let state = DailyNutritionAggregationState(calendar: Self.utcCalendar)
+        let day = Self.utcDay(2024, 6, 10)
+        state.addDietaryEnergy(kcal: 200, startDate: day)
+        state.addCarbs(g: 40, startDate: day)
+        let nutrition = state.mergedNutrition(for: day)
+        #expect(nutrition?.dietaryEnergyKcal == 200)
+        #expect(nutrition?.carbsG == 40)
+    }
+
+    @Test func bloodPressureLatestMatchesXMLRules() {
+        let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
+        let day = Self.utcDay(2024, 6, 10)
+        state.addBloodPressure(systolic: 118, diastolic: 76, sampleDate: day)
+        state.addBloodPressure(systolic: 122, diastolic: 78, sampleDate: day.addingTimeInterval(60))
+        let metric = state.mergedMetric(for: day)
+        #expect(metric?.bloodPressureSystolic == 122)
+        #expect(metric?.bloodPressureDiastolic == 78)
+    }
+
+    @Test func sleepVitalFallbackMatchesXMLRules() {
+        let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
+        let day = Self.utcDay(2024, 6, 10)
+        state.addBloodOxygenPct(pct: 97, sampleDate: day.addingTimeInterval(100))
+        let metric = state.mergedMetric(for: day)
+        #expect(metric?.bloodOxygenPct == 97)
+    }
+
     @Test func sleepWakeDayMatchesXMLRules() {
         let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
         let monday = Self.utcDay(2024, 6, 10)

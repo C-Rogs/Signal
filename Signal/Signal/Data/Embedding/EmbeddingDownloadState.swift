@@ -21,6 +21,8 @@ final class EmbeddingDownloadState {
 
     var isDownloading: Bool { phase == .downloading }
 
+    var isLoadingEmbeddings: Bool { phase == .downloading }
+
     private init() {}
 
     func begin(message: String) {

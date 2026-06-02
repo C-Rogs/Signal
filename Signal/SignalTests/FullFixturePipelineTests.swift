@@ -39,7 +39,7 @@ struct FullFixturePipelineTests {
         #expect(healthResult.tier1RecordsKept > 1_000)
         #expect(healthResult.dailyMetricCount >= 100)
         #expect(healthResult.healthVectorCount >= 100)
-        #expect(healthResult.healthVectorCount == healthResult.dailyMetricCount)
+        #expect(healthResult.healthVectorCount >= healthResult.dailyMetricCount)
 
         let appleWorkoutsAfterHealth = try await MainActor.run {
             let context = ModelContext(container)

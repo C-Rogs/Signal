@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UIKit
 
 @main
 struct SignalApp: App {
@@ -7,6 +8,7 @@ struct SignalApp: App {
     @State private var healthKitManager: HealthKitManager
 
     init() {
+        Self.applyDarkNavigationChrome()
         do {
             let container = try SignalModelContainer.make()
             modelContainer = container
@@ -24,5 +26,15 @@ struct SignalApp: App {
                 .environment(healthKitManager)
         }
         .modelContainer(modelContainer)
+    }
+
+    private static func applyDarkNavigationChrome() {
+        let nav = UINavigationBarAppearance()
+        nav.configureWithOpaqueBackground()
+        nav.backgroundColor = .black
+        nav.titleTextAttributes = [.foregroundColor: UIColor.white]
+        UINavigationBar.appearance().standardAppearance = nav
+        UINavigationBar.appearance().scrollEdgeAppearance = nav
+        UINavigationBar.appearance().compactAppearance = nav
     }
 }

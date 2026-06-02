@@ -114,10 +114,13 @@ actor GemmaEmbeddingService: EmbeddingService {
     }
 
     private static func loadContainer() async throws -> EmbedderModelContainer {
-        let showsDownloadUI = !isModelLikelyCached()
-        if showsDownloadUI {
-            await EmbeddingDownloadState.shared.begin(message: "Preparing embedding model")
-        }
+        let likelyCached = isModelLikelyCached()
+        await EmbeddingDownloadState.shared.begin(
+            message: likelyCached ? "Loading embedding model" : "Preparing embedding model"
+        )
+        Log.embedding.info(
+            "embedding load started cachedLikely=\(likelyCached, privacy: .public) id=\(modelID, privacy: .public)"
+        )
 
         do {
             let cacheURL = try hubCacheDirectory()
@@ -129,10 +132,9 @@ actor GemmaEmbeddingService: EmbeddingService {
                 configuration: configuration,
                 progressHandler: { progress in
                     Task { @MainActor in
-                        if showsDownloadUI, EmbeddingDownloadState.shared.phase != .downloading {
-                            EmbeddingDownloadState.shared.begin(message: "Downloading embedding model")
+                        if progress.totalUnitCount > 0 || progress.completedUnitCount > 0 {
+                            EmbeddingDownloadState.shared.update(progress: progress)
                         }
-                        EmbeddingDownloadState.shared.update(progress: progress)
                     }
                 }
             )

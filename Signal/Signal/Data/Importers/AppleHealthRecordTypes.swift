@@ -15,7 +15,37 @@ enum AppleHealthRecordTypes {
         "HKQuantityTypeIdentifierHeartRate",
         "HKQuantityTypeIdentifierStepCount",
         "HKQuantityTypeIdentifierBasalEnergyBurned",
+        "HKQuantityTypeIdentifierBodyFatPercentage",
+        "HKQuantityTypeIdentifierLeanBodyMass",
+        "HKQuantityTypeIdentifierWalkingHeartRateAverage",
+        "HKQuantityTypeIdentifierAppleExerciseTime",
+        "HKQuantityTypeIdentifierPhysicalEffort",
+        "HKQuantityTypeIdentifierTimeInDaylight",
+        "HKQuantityTypeIdentifierAppleSleepingBreathingDisturbances",
+        "HKCategoryTypeIdentifierAppleStandHour",
     ]
+
+    // Additional HK dietary quantity types exist; V1 keeps this macro set only.
+    static let nutritionTypes: Set<String> = [
+        "HKQuantityTypeIdentifierDietaryEnergyConsumed",
+        "HKQuantityTypeIdentifierDietaryProtein",
+        "HKQuantityTypeIdentifierDietaryCarbohydrates",
+        "HKQuantityTypeIdentifierDietaryFatTotal",
+        "HKQuantityTypeIdentifierDietaryFatSaturated",
+        "HKQuantityTypeIdentifierDietaryFiber",
+        "HKQuantityTypeIdentifierDietarySugar",
+        "HKQuantityTypeIdentifierDietarySodium",
+    ]
+
+    static let runningMechanicTypes: Set<String> = [
+        "HKQuantityTypeIdentifierRunningPower",
+        "HKQuantityTypeIdentifierRunningStrideLength",
+        "HKQuantityTypeIdentifierRunningVerticalOscillation",
+        "HKQuantityTypeIdentifierRunningGroundContactTime",
+        "HKQuantityTypeIdentifierRunningSpeed",
+    ]
+
+    static let appleStandHourStood = "HKCategoryValueAppleStandHourStood"
 
     static let legacyAsleep = "HKCategoryValueSleepAnalysisAsleep"
 
@@ -166,6 +196,97 @@ enum AppleHealthUnitNormalizer {
             return value
         }
         Log.import.warning("unexpected step count unit=\(unit, privacy: .public); skipped sample")
+        return nil
+    }
+
+    static func normalizedBodyFatPercentage(value: Double, unit: String?) -> Double? {
+        let pct = DailyMetricAggregator.normalizedBodyFatPercentage(value: value, unit: unit)
+        guard pct.isFinite, pct > 0 else { return nil }
+        return pct
+    }
+
+    static func normalizedLeanBodyMassKg(value: Double, unit: String?) -> Double? {
+        normalizedBodyMassKg(value: value, unit: unit)
+    }
+
+    static func normalizedMinutes(value: Double, unit: String?) -> Double? {
+        guard let unit, !unit.isEmpty else {
+            return value
+        }
+        switch unit.lowercased() {
+        case "min", "minute", "minutes":
+            return value
+        case "s", "sec", "second", "seconds":
+            return value / 60
+        default:
+            Log.import.warning("unexpected duration unit=\(unit, privacy: .public); skipped sample")
+            return nil
+        }
+    }
+
+    static func normalizedPhysicalEffort(value: Double, unit: String?) -> Double? {
+        guard value.isFinite else { return nil }
+        if let unit, !unit.isEmpty {
+            let normalized = unit.lowercased()
+            if normalized.contains("kcal") || normalized.contains("kg") {
+                return value
+            }
+            Log.import.warning("unexpected physical effort unit=\(unit, privacy: .public); skipped sample")
+            return nil
+        }
+        return value
+    }
+
+    static func normalizedGrams(value: Double, unit: String?) -> Double? {
+        guard let unit, !unit.isEmpty else {
+            return value
+        }
+        switch unit.lowercased() {
+        case "g", "gram", "grams":
+            return value
+        default:
+            Log.import.warning("unexpected mass unit=\(unit, privacy: .public); skipped sample")
+            return nil
+        }
+    }
+
+    static func normalizedMilligrams(value: Double, unit: String?) -> Double? {
+        guard let unit, !unit.isEmpty else {
+            return value
+        }
+        switch unit.lowercased() {
+        case "mg", "milligram", "milligrams":
+            return value
+        case "g", "gram", "grams":
+            return value * 1000
+        default:
+            Log.import.warning("unexpected sodium unit=\(unit, privacy: .public); skipped sample")
+            return nil
+        }
+    }
+
+    static func normalizedBloodPressureMmHg(value: Double, unit: String?) -> Double? {
+        guard let unit, !unit.isEmpty else {
+            return value
+        }
+        if unit.lowercased() == "mmhg" {
+            return value
+        }
+        Log.import.warning("unexpected blood pressure unit=\(unit, privacy: .public); skipped sample")
+        return nil
+    }
+
+    static func normalizedRunningSpeedKmh(value: Double, unit: String?) -> Double? {
+        guard value.isFinite, value > 0 else { return nil }
+        guard let unit, !unit.isEmpty else { return value }
+        let normalized = unit.lowercased()
+        if normalized == "km/hr" || normalized == "km/h" {
+            return value
+        }
+        if normalized == "m/s" || normalized == "mps" {
+            return value * 3.6
+        }
+        Log.import.warning("unexpected running speed unit=\(unit, privacy: .public); skipped sample")
         return nil
     }
 }
