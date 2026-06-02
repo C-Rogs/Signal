@@ -1,3 +1,5 @@
+import Foundation
+import os
 import SwiftData
 
 enum SignalModelContainer {
@@ -14,10 +16,33 @@ enum SignalModelContainer {
         ExerciseCatalog.self,
         Routine.self,
         RoutineExercise.self,
+        WellnessEntry.self,
     ])
 
     static func make(inMemoryOnly: Bool = false) throws -> ModelContainer {
         let configuration = ModelConfiguration(isStoredInMemoryOnly: inMemoryOnly)
-        return try ModelContainer(for: schema, configurations: [configuration])
+        do {
+            return try ModelContainer(for: schema, configurations: [configuration])
+        } catch {
+            guard !inMemoryOnly else { throw error }
+            Log.recovery.error(
+                "ModelContainer load failed; resetting persistent store: \(String(describing: error), privacy: .public)"
+            )
+            try removeStoreFiles(for: configuration)
+            return try ModelContainer(for: schema, configurations: [configuration])
+        }
+    }
+
+    private static func removeStoreFiles(for configuration: ModelConfiguration) throws {
+        let storeURL = configuration.url
+        let fileManager = FileManager.default
+        let related = [
+            storeURL,
+            URL(fileURLWithPath: storeURL.path + "-wal"),
+            URL(fileURLWithPath: storeURL.path + "-shm"),
+        ]
+        for url in related where fileManager.fileExists(atPath: url.path) {
+            try fileManager.removeItem(at: url)
+        }
     }
 }

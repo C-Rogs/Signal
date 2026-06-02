@@ -11,6 +11,7 @@ final class ExerciseCatalog {
     var equipmentRaw: String
     var isUnilateral: Bool
     var isCustom: Bool
+    var isPickerDefault: Bool = false
 
     @Relationship(deleteRule: .nullify, inverse: \WorkoutExercise.catalogEntry)
     var linkedExercises: [WorkoutExercise] = []
@@ -26,7 +27,8 @@ final class ExerciseCatalog {
         movementPattern: MovementPattern,
         equipment: ExerciseEquipment,
         isUnilateral: Bool = false,
-        isCustom: Bool = false
+        isCustom: Bool = false,
+        isPickerDefault: Bool = false
     ) {
         self.canonicalName = canonicalName
         self.aliases = aliases
@@ -36,6 +38,7 @@ final class ExerciseCatalog {
         self.equipmentRaw = equipment.rawValue
         self.isUnilateral = isUnilateral
         self.isCustom = isCustom
+        self.isPickerDefault = isPickerDefault
     }
 
     var primaryMuscles: [Muscle] {

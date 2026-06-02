@@ -39,4 +39,12 @@ final class DisplayUnitFormatterTests: XCTestCase {
         let formatter = DisplayUnitFormatter(preferences: preferences)
         XCTAssertEqual(formatter.displayMassKg(1), 2.204_622_621_8, accuracy: 0.0001)
     }
+
+    func testParseMassInputRoundTrip() {
+        let preferences = makePreferences()
+        preferences.massUnit = .pounds
+        let formatter = DisplayUnitFormatter(preferences: preferences)
+        let kg = formatter.parseMassInputToKg(225)
+        XCTAssertEqual(kg, 102.058, accuracy: 0.1)
+    }
 }

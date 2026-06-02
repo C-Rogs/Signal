@@ -10,6 +10,8 @@ final class SetEntry {
     var distanceKm: Double?
     var durationSeconds: Int?
     var rpe: Double?
+    var isCompleted: Bool = false
+    var hasBeenEdited: Bool = false
 
     var exercise: WorkoutExercise?
 
@@ -20,7 +22,9 @@ final class SetEntry {
         reps: Int? = nil,
         distanceKm: Double? = nil,
         durationSeconds: Int? = nil,
-        rpe: Double? = nil
+        rpe: Double? = nil,
+        isCompleted: Bool = false,
+        hasBeenEdited: Bool = false
     ) {
         self.setIndex = setIndex
         self.setType = setType
@@ -29,5 +33,7 @@ final class SetEntry {
         self.distanceKm = distanceKm
         self.durationSeconds = durationSeconds
         self.rpe = rpe
+        self.isCompleted = isCompleted
+        self.hasBeenEdited = hasBeenEdited
     }
 }

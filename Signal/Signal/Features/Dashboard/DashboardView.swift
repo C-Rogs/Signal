@@ -236,15 +236,27 @@ struct DashboardView: View {
             )
         }
 
-        if !viewModel.stepPoints.isEmpty || !viewModel.exercisePoints.isEmpty {
+        if !viewModel.stepPoints.isEmpty {
             DashboardMetricCard(
-                title: "Movement",
+                title: "Steps",
                 valueText: DashboardFormatting.steps(viewModel.latestSteps),
-                subtitle: viewModel.activitySubtitle,
+                subtitle: viewModel.stepsSubtitle,
                 symbol: .steps,
                 points: viewModel.stepPoints,
                 valueStyle: .steps,
                 tint: Color("Positive")
+            )
+        }
+
+        if !viewModel.exercisePoints.isEmpty {
+            DashboardMetricCard(
+                title: "Exercise Minutes",
+                valueText: DashboardFormatting.minutes(viewModel.latestExerciseMinutes),
+                subtitle: viewModel.exerciseMinutesSubtitle,
+                symbol: .energy,
+                points: viewModel.exercisePoints,
+                valueStyle: .exerciseMinutes,
+                tint: Color("Warning")
             )
         }
 
@@ -264,10 +276,14 @@ struct DashboardView: View {
     }
 
     private var hrvSubtitle: String? {
-        guard let mean = viewModel.rollingMeans.mean(for: viewModel.selectedWindow).hrvSDNN else {
-            return nil
+        var parts: [String] = []
+        if !viewModel.hrvHeadlineLabel.isEmpty, viewModel.hrvHeadlineLabel != "Today" {
+            parts.append("\(viewModel.hrvHeadlineLabel) reading")
         }
-        return "\(Int(mean.rounded())) ms \(viewModel.selectedWindow.label) average"
+        if let mean = viewModel.rollingMeans.mean(for: viewModel.selectedWindow).hrvSDNN {
+            parts.append("\(Int(mean.rounded())) ms \(viewModel.selectedWindow.label) average")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     private var restingHRSubtitle: String? {

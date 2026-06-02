@@ -39,6 +39,19 @@ enum DashboardSeriesBuilder {
     static func latestValue(in points: [DashboardChartPoint]) -> Double? {
         points.last?.value
     }
+
+    static func valueOnReferenceDay(
+        in points: [DashboardChartPoint],
+        referenceDay: Date,
+        calendar: Calendar
+    ) -> Double? {
+        let target = calendar.startOfDay(for: referenceDay)
+        return points.first { calendar.isDate($0.date, inSameDayAs: target) }?.value
+    }
+
+    static func mostRecentPoint(in points: [DashboardChartPoint]) -> DashboardChartPoint? {
+        points.last
+    }
 }
 
 extension Array where Element == DashboardChartPoint {

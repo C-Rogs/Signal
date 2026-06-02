@@ -8,6 +8,9 @@ final class WorkoutExercise {
     var supersetId: String?
     var order: Int
     var catalogMatchFlag: String?
+    var restDurationSeconds: Int = 90
+    var autoStartRestOnSetComplete: Bool = true
+    var restTimerEndsAt: Date?
 
     var session: WorkoutSession?
     var catalogEntry: ExerciseCatalog?
@@ -21,7 +24,10 @@ final class WorkoutExercise {
         supersetId: String? = nil,
         order: Int,
         catalogEntry: ExerciseCatalog? = nil,
-        catalogMatchFlag: String? = nil
+        catalogMatchFlag: String? = nil,
+        restDurationSeconds: Int = 90,
+        autoStartRestOnSetComplete: Bool = true,
+        restTimerEndsAt: Date? = nil
     ) {
         self.exerciseTitle = exerciseTitle
         self.notes = notes
@@ -29,6 +35,9 @@ final class WorkoutExercise {
         self.order = order
         self.catalogEntry = catalogEntry
         self.catalogMatchFlag = catalogMatchFlag
+        self.restDurationSeconds = restDurationSeconds
+        self.autoStartRestOnSetComplete = autoStartRestOnSetComplete
+        self.restTimerEndsAt = restTimerEndsAt
     }
 
     var catalogMatch: CatalogMatchFlag? {

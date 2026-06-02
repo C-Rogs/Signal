@@ -48,4 +48,60 @@ struct DisplayUnitFormatter: Sendable {
             km * 0.621_371_192_237_333_9
         }
     }
+
+    func parseMassInputToKg(_ displayValue: Double) -> Double {
+        switch massUnit {
+        case .kilograms:
+            displayValue
+        case .pounds:
+            displayValue / 2.204_622_621_8
+        }
+    }
+
+    func parseMassInputToKg(from text: String) -> Double? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let normalized = trimmed
+            .replacingOccurrences(of: ",", with: ".")
+            .filter { $0.isNumber || $0 == "." }
+        guard let value = Double(normalized) else { return nil }
+        return parseMassInputToKg(value)
+    }
+
+    func parseDistanceInputToKm(_ displayValue: Double) -> Double {
+        switch distanceUnit {
+        case .kilometers:
+            displayValue
+        case .miles:
+            displayValue / 0.621_371_192_237_333_9
+        }
+    }
+
+    func parseDistanceInputToKm(from text: String) -> Double? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let normalized = trimmed
+            .replacingOccurrences(of: ",", with: ".")
+            .filter { $0.isNumber || $0 == "." }
+        guard let value = Double(normalized) else { return nil }
+        return parseDistanceInputToKm(value)
+    }
+
+    func displayMassInputKg(_ kg: Double?) -> String {
+        guard let kg else { return "" }
+        let display = displayMassKg(kg)
+        if display.truncatingRemainder(dividingBy: 1) == 0 {
+            return String(format: "%.0f", display)
+        }
+        return String(format: "%.1f", display)
+    }
+
+    func displayDistanceInputKm(_ km: Double?) -> String {
+        guard let km else { return "" }
+        let display = displayDistanceKm(km)
+        if display.truncatingRemainder(dividingBy: 1) == 0 {
+            return String(format: "%.0f", display)
+        }
+        return String(format: "%.1f", display)
+    }
 }

@@ -9,6 +9,7 @@ enum CatalogBootstrap {
             let context = ModelContext(modelContainer)
             do {
                 _ = try ExerciseCatalogSeeder.seedIfNeeded(in: context)
+                try ExerciseCatalogCurator.applyPickerDefaultsIfNeeded(in: context)
                 _ = try CatalogLinkService.linkAllWorkoutExercises(in: context)
             } catch {
                 Log.catalog.error("catalog bootstrap failed: \(String(describing: error), privacy: .public)")

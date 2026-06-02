@@ -7,9 +7,11 @@ struct SignalApp: App {
     private let modelContainer: ModelContainer
     @State private var healthKitManager: HealthKitManager
     @State private var unitPreferences = UnitPreferences.shared
+    @State private var liveWorkoutCoordinator = LiveWorkoutCoordinator()
 
     init() {
         Self.applyDarkNavigationChrome()
+        LiveWorkoutCoordinatorLaunchState.markProcessLaunched()
         do {
             let container = try SignalModelContainer.make()
             modelContainer = container
@@ -27,6 +29,7 @@ struct SignalApp: App {
             RootView()
                 .environment(healthKitManager)
                 .environment(unitPreferences)
+                .environment(liveWorkoutCoordinator)
         }
         .modelContainer(modelContainer)
     }

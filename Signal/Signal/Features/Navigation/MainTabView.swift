@@ -10,9 +10,55 @@ enum AppTab: Hashable {
 
 struct MainTabView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.modelContext) private var modelContext
+    @Environment(LiveWorkoutCoordinator.self) private var coordinator
     @State private var selectedTab: AppTab = .dashboard
 
+    private var showsWorkoutBanner: Bool {
+        coordinator.activeSession != nil && !coordinator.isViewingActiveWorkout
+    }
+
     var body: some View {
+        tabShell
+            .onChange(of: coordinator.pendingTrainRoute) { _, route in
+                if case .activeWorkout = route {
+                    selectedTab = .train
+                }
+            }
+            .onAppear {
+                coordinator.configure(modelContext: modelContext)
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    coordinator.configure(modelContext: modelContext)
+                    coordinator.refresh()
+                }
+            }
+            .onChange(of: selectedTab) { _, tab in
+                if tab != .train, coordinator.activeSession == nil {
+                    coordinator.isViewingActiveWorkout = false
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var tabShell: some View {
+        let tabs = tabViewCore
+        if #available(iOS 26.1, *) {
+            tabs.tabViewBottomAccessory(isEnabled: showsWorkoutBanner) {
+                LiveWorkoutBanner(selectedTab: $selectedTab)
+            }
+        } else if showsWorkoutBanner {
+            tabs.tabViewBottomAccessory {
+                LiveWorkoutBanner(selectedTab: $selectedTab)
+            }
+        } else {
+            tabs
+        }
+    }
+
+    private var tabViewCore: some View {
         TabView(selection: $selectedTab) {
             Tab("Dashboard", systemImage: "chart.line.uptrend.xyaxis", value: AppTab.dashboard) {
                 DashboardTabRoot()
@@ -47,9 +93,7 @@ private struct DashboardTabRoot: View {
 
 private struct TrainTabRoot: View {
     var body: some View {
-        NavigationStack {
-            TrainPlaceholderView()
-        }
+        TrainHomeView()
     }
 }
 
@@ -73,5 +117,6 @@ private struct ProfileTabRoot: View {
     MainTabView()
         .environment(HealthKitManager(modelContainer: try! SignalModelContainer.make(inMemoryOnly: true)))
         .environment(UnitPreferences.shared)
+        .environment(LiveWorkoutCoordinator())
         .modelContainer(try! SignalModelContainer.make(inMemoryOnly: true))
 }

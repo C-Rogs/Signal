@@ -6,11 +6,12 @@
 - Privacy-first: no network calls at runtime. No cloud SDKs, remote logging, or analytics.
 
 ## Build and verify (use MCP, not raw xcodebuild)
-- Prefer XcodeBuildMCP tools (build_sim, test_sim, screenshot) over Bash xcodebuild. MCP returns structured JSON; parse it to locate and fix errors.
+- Prefer XcodeBuildMCP tools over Bash xcodebuild. MCP returns structured JSON; parse it to locate and fix errors.
 - XcodeBuildMCP must show connected (green) in Cursor Settings → MCP. Project config: `.cursor/mcp.json` server name `XcodeBuildMCP`.
-- Build/run against this exact simulator: `-destination 'id=20DDD35B-812A-49BE-9DCF-0685401ACC15'` (iPhone 16 Pro, iOS 26.4). Do not use name-based destinations; duplicates cause failures.
-- Unit tests: `-destination 'id=311A9753-3F61-44C8-8BE6-AC7BC69558D4'` (iPhone 17, iOS 26.5) until SignalTests deployment target matches the app. Or run `scripts/build-and-test.sh`.
-- Iterate on the iOS 26 Simulator (iPhone 16 Pro). HealthKit real data, the memory entitlement, and Foundation Models are verified by the human on a physical device.
+- **Compile-error loop (simulator only):** `build_sim` against `id=20DDD35B-812A-49BE-9DCF-0685401ACC15` (iPhone 16 Pro, iOS 26.4). Do not use name-based destinations; duplicates cause failures.
+- **Unit tests:** `test_sim` on `id=311A9753-3F61-44C8-8BE6-AC7BC69558D4` (iPhone 17, iOS 26.5) until SignalTests deployment target matches the app. Or run `scripts/build-and-test.sh`.
+- **Real runs and manual gates (physical device):** connected device `id=H3XLDTHR74` via `build_device`, then `install_app`, then `launch_app`. Device must be unlocked and the Developer Disk Image mounted. Use this for force-quit resume, background mid-session, and live Train UX verification. Do not substitute the simulator for those gates.
+- HealthKit real data, the memory entitlement, and Foundation Models remain human-verified on device.
 - Use the Apple Xcode MCP documentation search to read current API docs before coding fast-moving frameworks.
 
 ## Research-first for fast-moving APIs
@@ -30,7 +31,7 @@
 - SwiftData: @Query in views, modelContext.fetch() elsewhere; declare deletion rules.
 
 ## Style
-- os.Logger in every data path (categories: healthkit, import, vectorstore, embedding, sync, ui, recovery).
+- os.Logger in every data path (categories: healthkit, import, vectorstore, embedding, sync, ui, recovery, workout, catalog).
 - No comments explaining what code does; only why when non-obvious.
 - No em dashes, en dashes, or double dashes anywhere. Rewrite the sentence.
 - Color.black for OLED dark backgrounds, not system gray.

@@ -167,37 +167,95 @@ final class DashboardViewModel {
     }
 
     var latestHRV: Double? {
-        DashboardSeriesBuilder.latestValue(in: hrvPoints)
+        headlineMetric(from: hrvPoints, snapshotValue: \.hrvSDNN).value
+    }
+
+    var hrvHeadlineLabel: String {
+        headlineMetric(from: hrvPoints, snapshotValue: \.hrvSDNN).label
     }
 
     var latestRestingHR: Double? {
-        DashboardSeriesBuilder.latestValue(in: restingHRPoints)
+        headlineMetric(from: restingHRPoints, snapshotValue: \.restingHR).value
+    }
+
+    var restingHRHeadlineLabel: String {
+        headlineMetric(from: restingHRPoints, snapshotValue: \.restingHR).label
     }
 
     var latestActiveEnergy: Double? {
-        DashboardSeriesBuilder.latestValue(in: activeEnergyPoints)
+        headlineMetric(from: activeEnergyPoints, snapshotValue: \.activeEnergy).value
+    }
+
+    var activeEnergyHeadlineLabel: String {
+        headlineMetric(from: activeEnergyPoints, snapshotValue: \.activeEnergy).label
     }
 
     var latestSleep: Double? {
-        DashboardSeriesBuilder.latestValue(in: sleepPoints)
+        headlineMetric(from: sleepPoints, snapshotValue: \.sleepHours).value
+    }
+
+    var sleepHeadlineLabel: String {
+        headlineMetric(from: sleepPoints, snapshotValue: \.sleepHours).label
     }
 
     var latestBodyMass: Double? {
-        DashboardSeriesBuilder.latestValue(in: bodyMassPoints)
+        DashboardSeriesBuilder.valueOnReferenceDay(
+            in: bodyMassPoints,
+            referenceDay: referenceDay,
+            calendar: calendar
+        ) ?? DashboardSeriesBuilder.latestValue(in: bodyMassPoints)
     }
 
     var latestSteps: Double? {
-        DashboardSeriesBuilder.latestValue(in: stepPoints)
+        headlineMetric(from: stepPoints, snapshotValue: \.stepCount).value
+    }
+
+    var stepsHeadlineLabel: String {
+        headlineMetric(from: stepPoints, snapshotValue: \.stepCount).label
     }
 
     var latestExerciseMinutes: Double? {
-        DashboardSeriesBuilder.latestValue(in: exercisePoints)
+        headlineMetric(from: exercisePoints, snapshotValue: \.appleExerciseMinutes).value
     }
 
-    var activitySubtitle: String {
-        let steps = DashboardFormatting.steps(latestSteps)
-        let exercise = DashboardFormatting.minutes(latestExerciseMinutes)
-        return "\(steps) steps · \(exercise) exercise"
+    var exerciseMinutesHeadlineLabel: String {
+        headlineMetric(from: exercisePoints, snapshotValue: \.appleExerciseMinutes).label
+    }
+
+    var stepsSubtitle: String {
+        "\(stepsHeadlineLabel) · daily step total from Health"
+    }
+
+    var exerciseMinutesSubtitle: String {
+        "\(exerciseMinutesHeadlineLabel) · Apple Exercise ring minutes"
+    }
+
+    private func headlineMetric(
+        from points: [DashboardChartPoint],
+        snapshotValue: (DailyMetricSnapshot) -> Double?
+    ) -> (value: Double?, label: String) {
+        if let today = DashboardSeriesBuilder.valueOnReferenceDay(
+            in: points,
+            referenceDay: referenceDay,
+            calendar: calendar
+        ) {
+            return (today, "Today")
+        }
+
+        let sorted = metricSnapshots
+            .filter { calendar.startOfDay(for: $0.date) <= referenceDay }
+            .sorted { $0.date > $1.date }
+        if let recent = sorted.first(where: { snapshotValue($0) != nil }),
+           let value = snapshotValue(recent)
+        {
+            if calendar.isDateInToday(recent.date) {
+                return (value, "Today")
+            }
+            let label = recent.date.formatted(.dateTime.month(.abbreviated).day())
+            return (value, label)
+        }
+
+        return (nil, "")
     }
 
     var nutritionSubtitle: String? {

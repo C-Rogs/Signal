@@ -69,6 +69,7 @@ final class HealthKitManager {
                 read: HealthKitTier1Kind.authorizationReadTypes
             )
             Log.healthkit.info("HealthKit read authorization requested for Tier 1 types")
+            HealthKitAuthorization.markReadAccessPrompted()
             accessState = .ready
             activateBackgroundObserversIfNeeded()
         } catch {
@@ -143,7 +144,8 @@ final class HealthKitManager {
                 embeddingService: embeddingService
             )
             lastSyncOutcome = outcome
-            await refreshAccessStateAsync()
+            HealthKitAuthorization.markReadAccessPrompted()
+            accessState = .ready
             if clearDirtyOnSuccess {
                 backgroundCoordinator?.clearDirtyFlagAfterSuccessfulSync()
             }
