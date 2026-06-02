@@ -13,9 +13,17 @@ xcodebuild -scheme Signal \
   -destination "platform=iOS Simulator,id=${BUILD_SIM_ID}" \
   build
 
-echo "Running SignalTests (iPhone 17, iOS 26.5 test target)..."
+echo "Running SignalTests (iPhone 17, NL embedding, excluding full import integration)..."
+SIGNAL_USE_NL_EMBEDDING=1 xcodebuild -scheme Signal \
+  -destination "platform=iOS Simulator,id=${TEST_SIM_ID}" \
+  test -only-testing:SignalTests \
+  -skip-testing:SignalTests/FullImportIntegrationTests
+
+echo "Running full import integration tests (serialized, deterministic embed on simulator)..."
 xcodebuild -scheme Signal \
   -destination "platform=iOS Simulator,id=${TEST_SIM_ID}" \
-  test -only-testing:SignalTests
+  -parallel-testing-enabled NO \
+  -maximum-concurrent-test-simulator-destinations 1 \
+  test -only-testing:SignalTests/FullImportIntegrationTests
 
 echo "Done."

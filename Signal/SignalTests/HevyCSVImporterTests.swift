@@ -119,7 +119,7 @@ struct HevyCSVImporterTests {
 
         #expect(summary.workoutsSummary?.contains("Push A") == true)
         #expect(text.contains("Push A"))
-        #expect(text.contains("Workouts:"))
+        #expect(text.contains("Hevy workouts:"))
     }
 
     @Test func rejectsMissingRequiredHeaders() {

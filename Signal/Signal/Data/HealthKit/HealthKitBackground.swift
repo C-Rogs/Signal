@@ -47,22 +47,25 @@ final class HealthKitBackgroundCoordinator {
             let sampleType = kind.sampleType
             let typeIdentifier = kind.anchorTypeIdentifier
             let query = HKObserverQuery(sampleType: sampleType, predicate: nil) { _, completionHandler, error in
-                defer { completionHandler() }
                 if let error {
                     if HealthKitAuthorization.isAuthorizationNotDeterminedError(error) {
                         Log.sync.debug(
                             "observer skipped type=\(typeIdentifier, privacy: .public); authorization not determined"
                         )
-                        return
+                    } else {
+                        Log.sync.error(
+                            "observer error type=\(typeIdentifier, privacy: .public) error=\(String(describing: error), privacy: .public)"
+                        )
                     }
-                    Log.sync.error(
-                        "observer error type=\(typeIdentifier, privacy: .public) error=\(String(describing: error), privacy: .public)"
-                    )
+                    completionHandler()
+                    Log.sync.info("completionHandler called type=\(typeIdentifier, privacy: .public)")
                     return
                 }
                 Log.sync.info("observer fired type=\(typeIdentifier, privacy: .public)")
                 HealthKitDirtyFlagStore.setDirty()
                 Log.sync.info("dirty flag set type=\(typeIdentifier, privacy: .public)")
+                completionHandler()
+                Log.sync.info("completionHandler called type=\(typeIdentifier, privacy: .public)")
             }
             observerQueries.append(query)
             healthStore.execute(query)
@@ -72,7 +75,6 @@ final class HealthKitBackgroundCoordinator {
 
     private func enableBackgroundDelivery() {
         for kind in HealthKitTier1Kind.allCases {
-            guard kind.supportsBackgroundDelivery else { continue }
             let sampleType = kind.sampleType
             healthStore.enableBackgroundDelivery(for: sampleType, frequency: .hourly) { success, error in
                 if let error {
@@ -95,7 +97,9 @@ final class HealthKitBackgroundCoordinator {
             queue: .main
         ) { [weak self] _ in
             Log.sync.info("protectedDataDidBecomeAvailable received")
-            self?.runDeferredSyncIfNeeded(trigger: "protectedData")
+            Task { @MainActor [weak self] in
+                self?.runDeferredSyncIfNeeded(trigger: "protectedData")
+            }
         }
 
         foregroundObserver = NotificationCenter.default.addObserver(
@@ -103,7 +107,10 @@ final class HealthKitBackgroundCoordinator {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.runDeferredSyncIfNeeded(trigger: "foreground")
+            Log.sync.info("willEnterForeground received")
+            Task { @MainActor [weak self] in
+                self?.runDeferredSyncIfNeeded(trigger: "foreground")
+            }
         }
     }
 
@@ -113,7 +120,7 @@ final class HealthKitBackgroundCoordinator {
             Log.sync.info("deferred sync skipped trigger=\(trigger, privacy: .public); protected data unavailable")
             return
         }
-        Log.sync.info("processDelta scheduled trigger=\(trigger, privacy: .public)")
+        Log.sync.info("deferred processDelta run trigger=\(trigger, privacy: .public)")
         onDeferredSync()
     }
 

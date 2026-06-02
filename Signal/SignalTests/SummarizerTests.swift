@@ -63,7 +63,7 @@ struct SummarizerTests {
         )
 
         #expect(text == """
-Health day 2024-06-15. HRV SDNN 48.5 ms. Resting HR 54 bpm. Active energy 450 kcal. Sleep 7.25 hours. Workouts: Leg day: back squat 5x5 at 140 kg.
+Health day 2024-06-15. HRV SDNN 48.5 ms. Resting HR 54 bpm. Sleep 7.25 hours. Active energy 450 kcal. Hevy workouts: Leg day: back squat 5x5 at 140 kg.
 """)
     }
 
@@ -84,6 +84,57 @@ Health day 2024-06-15. HRV SDNN 48.5 ms. Resting HR 54 bpm. Active energy 450 kc
         #expect(text.contains("Health day 2024-07-01."))
         #expect(text.contains("Nutrition:"))
         #expect(text.contains("2100 kcal"))
+    }
+
+    @Test func embeddingTextIncludesExpandedMetricExpansionFields() {
+        let day = SummarizerTestFixtures.utcDay(year: 2024, month: 8, day: 20)
+        let metric = DailyMetric(
+            date: day,
+            hrvSDNN_ms: 52,
+            restingHR: 53,
+            activeEnergy_kcal: 520,
+            sleepHours: 7.5,
+            bodyMassKg: 78.2,
+            vo2Max: 48.5,
+            respiratoryRate: 14.2,
+            wristTemperatureDeltaC: 0.3,
+            bloodOxygenPct: 97.5,
+            bodyFatPercentage: 14,
+            leanBodyMassKg: 67.1,
+            bloodPressureSystolic: 118,
+            bloodPressureDiastolic: 76,
+            source: "unit-test"
+        )
+        let nutrition = DailyNutrition(
+            date: day,
+            dietaryEnergyKcal: 2100,
+            proteinG: 140,
+            carbsG: 220,
+            fatTotalG: 70,
+            source: "unit-test"
+        )
+        let appleWorkout = AppleWorkout(
+            stableID: "unit-run",
+            activityType: "Running",
+            startDate: day.addingTimeInterval(3600),
+            endDate: day.addingTimeInterval(7200),
+            durationSec: 3600,
+            activeEnergyKcal: 480,
+            distanceKm: 10.2,
+            source: "unit-test"
+        )
+        let (_, text) = Summarizer.summarize(
+            day: day,
+            metric: metric,
+            nutrition: nutrition,
+            workoutSummaries: ["Leg day: back squat 5x5 at 140 kg"],
+            appleWorkouts: [appleWorkout],
+            calendar: SummarizerTestFixtures.utcCalendar
+        )
+
+        #expect(text == """
+Health day 2024-08-20. HRV SDNN 52.0 ms. Resting HR 53 bpm. Sleep 7.50 hours. Sleep respiratory rate 14.2 brpm. Sleep wrist temperature delta 0.30 C. Sleep blood oxygen 97.5 pct. Active energy 520 kcal. Body mass 78.2 kg. Body fat 14.0 pct. Lean mass 67.1 kg. VO2 max 48.5 ml/kg/min. Nutrition: 2100 kcal, 140 g protein, 220 g carbs, 70 g fat. Blood pressure 118/76 mmHg. Hevy workouts: Leg day: back squat 5x5 at 140 kg. Apple workouts: Running 60 min, 480 kcal, 10.20 km.
+""")
     }
 
     @Test func workoutOnlyDayProducesNonEmptySummary() {

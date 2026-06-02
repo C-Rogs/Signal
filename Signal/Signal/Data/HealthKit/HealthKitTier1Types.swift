@@ -110,10 +110,6 @@ enum HealthKitTier1Kind: String, CaseIterable, Sendable {
         self == .bloodPressure
     }
 
-    var supportsBackgroundDelivery: Bool {
-        !isBloodPressure
-    }
-
     var isNutrition: Bool {
         Self.nutritionKinds.contains(self)
     }

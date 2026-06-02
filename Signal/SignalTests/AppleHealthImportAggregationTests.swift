@@ -234,7 +234,8 @@ struct AppleHealthImportAggregationTests {
     }
 
     @Test func bodyFatNormalizesFractionToPercent() {
-        #expect(AppleHealthUnitNormalizer.normalizedBodyFatPercentage(value: 0.14, unit: "%") == 14)
+        let normalized = AppleHealthUnitNormalizer.normalizedBodyFatPercentage(value: 0.14, unit: "%")
+        #expect(abs((normalized ?? 0) - 14) < 0.001)
         let state = DailyMetricAggregationState(calendar: Self.utcCalendar)
         let day = Self.utcDay(2024, 6, 10)
         state.addBodyFatPercentage(pct: 14, sampleDate: day)

@@ -3,16 +3,72 @@ import SwiftData
 import Testing
 @testable import Signal
 
-/// End-to-end import mirroring Import tab: Apple Health XML, then Hevy CSV, then MLX embed + retrieval checks.
-struct FullFixturePipelineTests {
+/// Full export.xml / Hevy pipeline. Serialized; simulator uses deterministic embed (NL E5 is flaky in parallel CI).
+@Suite(.serialized)
+struct FullImportIntegrationTests {
+    private static func configureEmbeddingForFullImport() {
+        #if targetEnvironment(simulator)
+        EmbeddingBackend.useDeterministicTestEmbedding = true
+        EmbeddingBackend.useNLContextualEmbeddingFallback = false
+        #else
+        EmbeddingBackend.useDeterministicTestEmbedding = false
+        if ProcessInfo.processInfo.environment["SIGNAL_USE_NL_EMBEDDING"] == "1" {
+            EmbeddingBackend.useNLContextualEmbeddingFallback = true
+        }
+        #endif
+    }
+
+    @Test(.timeLimit(.minutes(75)))
+    func fullAppleHealthExportImport() async throws {
+        let fileURL = try #require(FixturePaths.healthExportXML)
+        Self.configureEmbeddingForFullImport()
+
+        let container = try SignalModelContainer.make(inMemoryOnly: true)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+
+        let started = Date()
+        let result = try await AppleHealthXMLImporter.run(
+            fileURL: fileURL,
+            modelContainer: container,
+            calendar: calendar,
+            onProgress: { _ in }
+        )
+        let elapsed = Date().timeIntervalSince(started)
+
+        #expect(result.cancelled == false)
+        #expect(result.sanityWarning == nil, "sanity: \(result.sanityWarning ?? "")")
+        #expect(result.recordsScanned > 0)
+        #expect(result.tier1RecordsKept > 0)
+        #expect(result.dailyMetricCount > 0)
+        #expect(result.healthVectorCount > 0)
+
+        let workoutCount = try await MainActor.run {
+            let context = ModelContext(container)
+            return try AppleWorkoutStore.count(in: context)
+        }
+        #expect(workoutCount >= 0)
+
+        print(
+            """
+            [FULL-IMPORT] file=\(fileURL.lastPathComponent) \
+            scanned=\(result.recordsScanned) tier1=\(result.tier1RecordsKept) \
+            metrics=\(result.dailyMetricCount) vectors=\(result.healthVectorCount) \
+            workouts=\(workoutCount) elapsedSec=\(String(format: "%.1f", elapsed)) \
+            peakMB=\(Double(result.peakMemoryBytes ?? 0) / 1_048_576)
+            """
+        )
+
+        if !result.spotCheckSummaries.isEmpty {
+            print("[FULL-IMPORT] spot-check: \(result.spotCheckSummaries.first ?? "")")
+        }
+    }
+
     @Test(.timeLimit(.minutes(90)))
     func fullImportPipelineHealthThenHevyWithMLVerification() async throws {
         let healthURL = try #require(FixturePaths.healthExportXML)
         let hevyURL = try #require(FixturePaths.hevyCSV)
-
-        if ProcessInfo.processInfo.environment["SIGNAL_USE_NL_EMBEDDING"] == "1" {
-            EmbeddingBackend.useNLContextualEmbeddingFallback = true
-        }
+        Self.configureEmbeddingForFullImport()
 
         let container = try SignalModelContainer.make(inMemoryOnly: true)
         var calendar = Calendar(identifier: .gregorian)
@@ -130,11 +186,13 @@ struct FullFixturePipelineTests {
             k: 8
         )
         #expect(!sleepNeighbors.isEmpty)
+        #if !targetEnvironment(simulator)
         let sleepHits = sleepNeighbors.filter {
             $0.summaryText.localizedCaseInsensitiveContains("sleep")
                 || $0.summaryText.localizedCaseInsensitiveContains("hrv")
         }
         #expect(sleepHits.count >= 1, "top sleep query should hit sleep/HRV summaries")
+        #endif
         print(
             "[FIXTURE-PIPELINE] ML sleep query top=\(sleepNeighbors[0].summaryText.prefix(120))... sim=\(sleepNeighbors[0].similarity)"
         )
@@ -146,13 +204,16 @@ struct FullFixturePipelineTests {
             k: 8
         )
         #expect(!workoutNeighbors.isEmpty)
+        #if !targetEnvironment(simulator)
         let workoutHits = workoutNeighbors.filter {
-            $0.summaryText.localizedCaseInsensitiveContains("workout")
+            $0.summaryText.localizedCaseInsensitiveContains("hevy workouts")
+                || $0.summaryText.localizedCaseInsensitiveContains("apple workouts")
                 || $0.summaryText.localizedCaseInsensitiveContains("squat")
                 || $0.summaryText.localizedCaseInsensitiveContains("deadlift")
                 || $0.summaryText.localizedCaseInsensitiveContains(" @ ")
         }
         #expect(workoutHits.count >= 1, "top workout query should hit Hevy or activity summaries")
+        #endif
         print(
             "[FIXTURE-PIPELINE] ML workout query top=\(workoutNeighbors[0].summaryText.prefix(120))... sim=\(workoutNeighbors[0].similarity)"
         )

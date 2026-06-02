@@ -39,6 +39,7 @@
 
 ## Git commits
 - Commits are authored only by the human (GitHub user C-Rogs). Never add Co-authored-by, Made-with: Cursor, or any Cursor/agent attribution trailers. Use plain `git commit -m` only; no `--trailer`.
+- Remote: `C-Rogs/Signal` on GitHub. For push, PR, and `gh` operations in this repo, always authenticate as **C-Rogs** (not camronday). Use `GH_TOKEN=$(gh auth token -u C-Rogs) git push ...` or `gh auth switch --user C-Rogs` before git/gh commands. If push returns 403, report that the wrong GitHub account is active and retry with C-Rogs.
 
 ## Scope and loop control
 - Build only the current milestone. Do not implement future milestones or refactor prior stable code unless named.

@@ -33,9 +33,12 @@ protocol EmbeddingService: Sendable {
 
 enum EmbeddingBackend {
     static var useNLContextualEmbeddingFallback = false
+    static var useDeterministicTestEmbedding = false
 
     static func makeService() -> any EmbeddingService {
-        if useNLContextualEmbeddingFallback {
+        if useDeterministicTestEmbedding {
+            DeterministicTestEmbeddingService.shared
+        } else if useNLContextualEmbeddingFallback {
             NLEmbeddingService.shared
         } else {
             GemmaEmbeddingService.shared

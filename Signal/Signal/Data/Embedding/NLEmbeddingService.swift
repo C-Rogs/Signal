@@ -3,6 +3,14 @@ import Foundation
 import NaturalLanguage
 import os
 
+private actor NLEmbeddingGlobalGate {
+    static let shared = NLEmbeddingGlobalGate()
+
+    func run<T>(_ operation: () async throws -> T) async rethrows -> T {
+        try await operation()
+    }
+}
+
 actor NLEmbeddingService: EmbeddingService {
     static let shared = NLEmbeddingService()
 
@@ -18,7 +26,13 @@ actor NLEmbeddingService: EmbeddingService {
         outputDimension = model?.dimension ?? 0
     }
 
-    func embed(_ text: String, kind: EmbeddingKind) async throws -> [Float] {
+    nonisolated func embed(_ text: String, kind: EmbeddingKind) async throws -> [Float] {
+        try await NLEmbeddingGlobalGate.shared.run {
+            try await NLEmbeddingService.shared.embedOnActor(text, kind: kind)
+        }
+    }
+
+    private func embedOnActor(_ text: String, kind: EmbeddingKind) async throws -> [Float] {
         _ = kind
         if !loggedPrefixSkip {
             loggedPrefixSkip = true
@@ -28,19 +42,12 @@ actor NLEmbeddingService: EmbeddingService {
     }
 
     func embedBatch(_ texts: [String], kind: EmbeddingKind) async throws -> [[Float]] {
-        try await withThrowingTaskGroup(of: (Int, [Float]).self) { group in
-            for (index, text) in texts.enumerated() {
-                group.addTask {
-                    let vector = try await self.embed(text, kind: kind)
-                    return (index, vector)
-                }
-            }
-            var results = Array(repeating: [Float](), count: texts.count)
-            for try await (index, vector) in group {
-                results[index] = vector
-            }
-            return results
+        var results: [[Float]] = []
+        results.reserveCapacity(texts.count)
+        for text in texts {
+            results.append(try await embed(text, kind: kind))
         }
+        return results
     }
 
     private func embedRaw(_ text: String) async throws -> [Float] {
@@ -49,7 +56,9 @@ actor NLEmbeddingService: EmbeddingService {
         }
         try await ensureAssets(for: embedding)
 
-        let result = try embedding.embeddingResult(for: text, language: .english)
+        let result = try await Self.withModelCompilationRetry {
+            try embedding.embeddingResult(for: text, language: .english)
+        }
         var sum = [Double](repeating: 0, count: outputDimension)
         var tokenCount = 0
 
@@ -78,7 +87,9 @@ actor NLEmbeddingService: EmbeddingService {
             return
         }
 
-        let result = try await embedding.requestAssets()
+        let result = try await Self.withModelCompilationRetry {
+            try await embedding.requestAssets()
+        }
         switch result {
         case .available:
             break
@@ -89,6 +100,35 @@ actor NLEmbeddingService: EmbeddingService {
         }
         assetsReady = true
         Log.embedding.info("NL contextual embedding assets ready")
+    }
+
+    private static func withModelCompilationRetry<T>(
+        maxAttempts: Int = 6,
+        operation: () async throws -> T
+    ) async throws -> T {
+        var lastError: Error?
+        for attempt in 1 ... maxAttempts {
+            do {
+                return try await operation()
+            } catch {
+                lastError = error
+                guard isTransientModelCompilationError(error), attempt < maxAttempts else {
+                    throw error
+                }
+                let delayNanoseconds = UInt64(attempt) * 500_000_000
+                Log.embedding.warning(
+                    "NL embed retry attempt=\(attempt, privacy: .public) error=\(String(describing: error), privacy: .public)"
+                )
+                try await Task.sleep(nanoseconds: delayNanoseconds)
+            }
+        }
+        throw lastError ?? EmbeddingServiceError.contextualEmbeddingUnavailable
+    }
+
+    private static func isTransientModelCompilationError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        guard nsError.domain == "NLNaturalLanguageErrorDomain" else { return false }
+        return nsError.code == 7
     }
 
     private func normalizeInPlace(_ values: inout [Float]) {

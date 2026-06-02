@@ -42,20 +42,41 @@ struct ImportView: View {
 
 private struct HealthLiveSyncSection: View {
     @Bindable var healthKitManager: HealthKitManager
+    @State private var showSyncHelp = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("HealthKit live sync")
-                .font(.displayLarge)
-                .foregroundStyle(Color("TextPrimary"))
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("HealthKit live sync")
+                    .font(.displayLarge)
+                    .foregroundStyle(Color("TextPrimary"))
 
-            Text("Foreground anchored sync for HRV, resting heart rate, active energy, and sleep. No background delivery in this build.")
-                .font(.cardLabel)
-                .foregroundStyle(Color("TextSecondary"))
+                Button {
+                    showSyncHelp = true
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.body)
+                        .foregroundStyle(Color("TextSecondary"))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("How Health sync works")
+            }
+
+            Text(
+                "Anchored sync for Tier 1 metrics, nutrition, blood pressure, and Apple workouts. Background delivery updates the store after unlock."
+            )
+            .font(.cardLabel)
+            .foregroundStyle(Color("TextSecondary"))
 
             Text(accessStatusText)
                 .font(.cardLabel)
                 .foregroundStyle(accessStatusColor)
+
+            if healthKitManager.accessState != .ready {
+                Text(syncGateHint)
+                    .font(.cardLabel)
+                    .foregroundStyle(Color("TextSecondary"))
+            }
 
             if let error = healthKitManager.lastSyncErrorMessage {
                 Text(error)
@@ -82,7 +103,7 @@ private struct HealthLiveSyncSection: View {
                 .buttonStyle(.borderedProminent)
                 .tint(Color("Primary"))
                 .disabled(
-                    healthKitManager.accessState == .unavailable
+                    healthKitManager.accessState != .ready
                         || healthKitManager.isSyncing
                 )
 
@@ -92,6 +113,22 @@ private struct HealthLiveSyncSection: View {
                 }
             }
         }
+        .popover(isPresented: $showSyncHelp) {
+            HealthSyncHelpPopover()
+        }
+    }
+
+    private var syncGateHint: String {
+        switch healthKitManager.accessState {
+        case .unavailable:
+            "Sync is unavailable on this device."
+        case .notDetermined:
+            "Use Allow Health access first. Sync stays off until you finish Apple's permission sheet."
+        case .denied:
+            "Grant access in Settings, then return here to sync."
+        case .ready:
+            ""
+        }
     }
 
     private var accessStatusText: String {
@@ -99,9 +136,9 @@ private struct HealthLiveSyncSection: View {
         case .unavailable:
             "Health data is not available on this device."
         case .notDetermined:
-            "Health access not requested yet."
+            "Health access not granted yet."
         case .ready:
-            "Health access granted (best effort). You can sync now."
+            "Health access granted. Sync now is enabled."
         case .denied:
             "Health access appears denied. Open Settings > Health > Data Access & Devices > Signal."
         }
@@ -140,6 +177,53 @@ private struct HealthLiveSyncSection: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color("SurfaceElevated"))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+}
+
+private struct HealthSyncHelpPopover: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("How Health sync works")
+                .font(.cardLabel)
+                .foregroundStyle(Color("TextPrimary"))
+
+            Group {
+                helpRow(
+                    title: "1. Allow Health access",
+                    detail:
+                        "Opens Apple's permission sheet. Turn on the categories you want Signal to read, then tap Allow. If the sheet closes before that, sync will find no data."
+                )
+                helpRow(
+                    title: "2. Sync now",
+                    detail:
+                        "Enabled only after access is granted. Pulls new samples since your saved anchors, updates daily metrics and vectors on device."
+                )
+                helpRow(
+                    title: "3. Background updates",
+                    detail:
+                        "While locked, Signal only marks data as dirty. After unlock or when you open the app, it runs the same sync without re-reading Health in the background observer."
+                )
+            }
+
+            Text("Last sync below shows no-op when nothing changed since the previous anchor.")
+                .font(.cardLabel)
+                .foregroundStyle(Color("TextSecondary"))
+        }
+        .padding(20)
+        .frame(maxWidth: 340, alignment: .leading)
+        .presentationCompactAdaptation(.popover)
+    }
+
+    private func helpRow(title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.cardLabel)
+                .foregroundStyle(Color("TextPrimary"))
+            Text(detail)
+                .font(.cardLabel)
+                .foregroundStyle(Color("TextSecondary"))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

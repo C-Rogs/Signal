@@ -34,19 +34,17 @@ enum EmbeddingVectorStoreBridge {
     }
 
     private static func validateDimension(_ vector: [Float], service: any EmbeddingService) throws {
-        guard vector.count == HealthVectorDimension.embeddingGemma else {
-            Log.embedding.error(
-                "vector dimension \(vector.count, privacy: .public) does not match HealthVector"
-            )
-            throw EmbeddingServiceError.dimensionMismatch(
-                expected: HealthVectorDimension.embeddingGemma,
-                actual: vector.count
-            )
+        let expected = service.outputDimension
+        guard expected > 0 else {
+            throw EmbeddingServiceError.contextualEmbeddingUnavailable
         }
-        guard service.outputDimension == HealthVectorDimension.embeddingGemma else {
+        guard vector.count == expected else {
+            Log.embedding.error(
+                "vector dimension \(vector.count, privacy: .public) does not match service \(expected, privacy: .public)"
+            )
             throw EmbeddingServiceError.dimensionMismatch(
-                expected: HealthVectorDimension.embeddingGemma,
-                actual: service.outputDimension
+                expected: expected,
+                actual: vector.count
             )
         }
     }
