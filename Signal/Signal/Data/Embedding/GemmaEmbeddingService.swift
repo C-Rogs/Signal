@@ -88,11 +88,13 @@ actor GemmaEmbeddingService: EmbeddingService {
 
     func ensureLoaded() async throws -> EmbedderModelContainer {
         if let container {
+            await EmbeddingDownloadState.shared.markReady()
             return container
         }
         if let loadTask {
             let loaded = try await loadTask.value
             container = loaded
+            await EmbeddingDownloadState.shared.markReady()
             return loaded
         }
 

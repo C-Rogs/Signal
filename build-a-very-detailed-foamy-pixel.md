@@ -429,67 +429,95 @@ On-device app that: launches with increased memory, imports real Apple Health + 
 
 ---
 
-## Version 2 — Workout logging UI + LLM coaching foundation
+## Forward architecture (V2 onward): memory + coaching engine
 
-### M1. Workout schema additions (storage moved to V1 M6)
-- The core workout storage models (`WorkoutSession`, `WorkoutExercise`, `SetEntry`) were pulled forward into V1 M6 to preserve Hevy import fidelity. V2 only ADDS what the logging UI needs on top:
-  - `Exercise` catalog (name, primary muscle, equipment, isCustom), seeded/deduped from the distinct `exerciseTitle` values already imported in V1 (115 distinct).
-  - `Routine`, `RoutineExercise` (order, target sets/reps) for templated sessions.
-  - Link live-logged sessions to the catalog `Exercise` rather than a free-text title.
-- No re-import needed; V1 already holds the structured history.
+**Why this section exists:** V1 proved (via the M10 acceptance test) that this dataset is quantitative, so RAG-over-summaries is the wrong primary tool. The app "learns about you" through a MEMORY SYSTEM plus a COACHING-SCIENCE METRICS layer, with structured queries as the primary path and RAG reserved for fuzzy/free-text recall. This supersedes the original RAG-centric framing wherever they conflict.
 
-### M2. Hevy-style logging UI
-- Routine list + start session, in-session screen with add-exercise, per-set weight/reps/RPE entry, mark-set-complete, and a manual rest timer (dynamic auto-extension is V4). Compact, glanceable, gym-friendly layout; OLED dark.
-- Persist live to SwiftData; on finish, fold the session into that day's `DailySummary`, re-embed, update the vector store (reuse V1 Summarizer + EmbeddingService).
+### Memory model (maps to the 2026 agent-memory consensus)
+- **Episodic** = the timeline (`WorkoutSession`/`SetEntry`/`DailyMetric`/`DailyNutrition`/`AppleWorkout`). Built in V1. Queried by structured tools; never embedded for temporal/quantitative questions (that was the V1 mistake: episodic logs in a semantic index degrade both).
+- **Semantic (`UserProfile`)** = durable facts about you, EFFECTIVE-DATED (history, not overwrite).
+- **Procedural** = coaching rules/playbooks (system prompt + rules).
+- **Working** = the live chat session.
+- **Sensory** = future food photos (V5).
+- **Reflection/insights** = a scheduled job that derives durable insights from episodic data and writes them to a versioned `Insight` store. This is the actual "learning."
 
-### M3. HealthKit workout write + Training Load
-- On session completion, build an `HKWorkout` via `HKWorkoutBuilder` and write a calculated `HKQuantityTypeIdentifier.workoutEffortScore` (0 to 10, iOS 18+) so manual lifting influences Apple's native Training Load graphs.
-- **Accept:** finished sessions appear in Apple Health with an effort score.
+### The learning loop
+episodic data -> reflection (stats + LLM) -> versioned insights + profile updates -> compact context to the coach -> personalized advice/recommendation -> outcome captured -> reflection refines. Bidirectional and evolving, which RAG-over-static-summaries cannot do.
 
-### M4. LLM coach abstraction + Foundation Models
-- `LLMCoach` protocol (so MLX can be swapped later): `prewarm()`, `respond(to:context:) -> AsyncStream`, structured-output variants.
-- `FoundationModelsCoach.swift`: `LanguageModelSession` with a strict system-prompt persona ("elite sports physiologist and strength coach; focus only on biomechanics, growth, recovery; ignore unrelated general knowledge").
-- Structured outputs via `@Generable` (e.g., `WorkoutRecommendation`, `MacroEstimate` later) and `@Guide` constraints (e.g., intensity `.anyOf(["Light","Moderate","Maximum Effort"])`).
-- Register the M5 query tools (`queryWorkouts`, `metricTrend`, `nutritionTotals`, `semanticRecall`) as Foundation Models `Tool`s on the session, so temporal/quantitative/superlative questions hit structured SwiftData and only fuzzy questions hit RAG. The coach must not be left to free-text-reason over raw history; it picks a tool.
+### New data models (comprehensive + sound)
+- **UserProfile** (effective-dated facts; each carries validFrom/validTo): sex, height, DOB, bodyweight target, equipment access, weekly availability/schedule, experience level, injuries/limitations (status + dates), preferences.
+- **Goal**: typed (strength/hypertrophy/fatLoss/endurance/sport), target, deadline, priority; multiple concurrent allowed; effective-dated.
+- **ExerciseCatalog**: canonical exercise -> primaryMuscles, secondaryMuscles, movementPattern (squat/hinge/push/pull/lunge/carry/isolation), equipment, unilateral. Map the 115 imported titles; extensible. Foundational for volume landmarks and prescription.
+- **ProgramBlock** (mesocycle): phase (accumulation/intensification/deload/peak), start/end, focus; planned vs actual.
+- **Insight**: type, statement, value, confidence, evidenceRefs, computedAt, algoVersion, validUntil. Versioned + expirable to defeat staleness.
+- **Recommendation + Outcome**: what the coach advised, when, whether followed, measured result. Closes the learning loop.
+- **WellnessEntry** (NEW input, per session + per day): energy, mood, motivation, perceived session quality, soreness by area, stress, subjective sleep quality, illness, alcohol, caffeine, free-text notes. The qualitative signal numbers cannot give, and the content RAG is genuinely good at.
+- **DerivedMetric** records (computed, stored, versioned): e1RM per lift (time series), weekly volume (sets/reps/tonnage) per muscle, ACWR (combined modalities), rolling energy balance, protein g/kg, VO2max trend, readiness components.
 
-### M5. Query routing + RAG retrieval into the prompt
-**Design lesson from V1 M10 (do not skip):** embeddings encode meaning, not time, quantity, or recency. Cosine similarity cannot answer "last leg day", "heaviest squat", "how many leg days this month", or "last week" correctly on its own. These must be routed to structured queries over SwiftData, not the vector store. RAG is only for fuzzy semantic recall where no exact filter exists ("days I felt run down", "sessions that felt brutal").
+### Data quality and integrity (makes the models sound)
+- Store canonical SI units AND retain the source unit. A validation layer flags/repairs implausible values: the SpO2 ~1% reading is a fraction/unit bug to fix; reject sleep > 24h, HR out of physiological range, etc.
+- Provenance (sourceName/device) on every datum; multi-source dedup (e.g. active energy double-count) by preferring one primary source per type.
+- Every DerivedMetric carries algoVersion + input refs so it recomputes when a formula changes (no silent staleness).
 
-- `QueryRouter.swift`: classify the query before retrieval:
-  - **Fixed-window temporal** ("last week", "in March", "last 30 days") -> resolve to a `dayKey` range, filter then semantic-rank within it.
-  - **Superlative / recency** ("last", "latest", "most recent", "when did I last") -> structured query ordered by date desc; for workouts, classify exercises by muscle group (legs/push/pull) from `SetEntry`/`exerciseTitle` and return the most recent matching session. V1 M10 approximates this with recency-ranked semantics; V2 does it precisely via structured query.
-  - **Quantitative / aggregate** ("heaviest squat", "total volume this week", "average sleep", "highest protein day") -> structured query / computed answer over `WorkoutSession`/`SetEntry`/`DailyMetric`/`DailyNutrition`. Never RAG.
-  - **Fuzzy semantic** (everything else) -> `VectorStore.nearestNeighbors` cosine retrieval.
-- Expose these as Foundation Models `Tool`s (see M4) so the LLM can call `queryWorkouts(muscleGroup:dateRange:)`, `metricTrend(type:range:)`, `nutritionTotals(range:)`, and `semanticRecall(text:)`. The model decides which tool fits; it does not free-text-reason over raw history.
-- `RAGRetriever.swift`: for the fuzzy-semantic path, embed the query (EmbeddingService), `VectorStore.nearestNeighbors` for top-k summaries, assemble within the ~4k token budget (recent N days plus top retrieved historical days).
-- **Exercise muscle-group classification** is the one new data asset V2 needs: map `exerciseTitle` (115 distinct in the import) to muscle groups, so "leg day"/"push day" become exact structured filters rather than semantic guesses. Build it once, reuse across the recency and quantitative tools.
+### Coaching-science engine (what the coach reasons over; the reflection layer computes these, the coach reads THESE not raw logs)
+- **Strength**: e1RM trend per lift (Epley/Brzycki), volume-load, progressive-overload adherence, plateau detection -> deload/rotation trigger.
+- **Hypertrophy**: weekly sets per muscle vs MEV/MAV/MRV landmarks (~10-20 sets/muscle/wk, individualized).
+- **Load / injury risk**: ACWR across ALL modalities (7d:28d, target ~0.8-1.3, flag >1.5); manage concurrent-training interference (lifting + running/cycling).
+- **Recovery / readiness**: HRV 60d-vs-7d SD band (V3), RHR, sleep + sleep vitals; overtraining/illness flag (RHR up + HRV down + wrist temperature up).
+- **Nutrition / body comp**: rolling energy balance -> predicted mass/fat trajectory; protein 1.6-2.2 g/kg checked vs goal; trends.
+- **Endurance**: VO2max trend, aerobic-base/zone view, running efficiency (power, ground contact, vertical oscillation).
+- **Goal-conditioned**: every recommendation branches on the active Goal.
+- **Prescription**: next-session exercises, loads (from e1RM + target RIR), sets/reps, given readiness + weekly-volume status + goal.
 
-### M6. Chat UI + robustness
-- `ChatView.swift`: call `session.prewarm(...)` on appear; bind submit button to `isResponding` (never fire concurrent requests); stream tokens.
-- Wrap all generation in do/catch for `LanguageModelSession.GenerationError.exceededContextWindowSize` (auto-truncate oldest retrieved context and retry) and `rateLimited` (backoff + user-facing tooltip). Surface errors as helpful inline tooltips, not crashes.
-
-### V2 Definition of Done
-Full Hevy-style logging persisting to SwiftData and writing effort scores to Apple Health; a working on-device chat coach that ROUTES queries (temporal/quantitative/superlative to structured SwiftData tools, fuzzy to RAG), retrieves real context, answers within the context window, returns validated structured recommendations, and degrades gracefully on context-overflow and rate-limit errors with no concurrent-call crashes. Temporal and "last X"/"heaviest X" questions return exact, recent, correct answers, not semantically-similar old ones.
+### Safety and medical scope (non-negotiable)
+Surface health flags (overtraining, illness, sleep-disordered breathing from breathing-disturbance counts, out-of-range blood pressure) and RECOMMEND a qualified professional. The coach gives training/nutrition guidance within evidence-based bounds; it never diagnoses or replaces a clinician. Medical-shaped signals route to "see a doctor."
 
 ---
 
-## Version 3 to 5 — roadmap outlines (detail after V1/V2 land)
+## Version 2 — Logging UI + memory-backed coaching
 
-### V3 — Proactive math + watchOS basics
-- Replace V1 simple baselines with the rigorous model: 60-day SDNN baseline vs 7-day acute moving average, 0.75 SD band to classify normal fluctuation vs overtraining/deload signal. Athlytic-style exertion using 30-day max HR and 60-day resting HR.
-- watchOS companion target; opportunistic sync via `WCSession.transferUserInfo` (battery-friendly).
-- Contextual Daily Briefing as a morning local push built from the prior night's HRV.
+Built on the architecture above. Acceptance panel (V1 M10) is the regression harness: as each structured tool lands, its tests (T2 to T12) flip to structured PASS.
 
-### V4 — Live telemetry + calendar
-- watchOS `HKWorkoutSession` + `HKLiveWorkoutBuilder` for continuous sensor polling during workouts.
-- Active streaming via `WCSession.sendMessage` only during live coaching; downgrade to `transferUserInfo` otherwise.
-- Dynamic rest timer: extend baseline rest by 10% on a detected cardiovascular spike (for example +15 bpm).
-- `GoogleCalendarTool` via the Foundation Models `Tool` protocol so the coach can shift heavy days around busy calendar events.
+### M1. Exercise catalog + muscle taxonomy
+- `ExerciseCatalog` per the model above; map the 115 imported `exerciseTitle` values to primary/secondary muscles, movement pattern, equipment, unilateral. `Routine`/`RoutineExercise` for templates. Link sessions to catalog entries.
 
-### V5 — Dietary vision + sensory polish
-- Local Vision-Language meal analysis (MLX Swift vision model) with the "Camera + Note" UX (photo + speech-to-text context fused for macro estimation).
-- Dual-layer food data: grams in SQLite/SwiftData for thermodynamic accuracy, "Smart Serving Units" in the UI.
-- Duolingo-style encouraging haptics (`UIImpactFeedbackGenerator` / CoreHaptics) on milestones.
+### M2. Logging UI + wellness capture
+- Hevy-style logging (routines, in-session set entry, RPE, manual rest timer). Plus `WellnessEntry` capture (a few-second per-session/per-day subjective input). Fold into the day record and re-embed only the wellness/free-text for the fuzzy path.
+
+### M3. HealthKit workout write
+- `HKWorkout` + `workoutEffortScore` (iOS 18+) on session finish so manual lifting influences Apple Training Load.
+
+### M4. Profile + goals
+- `UserProfile` + `Goal` (effective-dated). Lightweight onboarding to set sex/height/bodyweight target, equipment, availability, experience, injuries, and the active goal(s). All coaching is conditioned on these.
+
+### M5. Coaching-metrics + data-quality layer
+- The validation/units/provenance/dedup layer (fix the SpO2 unit bug here). Then the `DerivedMetric` computations: e1RM per lift, weekly volume per muscle vs landmarks, ACWR (combined), rolling energy balance, protein g/kg, VO2max trend, readiness components. Stored, versioned.
+
+### M6. Reflection / insights job
+- Scheduled (nightly + post-session) job that runs stats + an LLM reflection pass over episodic + derived data and writes versioned, expirable `Insight`s and profile updates. This is the learning layer.
+
+### M7. Coach + structured tools + router
+- `LLMCoach` protocol; `FoundationModelsCoach` (`LanguageModelSession`, strict persona, `@Generable`/`@Guide`).
+- `QueryRouter`: temporal/quantitative/superlative -> structured tools; fuzzy -> RAG. Tools: `queryWorkouts(muscleGroup:range:)`, `metricTrend(type:range:)`, `nutritionTotals(range:)`, `prLookup(lift:)`, `readiness(date:)`, `insights(topic:)`, `profileFact(key:)`, `semanticRecall(text:)`. The coach picks tools; it does not free-text-reason over raw logs.
+
+### M8. Chat UI + feedback loop
+- `ChatView`: `prewarm`, bind to `isResponding`, stream; do/catch `exceededContextWindowSize` (truncate + retry) and `rateLimited`. Capture `Recommendation` + later `Outcome` so the loop closes.
+
+### V2 Definition of Done
+A memory-backed coach: effective-dated profile + goals, a reflection layer producing versioned insights, derived coaching metrics (e1RM, per-muscle volume vs landmarks, ACWR, energy balance, protein/kg), structured-first tool routing with RAG only for fuzzy recall, goal-conditioned prescription, and captured recommendation outcomes. Acceptance tests T2-T12 pass via structured tools. Health-shaped signals are flagged with a "see a professional" boundary, never diagnosed.
+
+---
+
+## Version 3 to 5 — roadmap outlines
+
+### V3 — Proactive coaching + watchOS
+- Rigorous readiness: 60-day SDNN baseline vs 7-day acute, 0.75 SD band; Athlytic-style exertion (30d max HR, 60d RHR). Overtraining/illness flags (RHR up + HRV down + temp up). ACWR-driven deload suggestions. Daily briefing built from insights, not raw HRV. watchOS companion; opportunistic `WCSession.transferUserInfo` sync.
+
+### V4 — Live telemetry + calendar + autoregulation
+- watchOS `HKWorkoutSession` + `HKLiveWorkoutBuilder`; live HR via `WCSession.sendMessage` during sessions. Dynamic rest timer (extend on a cardiovascular spike). In-session autoregulation: adjust prescribed load from live readiness/RPE. `GoogleCalendarTool` so the coach shifts heavy days around busy life events.
+
+### V5 — Dietary vision + endurance + polish
+- Local Vision-Language meal analysis ("Camera + Note") feeding the energy-balance engine; grams in SwiftData, Smart Serving Units in UI. Endurance/zone coaching off VO2max and running efficiency. Duolingo-style encouraging haptics on milestones.
 
 ---
 

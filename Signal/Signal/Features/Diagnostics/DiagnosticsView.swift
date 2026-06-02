@@ -20,6 +20,8 @@ struct DiagnosticsView: View {
                         syncSection(viewModel: viewModel)
                         importSummarySection
                         ragSmokeTestSection(viewModel: viewModel)
+                        dayDumpSection(viewModel: viewModel)
+                        retrievalUATSection(viewModel: viewModel)
                     } else {
                         ProgressView()
                             .tint(Color("Primary"))
@@ -220,6 +222,196 @@ struct DiagnosticsView: View {
                     .padding(.top, 4)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func dayDumpSection(viewModel: DiagnosticsViewModel) -> some View {
+        elevatedCard {
+            Text("Day dump")
+                .font(.cardLabel)
+                .foregroundStyle(Color("TextPrimary"))
+
+            Text(
+                "Dumps full HealthVector summaryText plus structured workout, nutrition, and metric fields for 2026-05-31, the latest nutrition day, and 2024-03-19."
+            )
+            .fixedSize(horizontal: false, vertical: true)
+
+            Button("Dump day and copy report (\(viewModel.dayDumpReportCharacterCount) chars)") {
+                viewModel.dumpDayAndCopyToPasteboard()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color("Primary"))
+
+            if let error = viewModel.dayDumpError {
+                Text(error)
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func retrievalUATSection(viewModel: DiagnosticsViewModel) -> some View {
+        elevatedCard {
+            Text("Retrieval UAT")
+                .font(.cardLabel)
+                .foregroundStyle(Color("TextPrimary"))
+
+            Text("Runs the on-device embed and retrieve pipeline, then auto-grades top hits against SwiftData.")
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button("Run all") {
+                Task {
+                    await viewModel.runAllRetrievalUAT()
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color("Primary"))
+            .disabled(viewModel.isRunningUAT)
+
+            HStack(spacing: 12) {
+                Button("Copy report (\(viewModel.uatReportCharacterCount) chars)") {
+                    viewModel.copyUATReportToPasteboard()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color("Primary"))
+                .disabled(!viewModel.canCopyUATReport)
+
+                ShareLink(item: viewModel.uatReportText) {
+                    Text("Share report (\(viewModel.uatReportCharacterCount) chars)")
+                }
+                .buttonStyle(.bordered)
+                .tint(Color("Primary"))
+                .disabled(!viewModel.canCopyUATReport)
+            }
+
+            if viewModel.isRunningUAT {
+                if let runningID = viewModel.uatRunningTestID,
+                   let label = RetrievalUATCatalog.definition(id: runningID)?.label {
+                    ProgressView("Running \(label)...")
+                        .tint(Color("Primary"))
+                } else {
+                    ProgressView("Running UAT...")
+                        .tint(Color("Primary"))
+                }
+            }
+
+            if let error = viewModel.uatError {
+                Text(error)
+                    .foregroundStyle(.orange)
+            }
+
+            ForEach(RetrievalUATCatalog.all) { definition in
+                uatCatalogRow(definition: definition, viewModel: viewModel)
+            }
+
+            if !viewModel.uatResults.isEmpty {
+                Text("Results")
+                    .font(.cardLabel)
+                    .foregroundStyle(Color("TextPrimary"))
+                    .padding(.top, 8)
+
+                ForEach(viewModel.uatResults) { result in
+                    uatResultRow(result)
+                }
+            }
+        }
+    }
+
+    private func uatCatalogRow(definition: RetrievalUATDefinition, viewModel: DiagnosticsViewModel) -> some View {
+        let isRunning = viewModel.uatRunningTestID == definition.id
+        let result = viewModel.uatResults.first { $0.definitionID == definition.id }
+
+        return Button {
+            Task {
+                await viewModel.runRetrievalUAT(testID: definition.id)
+            }
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(definition.label)
+                        .foregroundStyle(Color("TextPrimary"))
+                    Text(definition.query)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(Color("TextSecondary"))
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 8)
+                if isRunning {
+                    ProgressView()
+                        .controlSize(.small)
+                } else if let result {
+                    Text(result.verdict.rawValue)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(uatVerdictColor(result.verdict))
+                }
+            }
+            .padding(.top, 6)
+        }
+        .buttonStyle(.plain)
+        .disabled(viewModel.isRunningUAT)
+    }
+
+    private func uatResultRow(_ result: RetrievalUATResult) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(result.label)
+                    .font(.cardLabel)
+                    .foregroundStyle(Color("TextPrimary"))
+                Spacer()
+                Text(result.verdict.rawValue)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(uatVerdictColor(result.verdict))
+            }
+
+            Text("mode=\(result.expectedMode.rawValue) det=\(result.detectedModeLabel)")
+                .font(.system(.caption, design: .monospaced))
+
+            Text("check \(result.checkLabel) \(result.ratioLabel)")
+                .font(.system(.caption, design: .monospaced))
+
+            if let structured = result.structuredAnswer {
+                Text("structured (V2 target): \(structured)")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Color("TextSecondary"))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let error = result.errorMessage {
+                Text(error)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.orange)
+            }
+
+            ForEach(result.hits) { hit in
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(hit.dayKey)
+                            .foregroundStyle(Color("TextPrimary"))
+                        Spacer()
+                        Text(hit.formattedScore)
+                            .foregroundStyle(Color("Primary"))
+                    }
+                    Text(hit.snippet)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(Color("TextSecondary"))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(.top, 8)
+    }
+
+    private func uatVerdictColor(_ verdict: RetrievalUATVerdict) -> Color {
+        switch verdict {
+        case .pass:
+            return .green
+        case .fail:
+            return .orange
+        case .review:
+            return Color("TextSecondary")
+        case .limit:
+            return .yellow
         }
     }
 

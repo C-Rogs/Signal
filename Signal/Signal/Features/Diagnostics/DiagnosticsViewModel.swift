@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import os
 import SwiftData
+import UIKit
 
 struct SyncAnchorRow: Identifiable, Sendable, Equatable {
     let typeIdentifier: String
@@ -44,6 +45,30 @@ final class DiagnosticsViewModel {
     var searchResults: [RAGSearchHit] = []
     var searchError: String?
     var retrievalFootnote: String?
+    var uatResults: [RetrievalUATResult] = []
+    var uatCorpusStats = RetrievalUATCorpusStats(
+        dayCount: 0,
+        earliestDayKey: "none",
+        latestDayKey: "none",
+        vectorCount: 0
+    )
+    var isRunningUAT = false
+    var uatRunningTestID: String?
+    var uatError: String?
+    var uatReportText = ""
+    var dayDumpReportText = ""
+    var dayDumpError: String?
+
+    var uatReportCharacterCount: Int { uatReportText.count }
+    var dayDumpReportCharacterCount: Int { dayDumpReportText.count }
+
+    var canCopyDayDumpReport: Bool {
+        !dayDumpReportText.isEmpty
+    }
+
+    var canCopyUATReport: Bool {
+        !isRunningUAT && !uatReportText.isEmpty
+    }
 
     private let modelContainer: ModelContainer
     private let retrievalTopK = DiagnosticsRetrieval.defaultTopK
@@ -127,81 +152,128 @@ final class DiagnosticsViewModel {
         retrievalFootnote = nil
         defer { isSearching = false }
 
-        let context = ModelContext(modelContainer)
-        let store = SwiftDataVectorStore(context: context)
-        let service = EmbeddingBackend.makeService()
-        let calendar = Calendar.current
-        let retrievalMode = QueryRetrievalMode.resolve(in: trimmed, calendar: calendar)
+        let run = await DiagnosticsRetrievalRunner.run(
+            query: trimmed,
+            modelContainer: modelContainer,
+            displayHitCount: retrievalTopK
+        )
 
+        if let error = run.errorMessage {
+            searchError = error
+            return
+        }
+
+        if run.fallbackToGlobal, let window = run.temporalWindow {
+            searchError =
+                "No indexed days in \(window.label) (\(window.fromDayKey) to \(window.toDayKey)). Showing global semantic matches."
+        } else if let footnote = run.footnote {
+            retrievalFootnote = footnote
+        }
+
+        searchResults = run.hits
+        Log.embedding.info(
+            "diagnostics RAG smoke test queryChars=\(trimmed.count, privacy: .public) hits=\(run.hits.count, privacy: .public) temporal=\(run.usedTemporalFilter, privacy: .public) recency=\(run.usedRecencyRanking, privacy: .public)"
+        )
+    }
+
+    func runRetrievalUAT(testID: String) async {
+        guard let definition = RetrievalUATCatalog.definition(id: testID) else { return }
+        await runRetrievalUAT(definitions: [definition], replaceResults: false)
+    }
+
+    func runAllRetrievalUAT() async {
+        await runRetrievalUAT(definitions: RetrievalUATCatalog.all, replaceResults: true)
+    }
+
+    func copyUATReportToPasteboard() {
+        guard canCopyUATReport else { return }
+        UIPasteboard.general.string = uatReportText
+        Log.ui.info("diagnostics UAT report copied chars=\(self.uatReportText.count, privacy: .public)")
+    }
+
+    func dumpDayAndCopyToPasteboard() {
+        dayDumpError = nil
+        let context = ModelContext(modelContainer)
         do {
-            let vectorCount = try store.count()
-            guard vectorCount > 0 else {
-                searchError = "No HealthVector rows yet. Import Health or Hevy data first."
+            dayDumpReportText = try DiagnosticsDayDump.buildReport(in: context)
+            guard !dayDumpReportText.isEmpty else {
+                dayDumpError = "Day dump report was empty."
                 return
             }
-
-            let temporalWindow: TemporalQueryWindow?
-            let recencyIntent: Bool
-            let searchPoolK: Int
-            let fromDayKey: String?
-            let toDayKey: String?
-
-            switch retrievalMode {
-            case .fixedWindow(let window):
-                temporalWindow = window
-                recencyIntent = false
-                searchPoolK = retrievalTopK
-                fromDayKey = window.fromDayKey
-                toDayKey = window.toDayKey
-            case .recencyRanking:
-                temporalWindow = nil
-                recencyIntent = true
-                searchPoolK = vectorCount
-                fromDayKey = nil
-                toDayKey = nil
-            case .pureCosine:
-                temporalWindow = nil
-                recencyIntent = false
-                searchPoolK = retrievalTopK
-                fromDayKey = nil
-                toDayKey = nil
-            }
-
-            let rawNeighbors = try await EmbeddingVectorStoreBridge.search(
-                query: trimmed,
-                store: store,
-                service: service,
-                k: searchPoolK,
-                fromDayKey: fromDayKey,
-                toDayKey: toDayKey
-            )
-
-            let outcome = DiagnosticsRetrieval.rankedNeighbors(
-                rawNeighbors,
-                temporalWindow: temporalWindow,
-                recencyIntent: recencyIntent,
-                topK: retrievalTopK
-            )
-
-            if outcome.fallbackToGlobal, let label = outcome.temporalLabel {
-                searchError =
-                    "No indexed days in \(label) (\(temporalWindow?.fromDayKey ?? "") to \(temporalWindow?.toDayKey ?? "")). Showing global semantic matches."
-            } else if let footnote = outcome.footnote {
-                retrievalFootnote = footnote
-            }
-
-            searchResults = outcome.neighbors.map {
-                RAGSearchHit(dayKey: $0.dayKey, summaryText: $0.summaryText, score: $0.similarity)
-            }
-            Log.embedding.info(
-                "diagnostics RAG smoke test queryChars=\(trimmed.count, privacy: .public) hits=\(outcome.neighbors.count, privacy: .public) temporal=\(outcome.usedTemporalFilter, privacy: .public) recency=\(outcome.usedRecencyRanking, privacy: .public)"
-            )
+            UIPasteboard.general.string = dayDumpReportText
+            Log.ui.info("diagnostics day dump copied chars=\(self.dayDumpReportText.count, privacy: .public)")
         } catch {
-            Log.embedding.error(
-                "diagnostics RAG smoke test failed: \(String(describing: error), privacy: .public)"
-            )
-            searchError = Self.describeRetrievalFailure(error)
+            dayDumpReportText = ""
+            dayDumpError = error.localizedDescription
+            Log.ui.error("diagnostics day dump failed: \(String(describing: error), privacy: .public)")
         }
+    }
+
+    private func runRetrievalUAT(definitions: [RetrievalUATDefinition], replaceResults: Bool) async {
+        isRunningUAT = true
+        uatError = nil
+        if replaceResults {
+            uatResults = []
+            uatReportText = ""
+        }
+        defer {
+            isRunningUAT = false
+            uatRunningTestID = nil
+        }
+
+        do {
+            uatCorpusStats = try RetrievalUATGrader.corpusStats(modelContainer: modelContainer)
+            let context = ModelContext(modelContainer)
+            let indexes = try RetrievalUATDayIndexes.load(in: context)
+            let referenceDate = Date()
+            let calendar = Calendar.current
+
+            for definition in definitions {
+                uatRunningTestID = definition.id
+                let run = await DiagnosticsRetrievalRunner.run(
+                    query: definition.query,
+                    modelContainer: modelContainer,
+                    referenceDate: referenceDate,
+                    calendar: calendar
+                )
+                let graded = RetrievalUATGrader.grade(
+                    definition: definition,
+                    run: run,
+                    indexes: indexes,
+                    referenceDate: referenceDate,
+                    calendar: calendar
+                )
+                if let existingIndex = uatResults.firstIndex(where: { $0.definitionID == definition.id }) {
+                    uatResults[existingIndex] = graded
+                } else {
+                    uatResults.append(graded)
+                }
+                Log.ui.info(
+                    "diagnostics UAT \(definition.id, privacy: .public) verdict=\(graded.verdict.rawValue, privacy: .public) ratio=\(graded.ratioLabel, privacy: .public)"
+                )
+            }
+
+            uatResults.sort { lhs, rhs in
+                let lhsOrder = RetrievalUATCatalog.all.firstIndex { $0.id == lhs.definitionID } ?? Int.max
+                let rhsOrder = RetrievalUATCatalog.all.firstIndex { $0.id == rhs.definitionID } ?? Int.max
+                return lhsOrder < rhsOrder
+            }
+            rebuildUATReport()
+        } catch {
+            uatError = error.localizedDescription
+            Log.ui.error("diagnostics UAT failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func rebuildUATReport() {
+        guard !uatResults.isEmpty else {
+            uatReportText = ""
+            return
+        }
+        uatReportText = RetrievalUATShareReport.build(results: uatResults, corpus: uatCorpusStats)
+        Log.ui.info(
+            "diagnostics UAT report built chars=\(self.uatReportText.count, privacy: .public) tests=\(self.uatResults.count, privacy: .public)"
+        )
     }
 
     private static func latestDailyMetricDescriptor() -> FetchDescriptor<DailyMetric> {

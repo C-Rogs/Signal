@@ -76,7 +76,9 @@ struct RootView: View {
                 colorScheme: colorScheme
             )
         case .ready:
-            EmptyView()
+            ProgressView("Opening Signal...")
+                .controlSize(.regular)
+                .tint(Color("Primary"))
         case .failed:
             VStack(spacing: 12) {
                 Text(downloadState.errorMessage ?? "Embedding model could not load.")
@@ -95,12 +97,18 @@ struct RootView: View {
     private func runEmbeddingPreloadDeferred() async {
         await Task.yield()
         try? await Task.sleep(for: .milliseconds(500))
-        downloadState.begin(message: "Preparing on-device embeddings")
+        guard !EmbeddingBackend.useNLContextualEmbeddingFallback else {
+            downloadState.markReady()
+            return
+        }
         Log.ui.info("embedding preload started")
         do {
             _ = try await GemmaEmbeddingService.shared.ensureLoaded()
+            downloadState.markReady()
             Log.ui.info("embedding preload finished")
         } catch {
+            let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            downloadState.fail(message.isEmpty ? "Embedding model could not load." : message)
             Log.ui.error(
                 "embedding preload failed: \(String(describing: error), privacy: .public)"
             )
