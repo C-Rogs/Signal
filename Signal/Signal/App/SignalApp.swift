@@ -12,6 +12,7 @@ struct SignalApp: App {
         do {
             let container = try SignalModelContainer.make()
             modelContainer = container
+            CatalogBootstrap.runIfNeeded(modelContainer: container)
             _healthKitManager = State(
                 wrappedValue: HealthKitManager(modelContainer: container)
             )

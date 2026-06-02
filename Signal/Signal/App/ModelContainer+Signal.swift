@@ -11,6 +11,9 @@ enum SignalModelContainer {
         WorkoutSession.self,
         WorkoutExercise.self,
         SetEntry.self,
+        ExerciseCatalog.self,
+        Routine.self,
+        RoutineExercise.self,
     ])
 
     static func make(inMemoryOnly: Bool = false) throws -> ModelContainer {
