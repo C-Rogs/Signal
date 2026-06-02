@@ -7,6 +7,9 @@ enum Symbol: String, CaseIterable {
     case energy = "flame"
     case workout = "dumbbell"
     case coach = "brain.head.profile"
+    case bodyMass = "scalemass"
+    case steps = "figure.walk"
+    case nutrition = "fork.knife"
 
     var image: Image {
         Image(systemName: rawValue)

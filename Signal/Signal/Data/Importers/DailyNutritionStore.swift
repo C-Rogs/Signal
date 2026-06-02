@@ -49,4 +49,34 @@ enum DailyNutritionStore {
     static func count(in context: ModelContext) throws -> Int {
         try context.fetchCount(FetchDescriptor<DailyNutrition>())
     }
+
+    @MainActor
+    static func fetchNutrition(
+        from start: Date,
+        through end: Date,
+        in context: ModelContext
+    ) throws -> [DailyNutrition] {
+        let rangeStart = start
+        let rangeEnd = end
+        let descriptor = FetchDescriptor<DailyNutrition>(
+            predicate: #Predicate { $0.date >= rangeStart && $0.date <= rangeEnd },
+            sortBy: [SortDescriptor(\.date, order: .forward)]
+        )
+        return try context.fetch(descriptor)
+    }
+
+    @MainActor
+    static func fetchNutrition(
+        withinLastDays days: Int,
+        from referenceDate: Date,
+        calendar: Calendar,
+        in context: ModelContext
+    ) throws -> [DailyNutrition] {
+        guard days > 0 else { return [] }
+        let end = calendar.startOfDay(for: referenceDate)
+        guard let start = calendar.date(byAdding: .day, value: -(days - 1), to: end) else {
+            return []
+        }
+        return try fetchNutrition(from: start, through: end, in: context)
+    }
 }

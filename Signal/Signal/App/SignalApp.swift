@@ -29,12 +29,23 @@ struct SignalApp: App {
     }
 
     private static func applyDarkNavigationChrome() {
+        let navBackground = UIColor { traits in
+            traits.userInterfaceStyle == .dark ? .black : .white
+        }
+        let navTitle = UIColor { traits in
+            traits.userInterfaceStyle == .dark ? .white : .black
+        }
+
         let nav = UINavigationBarAppearance()
         nav.configureWithOpaqueBackground()
-        nav.backgroundColor = .black
-        nav.titleTextAttributes = [.foregroundColor: UIColor.white]
-        UINavigationBar.appearance().standardAppearance = nav
-        UINavigationBar.appearance().scrollEdgeAppearance = nav
-        UINavigationBar.appearance().compactAppearance = nav
+        nav.backgroundColor = navBackground
+        nav.titleTextAttributes = [.foregroundColor: navTitle]
+        nav.largeTitleTextAttributes = [.foregroundColor: navTitle]
+
+        let bar = UINavigationBar.appearance()
+        bar.standardAppearance = nav
+        bar.scrollEdgeAppearance = nav
+        bar.compactAppearance = nav
+        bar.tintColor = UIColor(named: "Primary")
     }
 }

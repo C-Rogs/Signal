@@ -131,6 +131,36 @@ enum DailyMetricStore {
     }
 
     @MainActor
+    static func fetchMetrics(
+        from start: Date,
+        through end: Date,
+        in context: ModelContext
+    ) throws -> [DailyMetric] {
+        let rangeStart = start
+        let rangeEnd = end
+        let descriptor = FetchDescriptor<DailyMetric>(
+            predicate: #Predicate { $0.date >= rangeStart && $0.date <= rangeEnd },
+            sortBy: [SortDescriptor(\.date, order: .forward)]
+        )
+        return try context.fetch(descriptor)
+    }
+
+    @MainActor
+    static func fetchMetrics(
+        withinLastDays days: Int,
+        from referenceDate: Date,
+        calendar: Calendar,
+        in context: ModelContext
+    ) throws -> [DailyMetric] {
+        guard days > 0 else { return [] }
+        let end = calendar.startOfDay(for: referenceDate)
+        guard let start = calendar.date(byAdding: .day, value: -(days - 1), to: end) else {
+            return []
+        }
+        return try fetchMetrics(from: start, through: end, in: context)
+    }
+
+    @MainActor
     static func fetchSpotCheckDays(
         in context: ModelContext,
         calendar: Calendar,
