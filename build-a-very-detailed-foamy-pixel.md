@@ -447,7 +447,8 @@ episodic data -> reflection (stats + LLM) -> versioned insights + profile update
 ### New data models (comprehensive + sound)
 - **UserProfile** (effective-dated facts; each carries validFrom/validTo): sex, height, DOB, bodyweight target, equipment access, weekly availability/schedule, experience level, injuries/limitations (status + dates), preferences.
 - **Goal**: typed (strength/hypertrophy/fatLoss/endurance/sport), target, deadline, priority; multiple concurrent allowed; effective-dated.
-- **ExerciseCatalog**: canonical exercise -> primaryMuscles, secondaryMuscles, movementPattern (squat/hinge/push/pull/lunge/carry/isolation), equipment, unilateral. Map the 115 imported titles; extensible. Foundational for volume landmarks and prescription.
+- **ExerciseCatalog**: canonical exercise -> primaryMuscles, secondaryMuscles, movementPattern (squat/hinge/push/pull/lunge/carry/isolation), equipment, unilateral. **Seeded from free-exercise-db (public domain JSON, ~800 exercises with primary/secondary muscles + equipment)**, then the 115 imported titles matched against it. Each set contributes **fractional volume**: 1.0 set to each primary muscle, 0.5 set to each secondary (the best-evidenced hypertrophy counting method). Foundational for volume landmarks and prescription.
+- **UserMuscleModel** (derived): per-muscle rolling weekly fractional volume, recent stimulus/recovery state, and development trend, accumulated from every set via the catalog mapping. Drives the body-heatmap view and the under/over-dosing flags. This is the literal "model of your body" the coach reasons over.
 - **ProgramBlock** (mesocycle): phase (accumulation/intensification/deload/peak), start/end, focus; planned vs actual.
 - **Insight**: type, statement, value, confidence, evidenceRefs, computedAt, algoVersion, validUntil. Versioned + expirable to defeat staleness.
 - **Recommendation + Outcome**: what the coach advised, when, whether followed, measured result. Closes the learning loop.
@@ -461,7 +462,7 @@ episodic data -> reflection (stats + LLM) -> versioned insights + profile update
 
 ### Coaching-science engine (what the coach reasons over; the reflection layer computes these, the coach reads THESE not raw logs)
 - **Strength**: e1RM trend per lift (Epley/Brzycki), volume-load, progressive-overload adherence, plateau detection -> deload/rotation trigger.
-- **Hypertrophy**: weekly sets per muscle vs MEV/MAV/MRV landmarks (~10-20 sets/muscle/wk, individualized).
+- **Hypertrophy**: weekly **fractional** sets per muscle (primary 1.0, secondary 0.5) vs MEV/MAV/MRV landmarks (~10-20 sets/muscle/wk, individualized), via the UserMuscleModel.
 - **Load / injury risk**: ACWR across ALL modalities (7d:28d, target ~0.8-1.3, flag >1.5); manage concurrent-training interference (lifting + running/cycling).
 - **Recovery / readiness**: HRV 60d-vs-7d SD band (V3), RHR, sleep + sleep vitals; overtraining/illness flag (RHR up + HRV down + wrist temperature up).
 - **Nutrition / body comp**: rolling energy balance -> predicted mass/fat trajectory; protein 1.6-2.2 g/kg checked vs goal; trends.
@@ -474,15 +475,87 @@ Surface health flags (overtraining, illness, sleep-disordered breathing from bre
 
 ---
 
+## UX and interaction flow (cross-cutting; a Definition of Done for every UI surface)
+
+Applies to all screens, V1 retrofit included. No UI milestone is "done" until it meets this checklist. Add "walk every button, every back path, every error path" to each UI milestone's verification.
+
+### Navigation map
+As V2 adds logging and the coach, replace the Dashboard-plus-toolbar shell with a **TabView**:
+- **Dashboard** (recovery, trends, today)
+- **Train** (routines, start workout, history)
+- **Coach** (chat)
+- **Profile** (goals, profile, settings; Import and Diagnostics live here, not top-level)
+
+Each tab is its own `NavigationStack` with typed `navigationDestination`. Anything reachable in <=2 taps from its tab root.
+
+### UI Definition of Done (every screen/feature)
+1. **Placement**: lives in the correct tab/stack; not buried, not crowding the root.
+2. **Every control has a response**: disabled when invalid, shows in-progress (spinner or %), and a clear success or error result. No dead or no-op buttons.
+3. **Back / dismiss / cancel** on every pushed screen and every sheet; modal flows have an explicit Cancel.
+4. **Every async action wrapped**: failures surface as inline, non-crashing messages with Retry where sensible. Never a silent no-op, never a crash.
+5. **Start has a Stop** (table below): every startable action has an explicit, reachable stop/cancel/finish.
+6. **Empty, loading, and permission-denied states** for every data-backed screen.
+7. **Destructive actions confirm**: discard workout, delete data, remove an exercise that has logged sets, reset store.
+8. **In-progress state survives backgrounding and app kill** (critical for workouts).
+
+### Start <-> Stop pairs
+| Start | Stop / completion |
+|---|---|
+| Start workout | Finish (save + effort-score write) / Discard (confirm) / auto-resume after backgrounding |
+| Rest timer | Skip / Stop / adjust |
+| Import | Cancel mid-parse or mid-embed |
+| Sync now | Completes, or Cancel; spinner always resolves |
+| Coach generation | Input disabled while streaming; Stop-generation if the API supports it |
+| Add to superset | Remove from superset |
+| Live workout (V4) | End workout (ends HKWorkoutSession, saves) |
+| Record meal (V5) | Cancel / discard photo |
+
+### Critical flows
+- **Workout in progress**: persist every set edit immediately to SwiftData; show a resumable live banner if the user navigates away; Finish writes the effort score; Discard confirms. A crash mid-session must lose nothing.
+- **HealthKit permission**: undetermined -> prompt; denied -> explainer plus deep link to Settings; never assume granted.
+- **Model not ready**: loading state gates dependent screens (done for Dashboard); Coach shows "preparing", not a broken send; if Apple Intelligence is unavailable, a clear unsupported state.
+- **Coach errors**: context overflow -> truncate and retry transparently; rate-limited -> tooltip; tool failure -> "couldn't fetch that"; no crashes, no concurrent sends (`isResponding`).
+- **Chat**: conversation persists; new/clear chat available; cannot double-send.
+
+### Retrofit V1
+Bring Dashboard, Import, and Diagnostics up to this checklist: empty states, Cancel on import, HealthKit permission-denied flow, error retries.
+
+---
+
+## Cross-cutting product requirements (easy to miss)
+
+- **Units and locale**: a user unit preference (kg/lb for load, km/mi for distance). Store canonical SI (kg, km, kcal); convert only at display. Every weight/distance in logging, dashboard, history, and coach output respects it. Default from device locale. Lives in Settings.
+- **App-native data backup/portability**: HealthKit and Hevy data are recoverable from exports, but app-native data (routines, profile, goals, `WellnessEntry`, insights, recommendations) exists ONLY on device and is lost with the app/phone. Decision required (see below). Until then, ship a local "Export app data" (JSON) and "Import app data" so nothing is unrecoverable.
+- **Onboarding (first run)**: choreograph welcome -> HealthKit permission -> import prompt -> embedding model download (progress) -> set goals/profile. Skippable and resumable.
+- **Settings (under Profile)**: unit preference, notification preferences, data management (re-import, export/backup, reset, view flagged data-quality issues), embedding model status, about + medical-scope disclaimer.
+- **Train tab content**: routines, workout history, per-exercise progress (e1RM + volume charts), PR detection, and "today's recommended session" surfaced from the prescription engine (not only via chat).
+- **Accessibility**: Dynamic Type and sufficient contrast; legible one-handed mid-set.
+- **Backup (DECIDED): private CloudKit for app-native data, with a local JSON export as the immediate safety net.** Two important scoping points:
+  - **Back up only the irreplaceable app-native models** (`UserProfile`, `Goal`, `Routine`, `WellnessEntry`, `Insight`, `Recommendation`, custom `ExerciseCatalog` edits). The re-importable data (HealthKit metrics, Hevy workouts, `HealthVector` embeddings) stays **local only** because it is regenerable from the exports + re-embed, and syncing gigabytes of vectors via CloudKit is wasteful.
+  - **SwiftData + CloudKit forbids `@Attribute(.unique)` and requires optional/defaulted properties.** The synced models must drop unique constraints (dedup in code instead). This is why CloudKit is phased after the cheap local export, not bolted onto V1's existing unique-keyed models.
+  - Phase 1 (early V2): local JSON export/import of the app-native models, so nothing is unrecoverable immediately. Phase 2 (later V2): private CloudKit auto-sync on those models for seamless backup/restore and multi-device.
+
+---
+
 ## Version 2 — Logging UI + memory-backed coaching
 
-Built on the architecture above. Acceptance panel (V1 M10) is the regression harness: as each structured tool lands, its tests (T2 to T12) flip to structured PASS.
+Built on the architecture above. Acceptance panel (V1 M10) is the regression harness: as each structured tool lands, its tests (T2 to T12) flip to structured PASS. Every UI milestone here must meet the cross-cutting UX Definition of Done above.
 
-### M1. Exercise catalog + muscle taxonomy
-- `ExerciseCatalog` per the model above; map the 115 imported `exerciseTitle` values to primary/secondary muscles, movement pattern, equipment, unilateral. `Routine`/`RoutineExercise` for templates. Link sessions to catalog entries.
+### M0. Navigation shell
+- Replace the Dashboard-plus-toolbar shell with the TabView map (Dashboard / Train / Coach / Profile), each a `NavigationStack`. Move Import and Diagnostics under Profile. Stub the Train and Coach tabs so later milestones slot in. Retrofit the V1 screens to the UX checklist (empty/loading/permission/error states) as they move into tabs.
 
-### M2. Logging UI + wellness capture
-- Hevy-style logging (routines, in-session set entry, RPE, manual rest timer). Plus `WellnessEntry` capture (a few-second per-session/per-day subjective input). Fold into the day record and re-embed only the wellness/free-text for the fuzzy path.
+### Data safety: backup + restore (Phase 1 early, Phase 2 later)
+- **Phase 1 (do early, before logging accumulates data):** a local "Export app data" / "Import app data" in Settings that serialises the irreplaceable app-native models (`UserProfile`, `Goal`, `Routine`, `WellnessEntry`, `Insight`, `Recommendation`, custom `ExerciseCatalog` edits) to/from a JSON file via the share sheet. Round-trip tested. Re-importable data (health metrics, Hevy workouts, vectors) is excluded; it is regenerated from the source exports.
+- **Phase 2 (later V2):** private CloudKit auto-sync on the same app-native models. Requires the human to add the iCloud/CloudKit capability, and the synced models to drop `@Attribute(.unique)` (dedup in code) and use optional/defaulted properties. Health/vector data stays local-only.
+
+### M1. Exercise catalog + muscle model
+- Seed `ExerciseCatalog` from **free-exercise-db** (bundle the public-domain JSON; ~800 exercises with primary/secondary muscles + equipment). Match the 115 imported `exerciseTitle` values against it (fuzzy + alias match); flag unmatched for review.
+- Model `involvement` so each set yields fractional volume (primary 1.0, secondary 0.5). Add the derived `UserMuscleModel` (per-muscle weekly fractional volume + body-heatmap data). `Routine`/`RoutineExercise` for templates. Link sessions to catalog entries.
+- Output the match table and flag low-confidence mappings for my review (they drive the volume math).
+
+### M2. Logging UI (Hevy-grade) + wellness capture
+- Match Hevy's logging quality, the feature that makes it the gold standard: **previous-set autofill** (last session's weight/reps/sets prefilled as editable placeholders), **per-exercise rest timers** (optional, configurable), **supersets** with auto-scroll between paired exercises, **set types** (warmup/normal/drop/failure), a fast **searchable exercise library** (from the catalog), reorder/replace exercise, inline e1RM/last-time display, and friction-free mid-workout entry. Compact, glanceable, OLED dark.
+- `WellnessEntry` capture (a few-second per-session/per-day subjective input: energy, soreness by area, mood, stress, notes). Fold the free-text into the fuzzy-recall path; everything else stays structured.
 
 ### M3. HealthKit workout write
 - `HKWorkout` + `workoutEffortScore` (iOS 18+) on session finish so manual lifting influences Apple Training Load.

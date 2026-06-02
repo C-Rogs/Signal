@@ -6,84 +6,30 @@ import UIKit
 struct DashboardView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(HealthKitManager.self) private var healthKitManager
+    @Environment(UnitPreferences.self) private var unitPreferences
     @Query(sort: \DailyMetric.date, order: .forward) private var metrics: [DailyMetric]
     @Query(sort: \DailyNutrition.date, order: .forward) private var nutritionRows: [DailyNutrition]
     @State private var viewModel = DashboardViewModel()
-    @State private var showImport = false
-    @State private var showDiagnostics = false
+
+    private var unitFormatter: DisplayUnitFormatter {
+        DisplayUnitFormatter(preferences: unitPreferences)
+    }
 
     var body: some View {
         ZStack {
             screenBackground
                 .ignoresSafeArea()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    DashboardWindowPicker(viewModel: viewModel)
-
-                    DashboardRecoveryCard(
-                        indicator: viewModel.recoveryIndicator,
-                        rollingMeans: viewModel.rollingMeans,
-                        window: viewModel.selectedWindow
-                    )
-
-                    DashboardMetricCard(
-                        title: "HRV",
-                        valueText: DashboardFormatting.hrv(viewModel.latestHRV),
-                        subtitle: hrvSubtitle,
-                        symbol: .heartVariability,
-                        points: viewModel.hrvPoints,
-                        valueStyle: .hrv,
-                        tint: Color("Primary")
-                    )
-
-                    DashboardMetricCard(
-                        title: "Resting HR",
-                        valueText: DashboardFormatting.heartRate(viewModel.latestRestingHR),
-                        subtitle: restingHRSubtitle,
-                        symbol: .heartVariability,
-                        points: viewModel.restingHRPoints,
-                        valueStyle: .restingHR,
-                        tint: Color("Negative")
-                    )
-
-                    HStack(spacing: 12) {
-                        compactMetricCard(
-                            title: "Active Energy",
-                            value: DashboardFormatting.energy(viewModel.latestActiveEnergy),
-                            symbol: .energy,
-                            points: viewModel.activeEnergyPoints,
-                            valueStyle: .activeEnergy,
-                            tint: Color("Warning")
-                        )
-                        compactMetricCard(
-                            title: "Sleep",
-                            value: DashboardFormatting.sleep(viewModel.latestSleep),
-                            symbol: .sleep,
-                            points: viewModel.sleepPoints,
-                            valueStyle: .sleepHours,
-                            tint: Color("Primary")
-                        )
-                    }
-
-                    if hasExpandedSignals {
-                        expandedSection
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
-            }
-            .refreshable {
-                await refreshFromStore()
+            if showsInitialLoading {
+                ProgressView("Loading dashboard...")
+                    .tint(Color("Primary"))
+            } else {
+                dashboardScroll
             }
         }
         .navigationTitle("Signal")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                diagnosticsButton
-                importButton
-            }
             ToolbarItem(placement: .topBarLeading) {
                 if healthKitManager.isSyncing {
                     ProgressView()
@@ -103,17 +49,151 @@ struct DashboardView: View {
         .task(id: storeRefreshToken) {
             viewModel.reload(metrics: metrics, nutrition: nutritionRows)
         }
-        .onChange(of: showImport) { _, isShowing in
-            if !isShowing {
-                viewModel.reload(metrics: metrics, nutrition: nutritionRows)
+    }
+
+    private var showsInitialLoading: Bool {
+        metrics.isEmpty
+            && nutritionRows.isEmpty
+            && healthKitManager.accessState == .ready
+            && healthKitManager.isSyncing
+            && healthKitManager.lastSyncFinishedAt == nil
+    }
+
+    @ViewBuilder
+    private var dashboardScroll: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if healthKitManager.accessState != .ready {
+                    HealthKitAccessBanner()
+                }
+
+                if let error = healthKitManager.lastSyncErrorMessage {
+                    syncErrorBanner(message: error)
+                }
+
+                if showsEmptyDataState {
+                    dashboardEmptyState
+                } else {
+                    metricsContent
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+        }
+        .refreshable {
+            await refreshFromStore()
+        }
+    }
+
+    @ViewBuilder
+    private var metricsContent: some View {
+        DashboardWindowPicker(viewModel: viewModel)
+
+        DashboardRecoveryCard(
+            indicator: viewModel.recoveryIndicator,
+            rollingMeans: viewModel.rollingMeans,
+            window: viewModel.selectedWindow
+        )
+
+        DashboardMetricCard(
+            title: "HRV",
+            valueText: DashboardFormatting.hrv(viewModel.latestHRV),
+            subtitle: hrvSubtitle,
+            symbol: .heartVariability,
+            points: viewModel.hrvPoints,
+            valueStyle: .hrv,
+            tint: Color("Primary")
+        )
+
+        DashboardMetricCard(
+            title: "Resting HR",
+            valueText: DashboardFormatting.heartRate(viewModel.latestRestingHR),
+            subtitle: restingHRSubtitle,
+            symbol: .heartVariability,
+            points: viewModel.restingHRPoints,
+            valueStyle: .restingHR,
+            tint: Color("Negative")
+        )
+
+        HStack(spacing: 12) {
+            compactMetricCard(
+                title: "Active Energy",
+                value: DashboardFormatting.energy(viewModel.latestActiveEnergy),
+                symbol: .energy,
+                points: viewModel.activeEnergyPoints,
+                valueStyle: .activeEnergy,
+                tint: Color("Warning")
+            )
+            compactMetricCard(
+                title: "Sleep",
+                value: DashboardFormatting.sleep(viewModel.latestSleep),
+                symbol: .sleep,
+                points: viewModel.sleepPoints,
+                valueStyle: .sleepHours,
+                tint: Color("Primary")
+            )
+        }
+
+        if hasExpandedSignals {
+            expandedSection
+        }
+    }
+
+    private var dashboardEmptyState: some View {
+        ContentUnavailableView {
+            Label("No data yet", systemImage: "heart.text.square")
+        } description: {
+            Text(emptyStateMessage)
+        } actions: {
+            if healthKitManager.accessState == .notDetermined {
+                Button("Allow Health access") {
+                    Task {
+                        await healthKitManager.requestAuthorization()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color("Primary"))
             }
         }
-        .navigationDestination(isPresented: $showImport) {
-            ImportView()
+        .frame(maxWidth: .infinity)
+        .padding(.top, 24)
+    }
+
+    private var emptyStateMessage: String {
+        switch healthKitManager.accessState {
+        case .ready:
+            "Import an Apple Health export or Hevy CSV from Profile > Import, or pull to refresh after granting Health access."
+        case .denied, .unavailable:
+            "Import data from Profile > Import, or restore Health access to sync automatically."
+        case .notDetermined:
+            "Connect Apple Health or import a backup from Profile > Import to see recovery and trends."
         }
-        .navigationDestination(isPresented: $showDiagnostics) {
-            DiagnosticsView()
+    }
+
+    private var showsEmptyDataState: Bool {
+        metrics.isEmpty && nutritionRows.isEmpty
+    }
+
+    private func syncErrorBanner(message: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Sync failed")
+                .font(.cardLabel)
+                .foregroundStyle(Color("TextPrimary"))
+            Text(message)
+                .font(.metadataCaption)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Retry sync") {
+                healthKitManager.syncNow()
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color("Primary"))
+            .disabled(healthKitManager.isSyncing || healthKitManager.accessState != .ready)
         }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(colorScheme == .dark ? Color.white.opacity(0.08) : Color("SurfaceElevated"))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var storeRefreshToken: String {
@@ -124,7 +204,8 @@ struct DashboardView: View {
             "\($0.date.timeIntervalSince1970)-\($0.dietaryEnergyKcal ?? 0)"
         }.joined(separator: "|")
         let syncStamp = healthKitManager.lastSyncFinishedAt?.timeIntervalSince1970 ?? 0
-        return "\(metrics.count)-\(nutritionRows.count)-\(metricTail)-\(nutritionTail)-\(syncStamp)"
+        let units = "\(unitPreferences.massUnit.rawValue)-\(unitPreferences.distanceUnit.rawValue)"
+        return "\(metrics.count)-\(nutritionRows.count)-\(metricTail)-\(nutritionTail)-\(syncStamp)-\(units)"
     }
 
     private var screenBackground: Color {
@@ -143,7 +224,10 @@ struct DashboardView: View {
         if !viewModel.bodyMassPoints.isEmpty {
             DashboardMetricCard(
                 title: "Body Mass",
-                valueText: DashboardFormatting.bodyMass(viewModel.latestBodyMass),
+                valueText: DashboardFormatting.bodyMass(
+                    viewModel.latestBodyMass,
+                    formatter: unitFormatter
+                ),
                 subtitle: "Trend over \(viewModel.selectedWindow.label)",
                 symbol: .bodyMass,
                 points: viewModel.bodyMassPoints,
@@ -212,28 +296,15 @@ struct DashboardView: View {
         )
     }
 
-    private var diagnosticsButton: some View {
-        Button("Diagnostics") {
-            showDiagnostics = true
-        }
-        .font(.cardLabel)
-        .foregroundStyle(Color("Primary"))
-    }
-
-    private var importButton: some View {
-        Button("Import") {
-            showImport = true
-        }
-        .font(.cardLabel)
-        .foregroundStyle(Color("Primary"))
-    }
-
     @MainActor
     private func refreshFromStore() async {
         Log.ui.info("dashboard pull-to-refresh")
-        healthKitManager.syncNow()
-        while healthKitManager.isSyncing {
-            try? await Task.sleep(for: .milliseconds(200))
+        healthKitManager.refreshAccessState()
+        if healthKitManager.accessState == .ready {
+            healthKitManager.syncNow()
+            while healthKitManager.isSyncing {
+                try? await Task.sleep(for: .milliseconds(200))
+            }
         }
         viewModel.reload(metrics: metrics, nutrition: nutritionRows)
     }
@@ -254,5 +325,6 @@ struct DashboardView: View {
         DashboardView()
     }
     .environment(HealthKitManager(modelContainer: try! SignalModelContainer.make(inMemoryOnly: true)))
+    .environment(UnitPreferences.shared)
     .modelContainer(try! SignalModelContainer.make(inMemoryOnly: true))
 }

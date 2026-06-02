@@ -89,6 +89,12 @@ struct DiagnosticsView: View {
             if let error = healthKitManager.lastSyncErrorMessage {
                 Text(error)
                     .foregroundStyle(.orange)
+                Button("Retry sync") {
+                    healthKitManager.syncNow()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color("Primary"))
+                .disabled(healthKitManager.isSyncing || healthKitManager.accessState != .ready)
             }
 
             if let outcome = healthKitManager.lastSyncOutcome {

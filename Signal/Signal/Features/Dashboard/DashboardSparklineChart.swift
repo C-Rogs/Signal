@@ -2,6 +2,7 @@ import Charts
 import SwiftUI
 
 struct DashboardSparklineChart: View {
+    @Environment(UnitPreferences.self) private var unitPreferences
     let points: [DashboardChartPoint]
     let valueStyle: DashboardChartValueStyle
     var tint: Color = Color("Primary")
@@ -12,6 +13,10 @@ struct DashboardSparklineChart: View {
         .weekday(.abbreviated)
         .month(.abbreviated)
         .day()
+
+    private var unitFormatter: DisplayUnitFormatter {
+        DisplayUnitFormatter(preferences: unitPreferences)
+    }
 
     private var selectedPoint: DashboardChartPoint? {
         guard let selectedDate else { return nil }
@@ -31,7 +36,7 @@ struct DashboardSparklineChart: View {
             HStack(spacing: 6) {
                 Text(point.date, format: Self.selectionDateFormat)
                 Text("·")
-                Text(valueStyle.formattedValue(point.value))
+                Text(valueStyle.formattedValue(point.value, formatter: unitFormatter))
             }
             .font(.cardLabel)
             .foregroundStyle(Color("TextPrimary"))
@@ -110,7 +115,7 @@ struct DashboardSparklineChart: View {
                             .foregroundStyle(gridColor)
                         if let numeric = value.as(Double.self) {
                             AxisValueLabel {
-                                Text(valueStyle.yAxisLabel(numeric))
+                                Text(valueStyle.yAxisLabel(numeric, formatter: unitFormatter))
                                     .font(.metadataCaption)
                                     .foregroundStyle(Color("TextSecondary"))
                             }

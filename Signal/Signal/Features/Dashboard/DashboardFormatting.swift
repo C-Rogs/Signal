@@ -26,9 +26,12 @@ enum DashboardFormatting {
         return String(format: "%.1f h", hours)
     }
 
-    static func bodyMass(_ kg: Double?) -> String {
-        guard let kg else { return "—" }
-        return String(format: "%.1f kg", kg)
+    static func bodyMass(_ kg: Double?, formatter: DisplayUnitFormatter) -> String {
+        formatter.formatMassKg(kg)
+    }
+
+    static func distanceKm(_ km: Double?, formatter: DisplayUnitFormatter) -> String {
+        formatter.formatDistanceKm(km)
     }
 
     static func steps(_ count: Double?) -> String {

@@ -1,6 +1,7 @@
 import os
 import SwiftData
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct ImportView: View {
@@ -41,6 +42,7 @@ struct ImportView: View {
 }
 
 private struct HealthLiveSyncSection: View {
+    @Environment(\.openURL) private var openURL
     @Bindable var healthKitManager: HealthKitManager
     @State private var showSyncHelp = false
 
@@ -95,6 +97,15 @@ private struct HealthLiveSyncSection: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(Color("Primary"))
+                }
+
+                if healthKitManager.accessState == .denied {
+                    Button("Open Settings") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            openURL(url)
+                        }
+                    }
+                    .buttonStyle(.bordered)
                 }
 
                 Button("Sync now") {

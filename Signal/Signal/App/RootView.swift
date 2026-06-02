@@ -9,9 +9,9 @@ struct RootView: View {
     @Bindable private var downloadState = EmbeddingDownloadState.shared
 
     var body: some View {
-        NavigationStack {
+        Group {
             if downloadState.phase == .ready || EmbeddingBackend.useNLContextualEmbeddingFallback {
-                DashboardView()
+                MainTabView()
             } else {
                 embeddingGate
             }
@@ -171,5 +171,6 @@ private struct EmbeddingLoadProgressView: View {
 #Preview("Dark") {
     RootView()
         .environment(HealthKitManager(modelContainer: try! SignalModelContainer.make(inMemoryOnly: true)))
+        .environment(UnitPreferences.shared)
         .preferredColorScheme(.dark)
 }

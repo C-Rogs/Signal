@@ -6,6 +6,7 @@ import UIKit
 struct SignalApp: App {
     private let modelContainer: ModelContainer
     @State private var healthKitManager: HealthKitManager
+    @State private var unitPreferences = UnitPreferences.shared
 
     init() {
         Self.applyDarkNavigationChrome()
@@ -25,6 +26,7 @@ struct SignalApp: App {
         WindowGroup {
             RootView()
                 .environment(healthKitManager)
+                .environment(unitPreferences)
         }
         .modelContainer(modelContainer)
     }

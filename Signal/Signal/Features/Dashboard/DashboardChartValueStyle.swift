@@ -10,7 +10,7 @@ enum DashboardChartValueStyle: Sendable {
     case exerciseMinutes
     case nutritionCalories
 
-    func formattedValue(_ value: Double) -> String {
+    func formattedValue(_ value: Double, formatter: DisplayUnitFormatter) -> String {
         switch self {
         case .hrv:
             DashboardFormatting.hrv(value)
@@ -21,7 +21,7 @@ enum DashboardChartValueStyle: Sendable {
         case .sleepHours:
             DashboardFormatting.sleep(value)
         case .bodyMass:
-            DashboardFormatting.bodyMass(value)
+            DashboardFormatting.bodyMass(value, formatter: formatter)
         case .steps:
             DashboardFormatting.steps(value)
         case .exerciseMinutes:
@@ -29,7 +29,7 @@ enum DashboardChartValueStyle: Sendable {
         }
     }
 
-    func yAxisLabel(_ value: Double) -> String {
+    func yAxisLabel(_ value: Double, formatter: DisplayUnitFormatter) -> String {
         switch self {
         case .activeEnergy, .nutritionCalories:
             if value >= 1000 {
@@ -39,7 +39,8 @@ enum DashboardChartValueStyle: Sendable {
         case .sleepHours:
             return String(format: "%.1f", value)
         case .bodyMass:
-            return String(format: "%.0f", value)
+            let display = formatter.displayMassKg(value)
+            return String(format: "%.0f", display)
         default:
             return "\(Int(value.rounded()))"
         }
