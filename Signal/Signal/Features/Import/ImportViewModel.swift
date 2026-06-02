@@ -70,6 +70,7 @@ final class ImportViewModel {
                 }
 
                 self.healthResult = importResult
+                ImportSummaryStore.recordHealth(importResult)
                 self.errorMessage = Self.healthImportMessage(
                     for: importResult,
                     progress: self.healthProgress
@@ -121,6 +122,7 @@ final class ImportViewModel {
                     }
                 }
                 self.hevyResult = importResult
+                ImportSummaryStore.recordHevy(importResult)
                 if importResult.cancelled {
                     self.errorMessage = "Hevy import cancelled."
                     self.hevyProgress.phase = .failed

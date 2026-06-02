@@ -10,6 +10,7 @@ struct DashboardView: View {
     @Query(sort: \DailyNutrition.date, order: .forward) private var nutritionRows: [DailyNutrition]
     @State private var viewModel = DashboardViewModel()
     @State private var showImport = false
+    @State private var showDiagnostics = false
 
     var body: some View {
         ZStack {
@@ -79,7 +80,8 @@ struct DashboardView: View {
         .navigationTitle("Signal")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                diagnosticsButton
                 importButton
             }
             ToolbarItem(placement: .topBarLeading) {
@@ -108,6 +110,9 @@ struct DashboardView: View {
         }
         .navigationDestination(isPresented: $showImport) {
             ImportView()
+        }
+        .navigationDestination(isPresented: $showDiagnostics) {
+            DiagnosticsView()
         }
     }
 
@@ -205,6 +210,14 @@ struct DashboardView: View {
             valueStyle: valueStyle,
             tint: tint
         )
+    }
+
+    private var diagnosticsButton: some View {
+        Button("Diagnostics") {
+            showDiagnostics = true
+        }
+        .font(.cardLabel)
+        .foregroundStyle(Color("Primary"))
     }
 
     private var importButton: some View {

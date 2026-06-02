@@ -8,6 +8,46 @@ import Testing
 struct VectorStoreTests {
     private static let dimensions = HealthVectorDimension.embeddingGemma
 
+    @Test func windowedNearestNeighborsIgnoresHigherScoringOutOfRangeRows() throws {
+        let container = try SignalModelContainer.make(inMemoryOnly: true)
+        let context = ModelContext(container)
+        let store = SwiftDataVectorStore(context: context)
+
+        let queryVector = Self.unitVector(dimensions: Self.dimensions, axis: 0)
+        let inRangeVector = Self.unitVector(dimensions: Self.dimensions, axis: 1)
+        let outOfRangeVector = Self.unitVector(dimensions: Self.dimensions, axis: 0)
+
+        try store.insert(
+            dayKey: "2024-06-01",
+            metricKind: "daily_summary",
+            summaryText: "Sleep 9.0 hours.",
+            vector: outOfRangeVector
+        )
+        try store.insert(
+            dayKey: "2026-06-01",
+            metricKind: "daily_summary",
+            summaryText: "Sleep 7.0 hours.",
+            vector: inRangeVector
+        )
+
+        let globalTop = try store.nearestNeighbors(
+            query: queryVector,
+            k: 1,
+            fromDayKey: nil,
+            toDayKey: nil
+        )
+        #expect(globalTop.first?.dayKey == "2024-06-01")
+
+        let windowTop = try store.nearestNeighbors(
+            query: queryVector,
+            k: 8,
+            fromDayKey: "2026-05-27",
+            toDayKey: "2026-06-02"
+        )
+        #expect(windowTop.count == 1)
+        #expect(windowTop.first?.dayKey == "2026-06-01")
+    }
+
     @Test func nearestNeighborsRanksTargetFirst() throws {
         let container = try SignalModelContainer.make(inMemoryOnly: true)
         let context = ModelContext(container)
@@ -36,7 +76,7 @@ struct VectorStoreTests {
 
         #expect(try store.count() == 51)
 
-        let neighbors = try store.nearestNeighbors(query: target, k: 5)
+        let neighbors = try store.nearestNeighbors(query: target, k: 5, fromDayKey: nil, toDayKey: nil)
         #expect(neighbors.first?.summaryText == "target-summary")
         #expect(neighbors.first?.similarity ?? 0 > 0.99)
 

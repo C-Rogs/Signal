@@ -24,11 +24,18 @@ enum EmbeddingVectorStoreBridge {
         query: String,
         store: any VectorStore,
         service: any EmbeddingService,
-        k: Int
+        k: Int,
+        fromDayKey: String? = nil,
+        toDayKey: String? = nil
     ) async throws -> [VectorNeighbor] {
         let vector = try await service.embed(query, kind: .query)
         try validateDimension(vector, service: service)
-        let neighbors = try store.nearestNeighbors(query: vector, k: k)
+        let neighbors = try store.nearestNeighbors(
+            query: vector,
+            k: k,
+            fromDayKey: fromDayKey,
+            toDayKey: toDayKey
+        )
         Log.embedding.info("search queryChars=\(query.count, privacy: .public) hits=\(neighbors.count, privacy: .public)")
         return neighbors
     }

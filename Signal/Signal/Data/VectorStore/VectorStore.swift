@@ -3,6 +3,7 @@ import Foundation
 import SwiftData
 
 struct VectorNeighbor: Sendable, Equatable {
+    let dayKey: String
     let summaryText: String
     let similarity: Float
 }
@@ -23,7 +24,12 @@ protocol VectorStore: AnyObject {
         vector: [Float]
     ) throws
 
-    func nearestNeighbors(query: [Float], k: Int) throws -> [VectorNeighbor]
+    func nearestNeighbors(
+        query: [Float],
+        k: Int,
+        fromDayKey: String?,
+        toDayKey: String?
+    ) throws -> [VectorNeighbor]
 
     func count() throws -> Int
 
@@ -93,17 +99,34 @@ final class SwiftDataVectorStore: VectorStore {
         }
     }
 
-    func nearestNeighbors(query: [Float], k: Int) throws -> [VectorNeighbor] {
+    func nearestNeighbors(
+        query: [Float],
+        k: Int,
+        fromDayKey: String? = nil,
+        toDayKey: String? = nil
+    ) throws -> [VectorNeighbor] {
         do {
             let rows = try context.fetch(FetchDescriptor<HealthVector>())
             let limit = max(0, k)
             guard limit > 0, !rows.isEmpty else { return [] }
 
-            let scored = rows.compactMap { row -> VectorNeighbor? in
+            let candidates: [HealthVector]
+            if let fromDayKey, let toDayKey {
+                candidates = rows.filter { $0.dayKey >= fromDayKey && $0.dayKey <= toDayKey }
+            } else {
+                candidates = rows
+            }
+            guard !candidates.isEmpty else { return [] }
+
+            let scored = candidates.compactMap { row -> VectorNeighbor? in
                 guard let similarity = CosineSimilarity.score(query: query, candidate: row.vector) else {
                     return nil
                 }
-                return VectorNeighbor(summaryText: row.summaryText, similarity: similarity)
+                return VectorNeighbor(
+                    dayKey: row.dayKey,
+                    summaryText: row.summaryText,
+                    similarity: similarity
+                )
             }
             .sorted { $0.similarity > $1.similarity }
 

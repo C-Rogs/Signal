@@ -450,16 +450,26 @@ On-device app that: launches with increased memory, imports real Apple Health + 
 - `LLMCoach` protocol (so MLX can be swapped later): `prewarm()`, `respond(to:context:) -> AsyncStream`, structured-output variants.
 - `FoundationModelsCoach.swift`: `LanguageModelSession` with a strict system-prompt persona ("elite sports physiologist and strength coach; focus only on biomechanics, growth, recovery; ignore unrelated general knowledge").
 - Structured outputs via `@Generable` (e.g., `WorkoutRecommendation`, `MacroEstimate` later) and `@Guide` constraints (e.g., intensity `.anyOf(["Light","Moderate","Maximum Effort"])`).
+- Register the M5 query tools (`queryWorkouts`, `metricTrend`, `nutritionTotals`, `semanticRecall`) as Foundation Models `Tool`s on the session, so temporal/quantitative/superlative questions hit structured SwiftData and only fuzzy questions hit RAG. The coach must not be left to free-text-reason over raw history; it picks a tool.
 
-### M5. RAG retrieval into the prompt
-- `RAGRetriever.swift`: embed the user query (EmbeddingService), `VectorStore.nearestNeighbors` for top-k daily summaries, assemble prompt within a strict token budget that respects the ~4k context window. Include the most recent N days plus the top retrieved historical days.
+### M5. Query routing + RAG retrieval into the prompt
+**Design lesson from V1 M10 (do not skip):** embeddings encode meaning, not time, quantity, or recency. Cosine similarity cannot answer "last leg day", "heaviest squat", "how many leg days this month", or "last week" correctly on its own. These must be routed to structured queries over SwiftData, not the vector store. RAG is only for fuzzy semantic recall where no exact filter exists ("days I felt run down", "sessions that felt brutal").
+
+- `QueryRouter.swift`: classify the query before retrieval:
+  - **Fixed-window temporal** ("last week", "in March", "last 30 days") -> resolve to a `dayKey` range, filter then semantic-rank within it.
+  - **Superlative / recency** ("last", "latest", "most recent", "when did I last") -> structured query ordered by date desc; for workouts, classify exercises by muscle group (legs/push/pull) from `SetEntry`/`exerciseTitle` and return the most recent matching session. V1 M10 approximates this with recency-ranked semantics; V2 does it precisely via structured query.
+  - **Quantitative / aggregate** ("heaviest squat", "total volume this week", "average sleep", "highest protein day") -> structured query / computed answer over `WorkoutSession`/`SetEntry`/`DailyMetric`/`DailyNutrition`. Never RAG.
+  - **Fuzzy semantic** (everything else) -> `VectorStore.nearestNeighbors` cosine retrieval.
+- Expose these as Foundation Models `Tool`s (see M4) so the LLM can call `queryWorkouts(muscleGroup:dateRange:)`, `metricTrend(type:range:)`, `nutritionTotals(range:)`, and `semanticRecall(text:)`. The model decides which tool fits; it does not free-text-reason over raw history.
+- `RAGRetriever.swift`: for the fuzzy-semantic path, embed the query (EmbeddingService), `VectorStore.nearestNeighbors` for top-k summaries, assemble within the ~4k token budget (recent N days plus top retrieved historical days).
+- **Exercise muscle-group classification** is the one new data asset V2 needs: map `exerciseTitle` (115 distinct in the import) to muscle groups, so "leg day"/"push day" become exact structured filters rather than semantic guesses. Build it once, reuse across the recency and quantitative tools.
 
 ### M6. Chat UI + robustness
 - `ChatView.swift`: call `session.prewarm(...)` on appear; bind submit button to `isResponding` (never fire concurrent requests); stream tokens.
 - Wrap all generation in do/catch for `LanguageModelSession.GenerationError.exceededContextWindowSize` (auto-truncate oldest retrieved context and retry) and `rateLimited` (backoff + user-facing tooltip). Surface errors as helpful inline tooltips, not crashes.
 
 ### V2 Definition of Done
-Full Hevy-style logging persisting to SwiftData and writing effort scores to Apple Health; a working on-device chat coach that retrieves real RAG context from the V1 vector store, answers within the context window, returns validated structured recommendations, and degrades gracefully on context-overflow and rate-limit errors with no concurrent-call crashes.
+Full Hevy-style logging persisting to SwiftData and writing effort scores to Apple Health; a working on-device chat coach that ROUTES queries (temporal/quantitative/superlative to structured SwiftData tools, fuzzy to RAG), retrieves real context, answers within the context window, returns validated structured recommendations, and degrades gracefully on context-overflow and rate-limit errors with no concurrent-call crashes. Temporal and "last X"/"heaviest X" questions return exact, recent, correct answers, not semantically-similar old ones.
 
 ---
 

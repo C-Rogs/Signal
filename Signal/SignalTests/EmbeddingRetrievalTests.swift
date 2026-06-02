@@ -35,7 +35,7 @@ struct EmbeddingRetrievalTests {
             vector: unrelated
         )
 
-        let neighbors = try store.nearestNeighbors(query: related, k: 2)
+        let neighbors = try store.nearestNeighbors(query: related, k: 2, fromDayKey: nil, toDayKey: nil)
         #expect(neighbors.first?.summaryText == "mars-doc")
         let margin = (neighbors.first?.similarity ?? 0) - (neighbors.last?.similarity ?? 0)
         #expect(margin > 0.5)
