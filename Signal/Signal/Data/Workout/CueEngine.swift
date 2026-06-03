@@ -330,6 +330,7 @@ enum SetCueEvaluator {
             in: context
         )
         let lastSessionSet = lastTemplate.map(SetCueSnapshot.init(template:))
+        let targetRIR = ProfileGoalRepository.targetRIR(in: context)
         let input = ExerciseCueInput(
             sessionID: String(describing: session.persistentModelID),
             exerciseID: String(describing: exercise.persistentModelID),
@@ -338,7 +339,8 @@ enum SetCueEvaluator {
             priorSetInSession: prior,
             allCompletedSets: completedSets,
             lastSessionSet: lastSessionSet,
-            targetReps: CueEngine.targetReps(lastSessionSet: lastSessionSet)
+            targetReps: CueEngine.targetReps(lastSessionSet: lastSessionSet),
+            targetRIR: targetRIR
         )
         let tier = CueEngine.tier(for: input)
         guard tier != .neutral else {

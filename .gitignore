@@ -17,6 +17,7 @@ xcuserdata/
 
 # Local CI / agent Xcode builds
 .derivedData_ci/
+.derivedDataDevice/
 build/
 
 # Ad-hoc xcodebuild output dirs at repo root (do not commit)

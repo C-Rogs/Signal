@@ -143,6 +143,9 @@ struct WorkoutExerciseSectionView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+        .onReceive(NotificationCenter.default.publisher(for: .goalDidChange)) { _ in
+            dismissedWarmupSuggestion = false
+        }
     }
 
     @ViewBuilder
@@ -414,7 +417,7 @@ struct WorkoutExerciseSectionView: View {
     }
 
     private var trainingGoal: GoalType {
-        .hypertrophy
+        ProfileGoalRepository.primaryGoal(in: modelContext)
     }
 
     private func anchorWorkingSetFields() -> (weightKg: Double?, reps: Int?) {

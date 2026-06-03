@@ -14,12 +14,27 @@ struct SettingsView: View {
 
             List {
                 Section {
+                    NavigationLink {
+                        ProfileGoalsView()
+                    } label: {
+                        HStack {
+                            Text("Profile and goals")
+                                .foregroundStyle(Color("TextPrimary"))
+                            Spacer()
+                            Text("About you, training focus")
+                                .font(.metadataCaption)
+                                .foregroundStyle(Color("TextSecondary"))
+                        }
+                    }
+                }
+
+                Section {
                     Toggle("Suggest warmup sets", isOn: Bindable(trainPreferences).suggestWarmupSets)
                 } header: {
                     Text("Train")
                 } footer: {
                     Text(
-                        "During a workout, Signal can suggest ramp sets for early compound lifts. Hypertrophy defaults to about 45% and 65% of your first working weight when load is known."
+                        "During a workout, Signal can suggest ramp sets for early compound lifts. Ramp percentages follow your training goal from Profile."
                     )
                 }
 

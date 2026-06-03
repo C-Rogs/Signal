@@ -1,6 +1,7 @@
 import SwiftUI
 
 enum ProfileDestination: Hashable {
+    case profileGoals
     case settings
     case importData
     case diagnostics
@@ -17,6 +18,13 @@ struct ProfileView: View {
 
             List {
                 Section {
+                    NavigationLink(value: ProfileDestination.profileGoals) {
+                        profileRow(
+                            title: "Profile and goals",
+                            subtitle: "About you and training focus",
+                            symbol: "person.crop.circle"
+                        )
+                    }
                     NavigationLink(value: ProfileDestination.settings) {
                         profileRow(
                             title: "Settings",
@@ -49,6 +57,8 @@ struct ProfileView: View {
         .navigationBarTitleDisplayMode(.large)
         .navigationDestination(for: ProfileDestination.self) { destination in
             switch destination {
+            case .profileGoals:
+                ProfileGoalsView()
             case .settings:
                 SettingsView()
             case .importData:
