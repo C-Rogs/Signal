@@ -31,6 +31,7 @@ struct RootView: View {
                 healthKitManager.refreshAccessState()
                 healthKitManager.syncOnForegroundIfReady()
                 runReflectionIfForegroundDue()
+                refreshDailyBriefingSchedule()
             }
         }
         .onChange(of: colorScheme) { _, _ in
@@ -132,6 +133,14 @@ struct RootView: View {
         let context = modelContext
         Task {
             await ReflectionEngine.shared.runReflection(in: context)
+            await DailyBriefingScheduler.shared.refreshSchedule(in: context)
+        }
+    }
+
+    private func refreshDailyBriefingSchedule() {
+        let context = modelContext
+        Task {
+            await DailyBriefingScheduler.shared.refreshSchedule(in: context)
         }
     }
 
@@ -192,5 +201,6 @@ private struct EmbeddingLoadProgressView: View {
     RootView()
         .environment(HealthKitManager(modelContainer: try! SignalModelContainer.make(inMemoryOnly: true)))
         .environment(UnitPreferences.shared)
+        .environment(NotificationPreferences.shared)
         .preferredColorScheme(.dark)
 }

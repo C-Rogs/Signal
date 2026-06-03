@@ -27,7 +27,8 @@ struct RecoveryEngineTests {
             sleepHours: sleep,
             bodyMassKg: nil,
             stepCount: nil,
-            appleExerciseMinutes: nil
+            appleExerciseMinutes: nil,
+            wristTemperatureDeltaC: nil
         )
     }
 
@@ -101,7 +102,13 @@ struct RecoveryEngineTests {
         let days = (0..<25).compactMap { offset -> DailyMetricSample? in
             guard let date = calendar.date(byAdding: .day, value: -offset, to: ref) else { return nil }
             let value: Double = offset < 10 ? 28 : 55
-            return DailyMetricSample(date: date, hrvSDNN_ms: value, sleepHours: nil)
+            return DailyMetricSample(
+                date: date,
+                hrvSDNN_ms: value,
+                restingHR: nil,
+                sleepHours: nil,
+                wristTemperatureDeltaC: nil
+            )
         }
         let snapshot = ReflectionSnapshot(
             referenceDate: ref,
@@ -130,7 +137,13 @@ struct RecoveryEngineTests {
         let blockedDays = (0..<25).compactMap { offset -> DailyMetricSample? in
             guard let date = calendar.date(byAdding: .day, value: -offset, to: ref) else { return nil }
             let value: Double = offset < 2 ? 28 : 55
-            return DailyMetricSample(date: date, hrvSDNN_ms: value, sleepHours: nil)
+            return DailyMetricSample(
+                date: date,
+                hrvSDNN_ms: value,
+                restingHR: nil,
+                sleepHours: nil,
+                wristTemperatureDeltaC: nil
+            )
         }
         let blockedSnapshot = ReflectionSnapshot(
             referenceDate: ref,

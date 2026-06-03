@@ -11,7 +11,9 @@ struct VolumeInsightRow: Sendable, Equatable {
 struct DailyMetricSample: Sendable, Equatable {
     let date: Date
     let hrvSDNN_ms: Double?
+    let restingHR: Double?
     let sleepHours: Double?
+    let wristTemperatureDeltaC: Double?
 }
 
 struct DailyProteinSample: Sendable, Equatable {

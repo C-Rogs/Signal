@@ -89,7 +89,13 @@ final class ReflectionEngineTests: XCTestCase {
         let days = (0..<25).compactMap { offset -> DailyMetricSample? in
             guard let date = calendar.date(byAdding: .day, value: -offset, to: ref) else { return nil }
             let value: Double = offset < 10 ? 28 : 55
-            return DailyMetricSample(date: date, hrvSDNN_ms: value, sleepHours: nil)
+            return DailyMetricSample(
+                date: date,
+                hrvSDNN_ms: value,
+                restingHR: nil,
+                sleepHours: nil,
+                wristTemperatureDeltaC: nil
+            )
         }
         let consecutive = ReflectionRules.hrvSuppressedRules(
             snapshot: minimalSnapshot(metrics: days, isoWeek: isoWeek, referenceDate: ref),
@@ -101,7 +107,13 @@ final class ReflectionEngineTests: XCTestCase {
         let blockedDays = (0..<25).compactMap { offset -> DailyMetricSample? in
             guard let date = calendar.date(byAdding: .day, value: -offset, to: ref) else { return nil }
             let value: Double = offset < 2 ? 28 : 55
-            return DailyMetricSample(date: date, hrvSDNN_ms: value, sleepHours: nil)
+            return DailyMetricSample(
+                date: date,
+                hrvSDNN_ms: value,
+                restingHR: nil,
+                sleepHours: nil,
+                wristTemperatureDeltaC: nil
+            )
         }
         let blocked = ReflectionRules.hrvSuppressedRules(
             snapshot: minimalSnapshot(metrics: blockedDays, isoWeek: isoWeek, referenceDate: ref),
@@ -116,7 +128,13 @@ final class ReflectionEngineTests: XCTestCase {
         let ref = referenceDate!
         let lowSleep = (0..<3).compactMap { offset -> DailyMetricSample? in
             guard let date = calendar.date(byAdding: .day, value: -offset, to: ref) else { return nil }
-            return DailyMetricSample(date: date, hrvSDNN_ms: nil, sleepHours: 5.5)
+            return DailyMetricSample(
+                date: date,
+                hrvSDNN_ms: nil,
+                restingHR: nil,
+                sleepHours: 5.5,
+                wristTemperatureDeltaC: nil
+            )
         }
         let fires = ReflectionRules.sleepDeficitRules(
             snapshot: minimalSnapshot(metrics: lowSleep, isoWeek: isoWeek),
@@ -129,7 +147,9 @@ final class ReflectionEngineTests: XCTestCase {
         withGap[2] = DailyMetricSample(
             date: calendar.date(byAdding: .day, value: -2, to: ref)!,
             hrvSDNN_ms: nil,
-            sleepHours: 8
+            restingHR: nil,
+            sleepHours: 8,
+            wristTemperatureDeltaC: nil
         )
         let blocked = ReflectionRules.sleepDeficitRules(
             snapshot: minimalSnapshot(metrics: withGap, isoWeek: isoWeek),

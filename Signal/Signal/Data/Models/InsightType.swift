@@ -9,6 +9,7 @@ enum InsightType: String, Codable, CaseIterable, Sendable {
     case hrvSuppressed
     case sleepDeficit
     case proteinGap
+    case recoveryStrain
     case weeklyProgressNote
 }
 

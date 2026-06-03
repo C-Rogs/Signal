@@ -10,6 +10,7 @@ struct DashboardView: View {
     @Binding var navigationPath: [DashboardDestination]
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.modelContext) private var modelContext
     @Environment(HealthKitManager.self) private var healthKitManager
     @Environment(UnitPreferences.self) private var unitPreferences
     @Query(sort: \Insight.createdAt, order: .reverse) private var insights: [Insight]
@@ -177,6 +178,10 @@ struct DashboardView: View {
             window: viewModel.selectedWindow,
             hrvChartRange: viewModel.hrvChartRange
         )
+
+        if let strain = viewModel.readinessFlags {
+            DashboardStrainBanner(assessment: strain)
+        }
 
         if let bannerInsight = topPriorityInsight {
             DashboardInsightBanner(insight: bannerInsight) {
@@ -482,6 +487,9 @@ struct DashboardView: View {
             }
         }
         reloadViewModel()
+        Task {
+            await DailyBriefingScheduler.shared.refreshSchedule(in: modelContext)
+        }
     }
 }
 

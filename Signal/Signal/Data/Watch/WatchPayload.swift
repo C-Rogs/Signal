@@ -32,41 +32,14 @@ struct WatchPayload: Codable, Sendable, Equatable {
         self.lastUpdated = lastUpdated
     }
 
-    init(score: RecoveryScore, lastUpdated: Date = Date()) {
-        recoveryScore = score.value
-        hrvClassification = score.hrvClassification.rawValue
-        confidence = score.confidence.rawValue
-        todayHRV = score.todayHRV
-        todayRestingHR = score.todayRestingHR
-        self.lastUpdated = lastUpdated
-    }
-
-    static func makeEncoder() -> JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        return encoder
-    }
-
     static func makeDecoder() -> JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
     }
 
-    func encodeToApplicationContext() throws -> [String: Any] {
-        let data = try Self.makeEncoder().encode(self)
-        guard let dictionary = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw WatchPayloadCodingError.invalidDictionary
-        }
-        return dictionary
-    }
-
     static func decode(from applicationContext: [String: Any]) throws -> WatchPayload {
         let data = try JSONSerialization.data(withJSONObject: applicationContext)
         return try makeDecoder().decode(WatchPayload.self, from: data)
     }
-}
-
-enum WatchPayloadCodingError: Error {
-    case invalidDictionary
 }

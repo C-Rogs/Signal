@@ -23,6 +23,7 @@ struct DailyMetricSnapshot: Sendable, Equatable {
     let bodyMassKg: Double?
     let stepCount: Double?
     let appleExerciseMinutes: Double?
+    let wristTemperatureDeltaC: Double?
 }
 
 struct WindowMean: Sendable, Equatable {
@@ -145,5 +146,6 @@ extension DailyMetricSnapshot {
         bodyMassKg = metric.bodyMassKg
         stepCount = metric.stepCount
         appleExerciseMinutes = metric.appleExerciseMinutes
+        wristTemperatureDeltaC = metric.wristTemperatureDeltaC
     }
 }

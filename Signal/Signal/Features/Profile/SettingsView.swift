@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(UnitPreferences.self) private var unitPreferences
     @Environment(TrainPreferences.self) private var trainPreferences
+    @Environment(NotificationPreferences.self) private var notificationPreferences
     @Bindable private var downloadState = EmbeddingDownloadState.shared
     @State private var backupViewModel: SettingsBackupViewModel?
 
@@ -58,14 +59,33 @@ struct SettingsView: View {
                     Text("Signal stores kg and km internally. Charts and labels convert for display only.")
                 }
 
-                Section("Notifications") {
+                Section {
                     placeholderRow(
                         title: "Workout reminders",
                         detail: "Coming soon"
                     )
-                    placeholderRow(
-                        title: "Daily briefing",
-                        detail: "Coming soon"
+                    Toggle("Daily briefing", isOn: Bindable(notificationPreferences).dailyBriefingEnabled)
+                        .onChange(of: notificationPreferences.dailyBriefingEnabled) { _, _ in
+                            refreshDailyBriefingSchedule()
+                        }
+                    if notificationPreferences.dailyBriefingEnabled {
+                        DatePicker(
+                            "Morning time",
+                            selection: briefingTimeBinding,
+                            displayedComponents: .hourAndMinute
+                        )
+                        .onChange(of: notificationPreferences.briefingHour) { _, _ in
+                            refreshDailyBriefingSchedule()
+                        }
+                        .onChange(of: notificationPreferences.briefingMinute) { _, _ in
+                            refreshDailyBriefingSchedule()
+                        }
+                    }
+                } header: {
+                    Text("Notifications")
+                } footer: {
+                    Text(
+                        "A local morning summary from your recovery score and latest insights. No data leaves your device."
                     )
                 }
 
@@ -272,6 +292,29 @@ struct SettingsView: View {
         }
     }
 
+    private var briefingTimeBinding: Binding<Date> {
+        Binding(
+            get: {
+                var components = DateComponents()
+                components.hour = notificationPreferences.briefingHour
+                components.minute = notificationPreferences.briefingMinute
+                return Calendar.current.date(from: components)
+                    ?? Calendar.current.startOfDay(for: Date())
+            },
+            set: { newValue in
+                let parts = Calendar.current.dateComponents([.hour, .minute], from: newValue)
+                notificationPreferences.briefingHour = parts.hour ?? NotificationPreferences.defaultHour
+                notificationPreferences.briefingMinute = parts.minute ?? NotificationPreferences.defaultMinute
+            }
+        )
+    }
+
+    private func refreshDailyBriefingSchedule() {
+        Task {
+            await DailyBriefingScheduler.shared.refreshSchedule(in: modelContext)
+        }
+    }
+
     private func placeholderRow(title: String, detail: String) -> some View {
         HStack {
             Text(title)
@@ -290,5 +333,6 @@ struct SettingsView: View {
     }
     .environment(UnitPreferences.shared)
     .environment(TrainPreferences.shared)
+    .environment(NotificationPreferences.shared)
     .modelContainer(try! SignalModelContainer.make(inMemoryOnly: true))
 }

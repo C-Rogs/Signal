@@ -39,6 +39,7 @@ final class DashboardViewModel {
     var exercisePoints: [DashboardChartPoint] = []
     var nutritionEnergyPoints: [DashboardChartPoint] = []
     var latestNutrition: DailyNutritionSnapshot?
+    var readinessFlags: ReadinessFlagsAssessment?
 
     private var metricSnapshots: [DailyMetricSnapshot] = []
     private var nutritionSnapshots: [DailyNutritionSnapshot] = []
@@ -90,6 +91,14 @@ final class DashboardViewModel {
             metrics: metricSnapshots,
             referenceDay: referenceDay,
             calendar: calendar
+        )
+        readinessFlags = ReadinessFlagEvaluator.evaluate(
+            ReadinessFlagInput(
+                metrics: metricSnapshots,
+                recoveryScore: recoveryScore,
+                referenceDay: referenceDay,
+                calendar: calendar
+            )
         )
         WatchConnectivityService.shared.push(score: recoveryScore)
         recomputeSeries()
@@ -156,7 +165,8 @@ final class DashboardViewModel {
                     sleepHours: nil,
                     bodyMassKg: nil,
                     stepCount: nil,
-                    appleExerciseMinutes: nil
+                    appleExerciseMinutes: nil,
+                    wristTemperatureDeltaC: nil
                 )
             },
             days: days,

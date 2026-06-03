@@ -23,10 +23,64 @@ enum ReflectionRules {
             )
         )
         specs.append(contentsOf: proteinGapRules(snapshot: snapshot, referenceDate: snapshot.referenceDate))
+        specs.append(
+            contentsOf: recoveryStrainRules(
+                snapshot: snapshot,
+                referenceDate: snapshot.referenceDate,
+                calendar: calendar
+            )
+        )
         if let weekly = weeklyProgressNote(snapshot: snapshot, calendar: calendar) {
             specs.append(weekly)
         }
         return specs
+    }
+
+    static func recoveryStrainRules(
+        snapshot: ReflectionSnapshot,
+        referenceDate: Date,
+        calendar: Calendar
+    ) -> [InsightSpec] {
+        let ref = calendar.startOfDay(for: referenceDate)
+        let metrics = snapshot.dailyMetrics.map { sample in
+            DailyMetricSnapshot(
+                date: sample.date,
+                hrvSDNN: sample.hrvSDNN_ms,
+                restingHR: sample.restingHR,
+                activeEnergy: nil,
+                sleepHours: sample.sleepHours,
+                bodyMassKg: nil,
+                stepCount: nil,
+                appleExerciseMinutes: nil,
+                wristTemperatureDeltaC: sample.wristTemperatureDeltaC
+            )
+        }
+        let score = RecoveryScoreCalculator.compute(
+            metrics: metrics,
+            referenceDay: ref,
+            calendar: calendar
+        )
+        guard let assessment = ReadinessFlagEvaluator.evaluate(
+            ReadinessFlagInput(
+                metrics: metrics,
+                recoveryScore: score,
+                referenceDay: ref,
+                calendar: calendar
+            )
+        ), assessment.signals.count >= 2
+        else { return [] }
+
+        let severity: InsightSeverity = assessment.aggregateSeverity == .elevated ? .alert : .warning
+        return [
+            InsightSpec(
+                dedupeKey: "recoveryStrain.\(snapshot.isoWeek.keySegment)",
+                type: .recoveryStrain,
+                severity: severity,
+                bodyText: assessment.detail,
+                relatedEntity: "Recovery",
+                expiresAt: referenceDate.addingTimeInterval(2 * 24 * 3600)
+            ),
+        ]
     }
 
     static func volumeRules(snapshot: ReflectionSnapshot, calendar: Calendar) -> [InsightSpec] {

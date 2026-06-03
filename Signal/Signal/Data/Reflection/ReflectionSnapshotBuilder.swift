@@ -151,14 +151,20 @@ enum ReflectionSnapshotBuilder {
     referenceDate: Date
   ) -> [DailyMetricSample] {
     let ref = calendar.startOfDay(for: referenceDate)
-    guard let start = calendar.date(byAdding: .day, value: -9, to: ref) else { return [] }
+    guard let start = calendar.date(byAdding: .day, value: -64, to: ref) else { return [] }
     let descriptor = FetchDescriptor<DailyMetric>(
       predicate: #Predicate { $0.date >= start && $0.date <= ref },
       sortBy: [SortDescriptor(\.date, order: .forward)]
     )
     let rows = (try? context.fetch(descriptor)) ?? []
     return rows.map {
-      DailyMetricSample(date: $0.date, hrvSDNN_ms: $0.hrvSDNN_ms, sleepHours: $0.sleepHours)
+      DailyMetricSample(
+        date: $0.date,
+        hrvSDNN_ms: $0.hrvSDNN_ms,
+        restingHR: $0.restingHR,
+        sleepHours: $0.sleepHours,
+        wristTemperatureDeltaC: $0.wristTemperatureDeltaC
+      )
     }
   }
 

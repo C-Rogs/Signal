@@ -146,5 +146,6 @@ extension InsightType {
         .hrvSuppressed,
         .sleepDeficit,
         .proteinGap,
+        .recoveryStrain,
     ]
 }
