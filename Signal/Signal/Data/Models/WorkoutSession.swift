@@ -3,6 +3,7 @@ import SwiftData
 
 @Model
 final class WorkoutSession {
+    var backupID: UUID?
     var title: String
     var sessionDescription: String?
     var startTime: Date

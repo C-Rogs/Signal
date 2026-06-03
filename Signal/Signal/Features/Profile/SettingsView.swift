@@ -1,11 +1,14 @@
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.modelContext) private var modelContext
     @Environment(UnitPreferences.self) private var unitPreferences
     @Environment(TrainPreferences.self) private var trainPreferences
     @Bindable private var downloadState = EmbeddingDownloadState.shared
+    @State private var backupViewModel: SettingsBackupViewModel?
 
     var body: some View {
         ZStack {
@@ -66,24 +69,7 @@ struct SettingsView: View {
                     )
                 }
 
-                Section("Data management") {
-                    placeholderRow(
-                        title: "Export app data",
-                        detail: "Coming soon"
-                    )
-                    placeholderRow(
-                        title: "Import app data",
-                        detail: "Coming soon"
-                    )
-                    placeholderRow(
-                        title: "Re-import health data",
-                        detail: "Use Profile > Import"
-                    )
-                    placeholderRow(
-                        title: "Reset local store",
-                        detail: "Coming soon"
-                    )
-                }
+                dataSection
 
                 Section("Embedding model") {
                     HStack {
@@ -121,6 +107,149 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if backupViewModel == nil {
+                backupViewModel = SettingsBackupViewModel(container: modelContext.container)
+            }
+        }
+        .sheet(isPresented: backupShareBinding) {
+            if let url = backupViewModel?.exportShareURL {
+                ShareSheet(items: [url])
+            }
+        }
+        .fileImporter(
+            isPresented: backupImportPickerBinding,
+            allowedContentTypes: [.json],
+            allowsMultipleSelection: false
+        ) { result in
+            guard let backupViewModel else { return }
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                Task {
+                    await backupViewModel.importBackup(from: url)
+                }
+            case .failure(let error):
+                backupViewModel.errorMessage = error.localizedDescription
+                backupViewModel.showError = true
+            }
+        }
+        .alert(
+            "Backup imported",
+            isPresented: backupImportSuccessBinding
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            if let message = backupViewModel?.importSuccessMessage {
+                Text(message)
+            }
+        }
+        .alert(
+            "Backup failed",
+            isPresented: backupErrorBinding
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            if let message = backupViewModel?.errorMessage {
+                Text(message)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var dataSection: some View {
+        Section {
+            if let backupViewModel {
+                Button {
+                    Task {
+                        await backupViewModel.exportBackup()
+                    }
+                } label: {
+                    HStack {
+                        Text("Export backup")
+                            .foregroundStyle(Color("TextPrimary"))
+                        Spacer()
+                        if backupViewModel.isExporting {
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(backupViewModel.isExporting)
+
+                Button {
+                    backupViewModel.showImportPicker = true
+                } label: {
+                    HStack {
+                        Text("Import backup")
+                            .foregroundStyle(Color("TextPrimary"))
+                        Spacer()
+                        if backupViewModel.isImporting {
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(backupViewModel.isImporting)
+
+                HStack {
+                    Text("Last exported")
+                        .foregroundStyle(Color("TextPrimary"))
+                    Spacer()
+                    Text(backupViewModel.lastExportedLabel)
+                        .font(.metadataCaption)
+                        .foregroundStyle(Color("TextSecondary"))
+                }
+
+                placeholderRow(
+                    title: "Re-import health data",
+                    detail: "Use Profile > Import"
+                )
+                placeholderRow(
+                    title: "Reset local store",
+                    detail: "Coming soon"
+                )
+            }
+        } header: {
+            Text("Data")
+        } footer: {
+            Text(
+                "Export saves workouts, profile, goals, bodyweight log, and custom exercises. Health metrics and embeddings are not included."
+            )
+        }
+    }
+
+    private var backupShareBinding: Binding<Bool> {
+        Binding(
+            get: { backupViewModel?.showExportShare ?? false },
+            set: { isPresented in
+                guard let backupViewModel else { return }
+                if isPresented {
+                    backupViewModel.showExportShare = true
+                } else {
+                    backupViewModel.clearExportShare()
+                }
+            }
+        )
+    }
+
+    private var backupImportPickerBinding: Binding<Bool> {
+        Binding(
+            get: { backupViewModel?.showImportPicker ?? false },
+            set: { backupViewModel?.showImportPicker = $0 }
+        )
+    }
+
+    private var backupImportSuccessBinding: Binding<Bool> {
+        Binding(
+            get: { backupViewModel?.showImportSuccess ?? false },
+            set: { backupViewModel?.showImportSuccess = $0 }
+        )
+    }
+
+    private var backupErrorBinding: Binding<Bool> {
+        Binding(
+            get: { backupViewModel?.showError ?? false },
+            set: { backupViewModel?.showError = $0 }
+        )
     }
 
     private var screenBackground: Color {
