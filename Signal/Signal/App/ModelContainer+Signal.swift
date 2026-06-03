@@ -20,6 +20,8 @@ enum SignalModelContainer {
         UserProfile.self,
         BodyweightEntry.self,
         TrainingGoal.self,
+        ExerciseProgress.self,
+        DataQualityFlag.self,
     ])
 
     static func make(inMemoryOnly: Bool = false) throws -> ModelContainer {

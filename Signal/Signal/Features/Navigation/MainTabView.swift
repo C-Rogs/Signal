@@ -54,6 +54,11 @@ struct MainTabView: View {
             get: { coordinator.pendingWellnessSessionID != nil },
             set: { isPresented in
                 if !isPresented {
+                    if let sessionID = coordinator.pendingWellnessSessionID,
+                       let session = modelContext.model(for: sessionID) as? WorkoutSession
+                    {
+                        ExerciseProgressStore.recordFinishedSession(session, in: modelContext)
+                    }
                     coordinator.dismissWellness()
                 }
             }

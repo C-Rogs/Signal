@@ -168,6 +168,9 @@ enum AppleHealthXMLImporter {
         progress.phase = .finished
         onProgress(progress)
 
+        NotificationCenter.default.post(name: .healthKitProcessDeltaDidFinish, object: nil)
+        await DerivedMetricsService.shared.invalidateCache()
+
         return await buildResult(
             modelContainer: modelContainer,
             calendar: calendar,

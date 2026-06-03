@@ -7,6 +7,7 @@ struct DiagnosticsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(HealthKitManager.self) private var healthKitManager
     @State private var viewModel: DiagnosticsViewModel?
+    @State private var showsDataQualityFlags = false
 
     var body: some View {
         ZStack {
@@ -17,6 +18,7 @@ struct DiagnosticsView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     if let viewModel {
                         storeHealthSection(viewModel: viewModel)
+                        derivedMetricsSection(viewModel: viewModel)
                         syncSection(viewModel: viewModel)
                         importSummarySection
                         ragSmokeTestSection(viewModel: viewModel)
@@ -38,6 +40,28 @@ struct DiagnosticsView: View {
             }
             viewModel?.refresh(healthKitManager: healthKitManager)
             Log.ui.info("diagnostics view appeared")
+        }
+        .navigationDestination(isPresented: $showsDataQualityFlags) {
+            if let viewModel {
+                DataQualityFlagsListView(flags: viewModel.dataQualityFlagRows)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func derivedMetricsSection(viewModel: DiagnosticsViewModel) -> some View {
+        elevatedCard {
+            if viewModel.isLoadingDerivedMetrics {
+                ProgressView("Loading derived metrics...")
+                    .tint(Color("Primary"))
+            } else {
+                DerivedMetricsDiagnosticsSection(
+                    snapshot: viewModel.derivedMetricsSnapshot,
+                    onShowDataQualityFlags: {
+                        showsDataQualityFlags = true
+                    }
+                )
+            }
         }
     }
 

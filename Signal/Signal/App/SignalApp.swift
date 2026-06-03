@@ -17,6 +17,8 @@ struct SignalApp: App {
             let container = try SignalModelContainer.make()
             modelContainer = container
             CatalogBootstrap.runIfNeeded(modelContainer: container)
+            DataQualityMigration.runIfNeeded(modelContainer: container)
+            _ = DerivedMetricsService.shared
             _healthKitManager = State(
                 wrappedValue: HealthKitManager(modelContainer: container)
             )

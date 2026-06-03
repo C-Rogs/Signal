@@ -59,6 +59,15 @@ final class DiagnosticsViewModel {
     var dayDumpReportText = ""
     var dayDumpError: String?
     var syncAnchorResetMessage: String?
+    var derivedMetricsSnapshot = DerivedMetricsSnapshot(
+        weeklyVolume: [],
+        acwr: nil,
+        recentE1RM: [],
+        proteinTarget: nil,
+        dataQualityFlagCount: 0
+    )
+    var dataQualityFlagRows: [DataQualityFlagRow] = []
+    var isLoadingDerivedMetrics = false
 
     var uatReportCharacterCount: Int { uatReportText.count }
     var dayDumpReportCharacterCount: Int { dayDumpReportText.count }
@@ -131,12 +140,28 @@ final class DiagnosticsViewModel {
             }
 
             syncAnchorRows = Self.loadSyncAnchorRows(in: context)
+            dataQualityFlagRows = DerivedMetricsDiagnosticsLoader.loadDataQualityFlags(in: context)
             Log.ui.info(
                 "diagnostics refreshed metrics=\(self.dailyMetricCount, privacy: .public) vectors=\(self.healthVectorCount, privacy: .public) syncFinished=\(healthKitManager.lastSyncFinishedAt != nil, privacy: .public)"
             )
         } catch {
             Log.ui.error("diagnostics refresh failed: \(String(describing: error), privacy: .public)")
         }
+
+        Task {
+            await reloadDerivedMetrics()
+        }
+    }
+
+    func reloadDerivedMetrics() async {
+        isLoadingDerivedMetrics = true
+        defer { isLoadingDerivedMetrics = false }
+        await DerivedMetricsService.shared.invalidateCache()
+        let context = ModelContext(modelContainer)
+        try? ExerciseProgressStore.backfillMissingRecentSessions(in: context)
+        derivedMetricsSnapshot = await DerivedMetricsDiagnosticsLoader.loadSnapshot(
+            modelContainer: modelContainer
+        )
     }
 
     func runRetrievalSmokeTest() async {

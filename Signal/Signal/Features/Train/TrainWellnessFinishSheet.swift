@@ -26,7 +26,6 @@ struct TrainWellnessFinishSheet: View {
                     muscles: coordinator.pendingWellnessMuscles,
                     needsSessionEffort: !WorkoutEffortScoreCalculator.hasWorkingSetRPE(in: session),
                     onSave: { energy, mood, stress, soreness, notes, perceivedEffort in
-                        coordinator.dismissWellness()
                         Task {
                             await completeFinishedWorkout(
                                 session: session,
@@ -38,16 +37,17 @@ struct TrainWellnessFinishSheet: View {
                                 soreness: soreness,
                                 notes: notes
                             )
+                            coordinator.dismissWellness()
                         }
                     },
                     onSkip: { perceivedEffort in
-                        coordinator.dismissWellness()
                         Task {
                             await completeFinishedWorkout(
                                 session: session,
                                 perceivedEffort: perceivedEffort,
                                 saveWellness: false
                             )
+                            coordinator.dismissWellness()
                         }
                     }
                 )
@@ -80,6 +80,8 @@ struct TrainWellnessFinishSheet: View {
         soreness: [String: Int] = [:],
         notes: String? = nil
     ) async {
+        ExerciseProgressStore.recordFinishedSession(session, in: modelContext)
+
         if saveWellness {
             do {
                 let entry = try store.saveWellness(
@@ -112,6 +114,15 @@ struct TrainWellnessFinishSheet: View {
         )
         healthKitWriteNote = HealthKitWorkoutWriter.userFacingNote(for: outcome)
         coordinator.publishHealthKitWriteNote(healthKitWriteNote)
+
+        NotificationCenter.default.post(
+            name: .workoutDidFinish,
+            object: nil,
+            userInfo: [
+                "sessionID": session.persistentModelID,
+                "modelContainer": modelContext.container,
+            ]
+        )
     }
 
     private func resolvedEffortScore(for session: WorkoutSession, perceivedEffort: Double?) -> Double? {

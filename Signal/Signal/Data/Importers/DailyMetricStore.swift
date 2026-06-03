@@ -47,6 +47,7 @@ enum DailyMetricStore {
     static func upsertBatch(_ metrics: [DailyMetric], in context: ModelContext) throws -> Int {
         guard !metrics.isEmpty else { return 0 }
         for metric in metrics {
+            try DataQualityProcessor.apply(to: metric, in: context)
             try upsert(metric, in: context)
         }
         try context.save()

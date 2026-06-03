@@ -198,6 +198,11 @@ final class HealthKitManager {
             if clearDirtyOnSuccess {
                 backgroundCoordinator?.clearDirtyFlagAfterSuccessfulSync()
             }
+            NotificationCenter.default.post(
+                name: .healthKitProcessDeltaDidFinish,
+                object: nil
+            )
+            await DerivedMetricsService.shared.invalidateCache()
             Log.sync.info(
                 "sync finished trigger=\(trigger, privacy: .public) noOp=\(outcome.noOp, privacy: .public) elapsedSec=\(Date().timeIntervalSince(started), format: .fixed(precision: 2), privacy: .public)"
             )

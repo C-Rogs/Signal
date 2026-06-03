@@ -234,6 +234,7 @@ struct ActiveWorkoutView: View {
     private func finishWorkout() {
         do {
             try store.finishSession(session)
+            ExerciseProgressStore.recordFinishedSession(session, in: modelContext)
             coordinator.presentWellness(for: session)
             coordinator.isViewingActiveWorkout = false
             coordinator.refresh()
