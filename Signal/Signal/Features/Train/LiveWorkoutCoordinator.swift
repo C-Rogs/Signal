@@ -18,6 +18,9 @@ final class LiveWorkoutCoordinator {
     var collapseWorkoutNavigationOnNextTrainAppear = true
     var isViewingActiveWorkout = false
     var trainNavigationResetToken = 0
+    var pendingHealthKitWriteNote: String?
+    var pendingWellnessSessionID: PersistentIdentifier?
+    var pendingWellnessMuscles: [Muscle] = []
 
     private var modelContext: ModelContext?
     private var store: LiveWorkoutStore?
@@ -75,5 +78,25 @@ final class LiveWorkoutCoordinator {
         isViewingActiveWorkout = false
         pendingTrainRoute = nil
         trainNavigationResetToken += 1
+    }
+
+    func publishHealthKitWriteNote(_ note: String?) {
+        pendingHealthKitWriteNote = note
+    }
+
+    func consumeHealthKitWriteNote() -> String? {
+        let note = pendingHealthKitWriteNote
+        pendingHealthKitWriteNote = nil
+        return note
+    }
+
+    func presentWellness(for session: WorkoutSession) {
+        pendingWellnessSessionID = session.persistentModelID
+        pendingWellnessMuscles = WorkoutMusclesWorked.muscles(for: session)
+    }
+
+    func dismissWellness() {
+        pendingWellnessSessionID = nil
+        pendingWellnessMuscles = []
     }
 }

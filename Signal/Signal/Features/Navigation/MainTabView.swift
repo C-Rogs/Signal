@@ -12,6 +12,7 @@ struct MainTabView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.modelContext) private var modelContext
+    @Environment(HealthKitManager.self) private var healthKitManager
     @Environment(LiveWorkoutCoordinator.self) private var coordinator
     @State private var selectedTab: AppTab = .dashboard
 
@@ -40,6 +41,20 @@ struct MainTabView: View {
                     coordinator.isViewingActiveWorkout = false
                 }
             }
+            .sheet(isPresented: wellnessSheetPresented) {
+                TrainWellnessFinishSheet(healthKitManager: healthKitManager)
+            }
+    }
+
+    private var wellnessSheetPresented: Binding<Bool> {
+        Binding(
+            get: { coordinator.pendingWellnessSessionID != nil },
+            set: { isPresented in
+                if !isPresented {
+                    coordinator.dismissWellness()
+                }
+            }
+        )
     }
 
     @ViewBuilder

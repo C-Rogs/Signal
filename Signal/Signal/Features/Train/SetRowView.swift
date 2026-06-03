@@ -16,6 +16,9 @@ struct SetRowView: View {
     @State private var repsText: String
     @State private var distanceText: String
     @State private var durationText: String
+    @State private var loggedRPE: Double?
+    @State private var showRPESheet = false
+    @State private var sheetRPE: Double = WorkoutRPEScale.defaultValue
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var focusedField: Field?
@@ -51,10 +54,14 @@ struct SetRowView: View {
         _repsText = State(initialValue: set.reps.map(String.init) ?? "")
         _distanceText = State(initialValue: formatter.displayDistanceInputKm(set.distanceKm))
         _durationText = State(initialValue: Self.formatDurationInput(set.durationSeconds))
+        _loggedRPE = State(initialValue: set.rpe)
+        _sheetRPE = State(
+            initialValue: set.rpe.map { WorkoutRPEScale.snapToPicker($0) } ?? WorkoutRPEScale.defaultValue
+        )
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             setColumn
             previousColumn
             if mode == .strength {
@@ -62,10 +69,11 @@ struct SetRowView: View {
             } else {
                 cardioFields
             }
+            rpePill
             completeButton
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 4)
+        .padding(.vertical, 4)
+        .padding(.horizontal, 2)
         .background(rowBackground)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .opacity(set.hasBeenEdited || set.isCompleted ? 1 : 0.92)
@@ -73,6 +81,16 @@ struct SetRowView: View {
             Button(role: .destructive, action: onDelete) {
                 Label("Delete", systemImage: "trash")
             }
+        }
+        .sheet(isPresented: $showRPESheet) {
+            LogSetRPEView(
+                setSummary: setSummaryLine,
+                selectedRPE: $sheetRPE,
+                onDone: {
+                    loggedRPE = sheetRPE
+                    commitFields()
+                }
+            )
         }
         .onChange(of: set.persistentModelID) { _, _ in
             syncFromModel()
@@ -104,7 +122,7 @@ struct SetRowView: View {
                     Text("W")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(Color.orange)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 26, height: 26)
                         .background(Color.orange.opacity(0.15))
                         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                 }
@@ -120,28 +138,26 @@ struct SetRowView: View {
                 } label: {
                     Text("\(set.setIndex + 1)")
                         .font(.caption.monospacedDigit().weight(.semibold))
-                        .frame(width: 28, height: 28)
+                        .frame(width: 26, height: 26)
                         .foregroundStyle(Color("TextPrimary"))
                 }
                 .accessibilityLabel("Set \(set.setIndex + 1), type \(setType.label)")
             }
         }
-        .frame(width: 28)
+        .frame(width: 26)
     }
 
     @ViewBuilder
     private var previousColumn: some View {
         Group {
             if let previousHint, let onFillPrevious {
-                Button(action: {
-                    onFillPrevious()
-                }) {
+                Button(action: onFillPrevious) {
                     Text(previousHint)
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(Color("Primary").opacity(0.85))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                        .minimumScaleFactor(0.7)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Previous \(previousHint), tap to fill")
@@ -153,6 +169,7 @@ struct SetRowView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .frame(minWidth: 56)
     }
 
     @ViewBuilder
@@ -160,14 +177,16 @@ struct SetRowView: View {
         TextField("0", text: $weightText)
             .keyboardType(.decimalPad)
             .multilineTextAlignment(.trailing)
-            .frame(width: 56)
+            .font(.subheadline.monospacedDigit())
+            .frame(width: 48)
             .focused($focusedField, equals: .weight)
             .accessibilityIdentifier("setWeight-\(set.setIndex)")
             .onSubmit { commitFields() }
         TextField("0", text: $repsText)
             .keyboardType(.numberPad)
             .multilineTextAlignment(.trailing)
-            .frame(width: 44)
+            .font(.subheadline.monospacedDigit())
+            .frame(width: 36)
             .focused($focusedField, equals: .reps)
             .accessibilityIdentifier("setReps-\(set.setIndex)")
             .onSubmit { commitFields() }
@@ -178,17 +197,55 @@ struct SetRowView: View {
         TextField("0", text: $distanceText)
             .keyboardType(.decimalPad)
             .multilineTextAlignment(.trailing)
-            .frame(width: 52)
+            .font(.subheadline.monospacedDigit())
+            .frame(width: 44)
             .focused($focusedField, equals: .distance)
             .accessibilityIdentifier("setDistance-\(set.setIndex)")
             .onSubmit { commitFields() }
         TextField("Min", text: $durationText)
             .keyboardType(.numberPad)
             .multilineTextAlignment(.trailing)
-            .frame(width: 44)
+            .font(.subheadline.monospacedDigit())
+            .frame(width: 36)
             .focused($focusedField, equals: .duration)
             .accessibilityIdentifier("setDuration-\(set.setIndex)")
             .onSubmit { commitFields() }
+    }
+
+    private var rpePill: some View {
+        Button {
+            sheetRPE = loggedRPE.map { WorkoutRPEScale.snapToPicker($0) } ?? WorkoutRPEScale.defaultValue
+            showRPESheet = true
+        } label: {
+            Group {
+                if let loggedRPE {
+                    Text(WorkoutRPEScale.compactLabel(for: loggedRPE))
+                        .font(.caption.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(Color("TextPrimary"))
+                } else {
+                    Text("RPE")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Color("TextSecondary"))
+                }
+            }
+            .frame(minWidth: 40)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(pillBackground)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .frame(width: 44)
+        .accessibilityIdentifier("setRPE-\(set.setIndex)")
+        .accessibilityLabel(loggedRPE.map { "RPE \(WorkoutRPEScale.compactLabel(for: $0)), tap to edit" } ?? "Log RPE")
+    }
+
+    private var pillBackground: Color {
+        if colorScheme == .dark {
+            return Color.white.opacity(loggedRPE == nil ? 0.1 : 0.16)
+        }
+        return Color("TextSecondary").opacity(loggedRPE == nil ? 0.1 : 0.14)
     }
 
     private var completeButton: some View {
@@ -201,7 +258,7 @@ struct SetRowView: View {
                 .foregroundStyle(set.isCompleted ? Color("Positive") : Color("TextSecondary"))
         }
         .buttonStyle(.plain)
-        .frame(width: 28)
+        .frame(width: 26)
         .accessibilityIdentifier("setComplete-\(set.setIndex)")
     }
 
@@ -212,6 +269,35 @@ struct SetRowView: View {
             return tint.opacity(0.14)
         }
         return tint.opacity(0.1)
+    }
+
+    private var setSummaryLine: String {
+        let setNumber = set.setIndex + 1
+        switch mode {
+        case .strength:
+            let weight = strengthWeightLabel
+            let reps = repsText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let repsLabel = reps.isEmpty ? "—" : reps
+            return "Set \(setNumber): \(weight) x \(repsLabel) reps"
+        case .cardio:
+            let distance = distanceText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let duration = durationText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let distanceLabel = distance.isEmpty ? "—" : distance
+            let durationLabel = duration.isEmpty ? "—" : "\(duration) min"
+            return "Set \(setNumber): \(distanceLabel) \(formatter.distanceUnit == .kilometers ? "km" : "mi"), \(durationLabel)"
+        }
+    }
+
+    private var strengthWeightLabel: String {
+        let trimmed = weightText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            let unit = formatter.massUnit == .kilograms ? "kg" : "lb"
+            return "\(trimmed)\(unit)"
+        }
+        if let kg = set.weightKg {
+            return formatter.formatMassKg(kg).replacingOccurrences(of: " ", with: "")
+        }
+        return "—"
     }
 
     private func commitFields() {
@@ -233,7 +319,7 @@ struct SetRowView: View {
                 reps: reps,
                 distanceKm: distanceKm,
                 durationSeconds: durationSeconds,
-                rpe: set.rpe
+                rpe: loggedRPE
             )
         )
     }
@@ -242,6 +328,8 @@ struct SetRowView: View {
         setType = WorkoutSetType(storageValue: set.setType) ?? .normal
         weightText = formatter.displayMassInputKg(set.weightKg)
         repsText = set.reps.map(String.init) ?? ""
+        loggedRPE = set.rpe
+        sheetRPE = set.rpe.map { WorkoutRPEScale.snapToPicker($0) } ?? WorkoutRPEScale.defaultValue
         distanceText = formatter.displayDistanceInputKm(set.distanceKm)
         durationText = Self.formatDurationInput(set.durationSeconds)
     }

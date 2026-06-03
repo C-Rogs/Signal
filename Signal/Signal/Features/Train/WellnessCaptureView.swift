@@ -5,10 +5,12 @@ struct WellnessCaptureView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     let muscles: [Muscle]
-    let onSave: (Int, Int, Int, [String: Int], String?) -> Void
-    let onSkip: () -> Void
+    let needsSessionEffort: Bool
+    let onSave: (Int, Int, Int, [String: Int], String?, Double?) -> Void
+    let onSkip: (Double?) -> Void
 
     @State private var energy = 3.0
+    @State private var sessionEffort = 5.0
     @State private var mood = 3.0
     @State private var stress = 3.0
     @State private var notes = ""
@@ -17,6 +19,18 @@ struct WellnessCaptureView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if needsSessionEffort {
+                    Section {
+                        sessionEffortSlider
+                    } header: {
+                        Text("Session effort")
+                    } footer: {
+                        Text(
+                            "No set RPE was logged. Rate overall effort from 1 (easy) to 10 (max) for Apple Health Training Load."
+                        )
+                    }
+                }
+
                 Section {
                     labeledSlider("Energy", value: $energy)
                     labeledSlider("Mood", value: $mood)
@@ -51,7 +65,7 @@ struct WellnessCaptureView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Skip") {
-                        onSkip()
+                        onSkip(perceivedEffortForHealthKit())
                         dismiss()
                     }
                 }
@@ -62,7 +76,8 @@ struct WellnessCaptureView: View {
                             Int(mood.rounded()),
                             Int(stress.rounded()),
                             effortMap(),
-                            notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes
+                            notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes,
+                            perceivedEffortForHealthKit()
                         )
                         dismiss()
                     }
@@ -73,6 +88,25 @@ struct WellnessCaptureView: View {
 
     private var screenBackground: Color {
         colorScheme == .dark ? .black : Color("Background")
+    }
+
+    private var sessionEffortSlider: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Perceived effort")
+                Spacer()
+                Text("\(Int(sessionEffort.rounded())) / 10")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                    .monospacedDigit()
+            }
+            Slider(value: $sessionEffort, in: 1...10, step: 1)
+        }
+    }
+
+    private func perceivedEffortForHealthKit() -> Double? {
+        guard needsSessionEffort else { return nil }
+        return sessionEffort
     }
 
     private func labeledSlider(_ title: String, value: Binding<Double>) -> some View {

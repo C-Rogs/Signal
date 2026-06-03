@@ -25,6 +25,7 @@ final class HealthKitManager {
     private let calendar: Calendar
     private var syncTask: Task<Void, Never>?
     private var backgroundCoordinator: HealthKitBackgroundCoordinator?
+    private(set) var isWorkoutWriteInFlight = false
 
     init(modelContainer: ModelContainer, calendar: Calendar? = nil) {
         self.modelContainer = modelContainer
@@ -86,7 +87,7 @@ final class HealthKitManager {
     }
 
     func syncNow() {
-        guard !isSyncing else { return }
+        guard !isSyncing, !isWorkoutWriteInFlight else { return }
         syncTask?.cancel()
         syncTask = Task {
             await performSync(trigger: "manual", clearDirtyOnSuccess: true)
@@ -95,13 +96,52 @@ final class HealthKitManager {
 
     func syncOnForegroundIfReady() {
         guard accessState == .ready else { return }
+        guard !isWorkoutWriteInFlight else { return }
         syncDeferredIfDirty()
+    }
+
+    func requestWorkoutWriteAuthorization() async {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        do {
+            try await healthStore.requestAuthorization(
+                toShare: HealthKitWorkoutWriter.shareTypes,
+                read: HealthKitTier1Kind.authorizationReadTypes
+            )
+            HealthKitAuthorization.markReadAccessPrompted()
+            Log.healthkit.info("workout write authorization requested with read and share types")
+            await refreshAccessStateAsync()
+            accessState = .ready
+        } catch {
+            Log.healthkit.error(
+                "workout write authorization failed: \(String(describing: error), privacy: .public)"
+            )
+        }
+    }
+
+    func writeFinishedWorkout(
+        sessionID: PersistentIdentifier,
+        effortScore: Double?,
+        modelContext: ModelContext
+    ) async -> HealthKitWorkoutWriteOutcome {
+        guard !isWorkoutWriteInFlight else {
+            return .failed(message: "Saved in Signal. Health sync is busy. Open Train to retry.")
+        }
+        isWorkoutWriteInFlight = true
+        defer { isWorkoutWriteInFlight = false }
+
+        await requestWorkoutWriteAuthorization()
+        return await HealthKitWorkoutWriter.sync(
+            sessionID: sessionID,
+            effortScore: effortScore,
+            modelContext: modelContext,
+            healthStore: healthStore
+        )
     }
 
     func syncDeferredIfDirty() {
         guard accessState == .ready else { return }
         guard HealthKitDirtyFlagStore.isDirty else { return }
-        guard !isSyncing else { return }
+        guard !isSyncing, !isWorkoutWriteInFlight else { return }
         syncTask?.cancel()
         syncTask = Task {
             await performSync(trigger: "deferred", clearDirtyOnSuccess: true)
@@ -123,6 +163,7 @@ final class HealthKitManager {
             await requestAuthorization()
         }
         guard accessState == .ready else { return }
+        guard !isWorkoutWriteInFlight else { return }
 
         isSyncing = true
         lastSyncErrorMessage = nil

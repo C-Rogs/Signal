@@ -12,12 +12,10 @@ struct ActiveWorkoutView: View {
 
     @Bindable var session: WorkoutSession
 
-    @State private var wellnessMuscles: [Muscle] = []
     @State private var showDiscardConfirm = false
     @State private var showFinishIncompleteConfirm = false
     @State private var incompleteExerciseCount = 0
     @State private var showFinishEmptyConfirm = false
-    @State private var showWellness = false
     @State private var showAddExercise = false
     @State private var errorMessage: String?
     @State private var tick = Date()
@@ -61,7 +59,6 @@ struct ActiveWorkoutView: View {
                 onFinish: finishWorkout
             ))
             .sheet(isPresented: $showAddExercise) { addExerciseSheet }
-            .sheet(isPresented: $showWellness) { wellnessSheet }
             .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { date in
                 tick = date
             }
@@ -180,16 +177,6 @@ struct ActiveWorkoutView: View {
         }
     }
 
-    private var wellnessSheet: some View {
-        WellnessCaptureView(
-            muscles: wellnessMuscles,
-            onSave: { energy, mood, stress, soreness, notes in
-                saveWellness(energy: energy, mood: mood, stress: stress, soreness: soreness, notes: notes)
-            },
-            onSkip: { dismissAfterFinish() }
-        )
-    }
-
     private var screenBackground: Color {
         colorScheme == .dark ? .black : Color("Background")
     }
@@ -246,11 +233,12 @@ struct ActiveWorkoutView: View {
 
     private func finishWorkout() {
         do {
-            wellnessMuscles = WorkoutMusclesWorked.muscles(for: session)
             try store.finishSession(session)
+            coordinator.presentWellness(for: session)
             coordinator.isViewingActiveWorkout = false
             coordinator.refresh()
-            showWellness = true
+            coordinator.resetTrainNavigation()
+            dismiss()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -267,40 +255,4 @@ struct ActiveWorkoutView: View {
         }
     }
 
-    private func saveWellness(
-        energy: Int,
-        mood: Int,
-        stress: Int,
-        soreness: [String: Int],
-        notes: String?
-    ) {
-        do {
-            let entry = try store.saveWellness(
-                for: session,
-                energy: energy,
-                mood: mood,
-                stress: stress,
-                sorenessByMuscleRaw: soreness,
-                notes: notes
-            )
-            let vectorStore = SwiftDataVectorStore(context: modelContext)
-            let embedding = EmbeddingBackend.makeService()
-            Task {
-                await WellnessNoteIndexer.indexNotesIfNeeded(
-                    entry: entry,
-                    store: vectorStore,
-                    service: embedding
-                )
-            }
-            dismissAfterFinish()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func dismissAfterFinish() {
-        coordinator.resetTrainNavigation()
-        coordinator.refresh()
-        dismiss()
-    }
 }

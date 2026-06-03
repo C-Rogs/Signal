@@ -9,6 +9,8 @@ final class WorkoutSession {
     var endTime: Date?
     var date: Date
     var source: String
+    var healthKitWorkoutUUID: String?
+    var healthKitEffortSampleUUID: String?
 
     @Relationship(deleteRule: .cascade, inverse: \WorkoutExercise.session)
     var exercises: [WorkoutExercise] = []
@@ -22,7 +24,9 @@ final class WorkoutSession {
         startTime: Date,
         endTime: Date? = nil,
         date: Date,
-        source: String
+        source: String,
+        healthKitWorkoutUUID: String? = nil,
+        healthKitEffortSampleUUID: String? = nil
     ) {
         self.title = title
         self.sessionDescription = sessionDescription
@@ -30,5 +34,7 @@ final class WorkoutSession {
         self.endTime = endTime
         self.date = date
         self.source = source
+        self.healthKitWorkoutUUID = healthKitWorkoutUUID
+        self.healthKitEffortSampleUUID = healthKitEffortSampleUUID
     }
 }

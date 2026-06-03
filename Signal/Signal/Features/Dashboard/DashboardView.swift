@@ -20,11 +20,10 @@ struct DashboardView: View {
             screenBackground
                 .ignoresSafeArea()
 
-            if showsInitialLoading {
-                ProgressView("Loading dashboard...")
-                    .tint(Color("Primary"))
-            } else {
-                dashboardScroll
+            dashboardScroll
+
+            if showsSyncOverlay {
+                syncOverlay
             }
         }
         .navigationTitle("Signal")
@@ -51,12 +50,21 @@ struct DashboardView: View {
         }
     }
 
-    private var showsInitialLoading: Bool {
+    private var showsSyncOverlay: Bool {
         metrics.isEmpty
             && nutritionRows.isEmpty
             && healthKitManager.accessState == .ready
             && healthKitManager.isSyncing
-            && healthKitManager.lastSyncFinishedAt == nil
+    }
+
+    private var syncOverlay: some View {
+        VStack(spacing: 12) {
+            ProgressView("Syncing Health data...")
+                .tint(Color("Primary"))
+        }
+        .padding(24)
+        .background(colorScheme == .dark ? Color.black.opacity(0.72) : Color("Background").opacity(0.92))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     @ViewBuilder

@@ -20,6 +20,7 @@ struct TrainHomeView: View {
     @State private var editingRoutine: Routine?
     @State private var showNewRoutine = false
     @State private var errorMessage: String?
+    @State private var healthKitWriteNote: String?
 
     init() {
         let liveSource = WorkoutSessionSource.live
@@ -55,6 +56,10 @@ struct TrainHomeView: View {
             coordinator.configure(modelContext: modelContext)
             collapseWorkoutNavigationIfNeeded()
             consumePendingRouteIfNeeded()
+            consumeHealthKitWriteNoteIfNeeded()
+        }
+        .onChange(of: coordinator.pendingHealthKitWriteNote) { _, _ in
+            consumeHealthKitWriteNoteIfNeeded()
         }
         .onChange(of: coordinator.pendingTrainRoute) { _, route in
             guard route != nil else { return }
@@ -65,7 +70,7 @@ struct TrainHomeView: View {
         }
         .onChange(of: liveSessions) { _, sessions in
             coordinator.refresh()
-            if sessions.isEmpty {
+            if sessions.isEmpty, coordinator.pendingWellnessSessionID == nil {
                 path.removeAll()
             }
         }
@@ -94,6 +99,14 @@ struct TrainHomeView: View {
                         Text(errorMessage)
                             .foregroundStyle(.red)
                             .font(.footnote)
+                    }
+                }
+
+                if let healthKitWriteNote {
+                    Section {
+                        Text(healthKitWriteNote)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -207,6 +220,11 @@ struct TrainHomeView: View {
         guard case .activeWorkout(let sessionID) = coordinator.pendingTrainRoute else { return }
         openActiveWorkout(sessionID: sessionID)
         coordinator.pendingTrainRoute = nil
+    }
+
+    private func consumeHealthKitWriteNoteIfNeeded() {
+        guard let note = coordinator.consumeHealthKitWriteNote() else { return }
+        healthKitWriteNote = note
     }
 
     private func openActiveWorkout(sessionID: PersistentIdentifier? = nil) {
