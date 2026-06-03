@@ -13,6 +13,7 @@ struct WorkoutLiveSummary: Sendable, Equatable {
         for exercise in session.exercises {
             for set in exercise.sets where set.isCompleted {
                 completedSets += 1
+                guard !isWarmup(set) else { continue }
                 if let weight = set.weightKg, let reps = set.reps, weight > 0, reps > 0 {
                     volumeKg += weight * Double(reps)
                 }
@@ -24,6 +25,10 @@ struct WorkoutLiveSummary: Sendable, Equatable {
             volumeKg: volumeKg,
             completedSetCount: completedSets
         )
+    }
+
+    private static func isWarmup(_ set: SetEntry) -> Bool {
+        WorkoutSetType(storageValue: set.setType) == .warmup
     }
 
     static func formatDuration(seconds: Int) -> String {

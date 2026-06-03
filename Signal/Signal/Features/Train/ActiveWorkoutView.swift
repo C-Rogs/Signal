@@ -36,6 +36,17 @@ struct ActiveWorkoutView: View {
 
     var body: some View {
         workoutList
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if let activeRest = activeRestTimer {
+                    FloatingRestTimerBar(
+                        exerciseTitle: activeRest.exercise.exerciseTitle,
+                        remainingSeconds: activeRest.remaining,
+                        onSkip: { stopRest(for: activeRest.exercise) },
+                        onSubtract15: { adjustRest(for: activeRest.exercise, by: -15) },
+                        onAdd15: { adjustRest(for: activeRest.exercise, by: 15) }
+                    )
+                }
+            }
             .background(screenBackground.ignoresSafeArea())
             .navigationTitle(session.title)
             .navigationBarTitleDisplayMode(.inline)
@@ -92,6 +103,7 @@ struct ActiveWorkoutView: View {
                         formatter: formatter,
                         lastHint: lastHint(for: exercise),
                         store: store,
+                        modelContext: modelContext,
                         onSupersetScroll: { id in
                             withAnimation {
                                 proxy.scrollTo(id, anchor: .top)
@@ -180,6 +192,36 @@ struct ActiveWorkoutView: View {
 
     private var screenBackground: Color {
         colorScheme == .dark ? .black : Color("Background")
+    }
+
+    private var activeRestTimer: (exercise: WorkoutExercise, remaining: Int)? {
+        _ = tick
+        let now = Date()
+        var best: (WorkoutExercise, Date)?
+        for exercise in orderedExercises {
+            guard let endsAt = exercise.restTimerEndsAt, endsAt > now else { continue }
+            if let current = best {
+                if endsAt > current.1 {
+                    best = (exercise, endsAt)
+                }
+            } else {
+                best = (exercise, endsAt)
+            }
+        }
+        guard let best else { return nil }
+        return (best.0, max(0, Int(best.1.timeIntervalSince(now))))
+    }
+
+    private func stopRest(for exercise: WorkoutExercise) {
+        try? store.stopRestTimer(for: exercise)
+        coordinator.refresh()
+        tick = Date()
+    }
+
+    private func adjustRest(for exercise: WorkoutExercise, by seconds: Int) {
+        try? store.adjustRestTimer(for: exercise, by: seconds)
+        coordinator.refresh()
+        tick = Date()
     }
 
     private func lastHint(for exercise: WorkoutExercise) -> String? {

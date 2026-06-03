@@ -1,4 +1,3 @@
-import Combine
 import SwiftData
 import SwiftUI
 
@@ -9,21 +8,24 @@ struct WorkoutExerciseSectionView: View {
     let formatter: DisplayUnitFormatter
     let lastHint: String?
     let store: LiveWorkoutStore
+    let modelContext: ModelContext
     let onSupersetScroll: (PersistentIdentifier) -> Void
     let onNeedsRefresh: () -> Void
 
     @State private var showReplacePicker = false
     @State private var showRemoveConfirm = false
     @State private var showSupersetPicker = false
-    @State private var restTick = Date()
 
     private var sortedSets: [SetEntry] {
         exercise.sets.sorted { $0.setIndex < $1.setIndex }
     }
 
-    private var restRemaining: Int? {
-        guard let endsAt = exercise.restTimerEndsAt else { return nil }
-        return max(0, Int(endsAt.timeIntervalSince(restTick)))
+    private var warmupSets: [SetEntry] {
+        sortedSets.filter { WorkoutSetType(storageValue: $0.setType) == .warmup }
+    }
+
+    private var workingSets: [SetEntry] {
+        sortedSets.filter { WorkoutSetType(storageValue: $0.setType) != .warmup }
     }
 
     private var completionStatus: ExerciseCompletionStatus {
@@ -34,33 +36,48 @@ struct WorkoutExerciseSectionView: View {
         WorkoutSessionCompletionSummary.completedSetCount(in: exercise)
     }
 
+    private var massColumnTitle: String {
+        formatter.massUnit == .kilograms ? "KG" : "LB"
+    }
+
+    private var distanceColumnTitle: String {
+        formatter.distanceUnit == .kilometers ? "KM" : "MI"
+    }
+
     var body: some View {
         Section {
-            ForEach(sortedSets, id: \.persistentModelID) { set in
-                SetRowView(
-                    set: set,
-                    mode: mode,
-                    formatter: formatter,
-                    onCommit: { fields in
-                        try? store.commitSetFields(set, fields: fields)
-                        onNeedsRefresh()
-                    },
-                    onToggleComplete: { completed in
-                        try? store.toggleSetComplete(set, exercise: exercise, completed: completed)
-                        onNeedsRefresh()
-                        if completed, let partner = supersetPartner {
-                            onSupersetScroll(partner.persistentModelID)
-                        }
-                    },
-                    onDelete: {
+            SetTableHeaderView(
+                mode: mode,
+                massColumnTitle: massColumnTitle,
+                distanceColumnTitle: distanceColumnTitle
+            )
+            .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 0, trailing: 12))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+
+            if !warmupSets.isEmpty {
+                ForEach(warmupSets, id: \.persistentModelID) { set in
+                    setRow(for: set)
+                }
+                .onDelete { indexSet in
+                    for index in indexSet {
+                        let set = warmupSets[index]
                         try? store.deleteSet(set, from: exercise)
-                        onNeedsRefresh()
                     }
-                )
+                    onNeedsRefresh()
+                }
+            }
+
+            if !warmupSets.isEmpty, !workingSets.isEmpty {
+                workingSetsDivider
+            }
+
+            ForEach(workingSets, id: \.persistentModelID) { set in
+                setRow(for: set)
             }
             .onDelete { indexSet in
                 for index in indexSet {
-                    let set = sortedSets[index]
+                    let set = workingSets[index]
                     try? store.deleteSet(set, from: exercise)
                 }
                 onNeedsRefresh()
@@ -108,9 +125,53 @@ struct WorkoutExerciseSectionView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { date in
-            restTick = date
+    }
+
+    @ViewBuilder
+    private func setRow(for set: SetEntry) -> some View {
+        SetRowView(
+            set: set,
+            mode: mode,
+            formatter: formatter,
+            previousHint: previousHint(for: set),
+            onFillPrevious: fillPreviousAction(for: set),
+            onCommit: { fields in
+                try? store.commitSetFields(set, fields: fields)
+                onNeedsRefresh()
+            },
+            onToggleComplete: { completed in
+                try? store.toggleSetComplete(set, exercise: exercise, completed: completed)
+                onNeedsRefresh()
+                if completed, let partner = supersetPartner {
+                    onSupersetScroll(partner.persistentModelID)
+                }
+            },
+            onDelete: {
+                try? store.deleteSet(set, from: exercise)
+                onNeedsRefresh()
+            }
+        )
+        .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+    }
+
+    private var workingSetsDivider: some View {
+        HStack {
+            Rectangle()
+                .fill(Color("TextSecondary").opacity(0.2))
+                .frame(height: 1)
+            Text("Working sets")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Color("TextSecondary"))
+            Rectangle()
+                .fill(Color("TextSecondary").opacity(0.2))
+                .frame(height: 1)
         }
+        .padding(.vertical, 6)
+        .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
     }
 
     @ViewBuilder
@@ -144,6 +205,10 @@ struct WorkoutExerciseSectionView: View {
                         }
                         Menu {
                             Button("Replace exercise") { showReplacePicker = true }
+                            Button("Start rest timer") {
+                                try? store.startRestTimer(for: exercise)
+                                onNeedsRefresh()
+                            }
                             if exercise.supersetId == nil {
                                 Button("Add to superset") { showSupersetPicker = true }
                             } else {
@@ -180,8 +245,6 @@ struct WorkoutExerciseSectionView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-
-            restTimerBar
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -209,36 +272,38 @@ struct WorkoutExerciseSectionView: View {
             }
     }
 
-    @ViewBuilder
-    private var restTimerBar: some View {
-        HStack(spacing: 8) {
-            if let remaining = restRemaining, remaining > 0 {
-                Text("Rest \(remaining)s")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(Color("Primary"))
-                Button("Skip") {
-                    try? store.stopRestTimer(for: exercise)
-                    onNeedsRefresh()
-                }
-                .font(.caption)
-                Button("+15s") {
-                    try? store.adjustRestTimer(for: exercise, by: 15)
-                    onNeedsRefresh()
-                }
-                .font(.caption)
-                Button("Stop") {
-                    try? store.stopRestTimer(for: exercise)
-                    onNeedsRefresh()
-                }
-                .font(.caption)
-            } else {
-                Button("Start rest") {
-                    try? store.startRestTimer(for: exercise)
-                    onNeedsRefresh()
-                }
-                .font(.caption)
-                .accessibilityIdentifier("startRest-\(exercise.order)")
-            }
+    private func previousHint(for set: SetEntry) -> String? {
+        guard let template = try? LastSessionAutofill.previousSet(
+            catalogEntry: exercise.catalogEntry,
+            exerciseTitle: exercise.exerciseTitle,
+            setIndex: set.setIndex,
+            mode: mode,
+            in: modelContext
+        ) else { return nil }
+        return LastSessionAutofill.formatPreviousHint(template, mode: mode, formatter: formatter)
+    }
+
+    private func fillPreviousAction(for set: SetEntry) -> (() -> Void)? {
+        guard let template = try? LastSessionAutofill.previousSet(
+            catalogEntry: exercise.catalogEntry,
+            exerciseTitle: exercise.exerciseTitle,
+            setIndex: set.setIndex,
+            mode: mode,
+            in: modelContext
+        ) else { return nil }
+        return {
+            try? store.commitSetFields(
+                set,
+                fields: SetFieldCommit(
+                    setType: template.setType,
+                    weightKg: template.weightKg,
+                    reps: template.reps,
+                    distanceKm: template.distanceKm,
+                    durationSeconds: template.durationSeconds,
+                    rpe: template.rpe
+                )
+            )
+            onNeedsRefresh()
         }
     }
 

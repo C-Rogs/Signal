@@ -45,6 +45,52 @@ enum LastSessionAutofill {
         }
     }
 
+    static func previousSet(
+        catalogEntry: ExerciseCatalog?,
+        exerciseTitle: String,
+        setIndex: Int,
+        mode: ExerciseLoggingMode,
+        in context: ModelContext
+    ) throws -> SetAutofillTemplate? {
+        guard let exercise = try findLastExercise(
+            catalogEntry: catalogEntry,
+            exerciseTitle: exerciseTitle,
+            in: context
+        ) else { return nil }
+
+        let sortedSets = exercise.sets.sorted { $0.setIndex < $1.setIndex }
+        guard setIndex < sortedSets.count else { return nil }
+        let set = sortedSets[setIndex]
+        return SetAutofillTemplate(
+            setIndex: setIndex,
+            setType: set.setType,
+            weightKg: mode == .strength ? set.weightKg : nil,
+            reps: mode == .strength ? set.reps : nil,
+            distanceKm: mode == .cardio ? set.distanceKm : nil,
+            durationSeconds: mode == .cardio ? set.durationSeconds : nil,
+            rpe: set.rpe
+        )
+    }
+
+    static func formatPreviousHint(
+        _ template: SetAutofillTemplate,
+        mode: ExerciseLoggingMode,
+        formatter: DisplayUnitFormatter
+    ) -> String? {
+        switch mode {
+        case .strength:
+            guard template.weightKg != nil || template.reps != nil else { return nil }
+            let weight = template.weightKg.map { formatter.displayMassInputKg($0) } ?? "—"
+            let reps = template.reps.map(String.init) ?? "—"
+            return "\(weight) × \(reps)"
+        case .cardio:
+            guard template.distanceKm != nil || template.durationSeconds != nil else { return nil }
+            let distance = template.distanceKm.map { formatter.displayDistanceInputKm($0) } ?? "—"
+            let duration = formatDuration(template.durationSeconds)
+            return "\(distance) / \(duration)"
+        }
+    }
+
     static func lastSessionHint(
         catalogEntry: ExerciseCatalog?,
         exerciseTitle: String,

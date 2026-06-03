@@ -9,7 +9,7 @@
 - Prefer XcodeBuildMCP tools over Bash xcodebuild. MCP returns structured JSON; parse it to locate and fix errors.
 - XcodeBuildMCP must show connected (green) in Cursor Settings → MCP. Project config: `.cursor/mcp.json` server name `XcodeBuildMCP`.
 - **Compile-error loop (simulator only):** `build_sim` against `id=20DDD35B-812A-49BE-9DCF-0685401ACC15` (iPhone 16 Pro, iOS 26.4). Do not use name-based destinations; duplicates cause failures.
-- **Unit tests:** `test_sim` on `id=311A9753-3F61-44C8-8BE6-AC7BC69558D4` (iPhone 17, iOS 26.5) until SignalTests deployment target matches the app. Or run `scripts/build-and-test.sh`.
+- **Unit tests:** `test_sim` on `id=311A9753-3F61-44C8-8BE6-AC7BC69558D4` (iPhone 17, iOS 26.5). Signal app builds on iPhone 16 Pro / 26.4; SignalTests cannot use that sim until its deployment target is raised in Xcode (protected `.pbxproj`). Do not point `test_sim` at the build sim or tests fail. Use `scripts/build-and-test.sh` (build 16 Pro, test 17).
 - **Real runs and manual gates (physical device):** connected device `id=H3XLDTHR74` via `build_device`, then `install_app`, then `launch_app`. Device must be unlocked and the Developer Disk Image mounted. Use this for force-quit resume, background mid-session, and live Train UX verification. Do not substitute the simulator for those gates.
 - HealthKit real data, the memory entitlement, and Foundation Models remain human-verified on device.
 - Use the Apple Xcode MCP documentation search to read current API docs before coding fast-moving frameworks.
