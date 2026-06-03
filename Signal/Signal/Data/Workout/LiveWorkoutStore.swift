@@ -185,7 +185,13 @@ final class LiveWorkoutStore {
         try save("deleteSet")
     }
 
+    func activateSet(_ set: SetEntry) throws {
+        markSetStartedIfNeeded(set)
+        try save("activateSet")
+    }
+
     func commitSetFields(_ set: SetEntry, fields: SetFieldCommit) throws {
+        markSetStartedIfNeeded(set)
         set.setType = fields.setType
         if let weightKg = fields.weightKg, weightKg == 0 {
             set.weightKg = nil
@@ -201,10 +207,18 @@ final class LiveWorkoutStore {
     }
 
     func toggleSetComplete(_ set: SetEntry, exercise: WorkoutExercise, completed: Bool) throws {
+        markSetStartedIfNeeded(set)
         set.isCompleted = completed
         set.hasBeenEdited = true
-        if completed, exercise.autoStartRestOnSetComplete {
-            exercise.restTimerEndsAt = Date().addingTimeInterval(TimeInterval(exercise.restDurationSeconds))
+        if completed {
+            let now = Date.now
+            set.completedAt = now
+            startNextSetAfterCompleting(set, in: exercise, at: now)
+            if exercise.autoStartRestOnSetComplete {
+                exercise.restTimerEndsAt = now.addingTimeInterval(TimeInterval(exercise.restDurationSeconds))
+            }
+        } else {
+            set.completedAt = nil
         }
         try save("toggleSetComplete")
     }
@@ -292,6 +306,23 @@ final class LiveWorkoutStore {
         for (index, set) in sorted.enumerated() {
             set.setIndex = index
         }
+    }
+
+    private func markSetStartedIfNeeded(_ set: SetEntry) {
+        guard set.startedAt == nil else { return }
+        set.startedAt = .now
+    }
+
+    private func startNextSetAfterCompleting(_ completed: SetEntry, in exercise: WorkoutExercise, at date: Date) {
+        let sorted = exercise.sets.sorted { $0.setIndex < $1.setIndex }
+        guard let index = sorted.firstIndex(where: { $0.persistentModelID == completed.persistentModelID }) else {
+            return
+        }
+        let nextIndex = sorted.index(after: index)
+        guard nextIndex < sorted.endIndex else { return }
+        let next = sorted[nextIndex]
+        guard next.startedAt == nil else { return }
+        next.startedAt = date
     }
 
     private func save(_ action: String) throws {

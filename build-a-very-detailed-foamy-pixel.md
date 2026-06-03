@@ -469,6 +469,8 @@ episodic data -> reflection (stats + LLM) -> versioned insights + profile update
 - **Endurance**: VO2max trend, aerobic-base/zone view, running efficiency (power, ground contact, vertical oscillation).
 - **Goal-conditioned**: every recommendation branches on the active Goal.
 - **Prescription**: next-session exercises, loads (from e1RM + target RIR), sets/reps, given readiness + weekly-volume status + goal.
+- **In-session autoregulation cues** (rule-based, instant; NOT an LLM round-trip mid-set): on set-complete, compare RPE + reps + load vs target/last-time and emit a short coaching cue (RPE <=6 hit target -> add load/reps; 9-10 -> top set / deload nudge; rep or load drop -> fatigue; beat last time -> PR encouragement). Goal-conditioned once M4 lands (hypertrophy ~1-3 RIR, strength ~1-2 RIR); sensible defaults before that. The LLM may add richer post-exercise commentary, but mid-set cues stay rule-based for latency.
+- **Heart rate per exercise/set**: requires per-set timestamps (added in the logger now for data accrual). V3 attributes the watch's HR samples in each set's time window retroactively; V4 streams HR live during the session so cues can use it in the moment.
 
 ### Safety and medical scope (non-negotiable)
 Surface health flags (overtraining, illness, sleep-disordered breathing from breathing-disturbance counts, out-of-range blood pressure) and RECOMMEND a qualified professional. The coach gives training/nutrition guidance within evidence-based bounds; it never diagnoses or replaces a clinician. Medical-shaped signals route to "see a doctor."
@@ -544,8 +546,8 @@ Built on the architecture above. Acceptance panel (V1 M10) is the regression har
 ### M0. Navigation shell
 - Replace the Dashboard-plus-toolbar shell with the TabView map (Dashboard / Train / Coach / Profile), each a `NavigationStack`. Move Import and Diagnostics under Profile. Stub the Train and Coach tabs so later milestones slot in. Retrofit the V1 screens to the UX checklist (empty/loading/permission/error states) as they move into tabs.
 
-### Data safety: backup + restore (Phase 1 early, Phase 2 later)
-- **Phase 1 (do early, before logging accumulates data):** a local "Export app data" / "Import app data" in Settings that serialises the irreplaceable app-native models (`UserProfile`, `Goal`, `Routine`, `WellnessEntry`, `Insight`, `Recommendation`, custom `ExerciseCatalog` edits) to/from a JSON file via the share sheet. Round-trip tested. Re-importable data (health metrics, Hevy workouts, vectors) is excluded; it is regenerated from the source exports.
+### Data safety: backup + restore (Phase 1 right after M4, Phase 2 later)
+- **Phase 1 (immediately after M4 profile/goals, once irreplaceable models exist and before you accumulate much):** a local "Export app data" / "Import app data" in Settings that serialises the irreplaceable app-native models (`UserProfile`, `Goal`, `Routine`, `WellnessEntry`, `Insight`, `Recommendation`, custom `ExerciseCatalog` edits) to/from a JSON file via the share sheet. Round-trip tested. Re-importable data (health metrics, Hevy workouts, vectors) is excluded; it is regenerated from the source exports.
 - **Phase 2 (later V2):** private CloudKit auto-sync on the same app-native models. Requires the human to add the iCloud/CloudKit capability, and the synced models to drop `@Attribute(.unique)` (dedup in code) and use optional/defaulted properties. Health/vector data stays local-only.
 
 ### M1. Exercise catalog + muscle model
@@ -559,6 +561,10 @@ Built on the architecture above. Acceptance panel (V1 M10) is the regression har
 
 ### M3. HealthKit workout write
 - `HKWorkout` + `workoutEffortScore` (iOS 18+) on session finish so manual lifting influences Apple Training Load.
+
+### M3.5 In-session coaching cues + set timestamps
+- **Set timestamps (do now, data accrual):** add `startedAt` and ensure `completedAt` on `SetEntry`; record per-set timing during live logging. Enables HR-per-set later; cannot be backfilled.
+- **Cue engine (rule-based, instant):** on set-complete, emit a brief coaching cue from RPE + reps + load vs target/last-time (easy set -> add load/reps; 9-10 -> top set / deload nudge; rep/load drop -> fatigue; beat last time -> encouragement). Goal-conditioned after M4; sensible defaults now. Display as a non-blocking inline cue under the set. No LLM round-trip mid-set.
 
 ### M4. Profile + goals
 - `UserProfile` + `Goal` (effective-dated). Lightweight onboarding to set sex/height/bodyweight target, equipment, availability, experience, injuries, and the active goal(s). All coaching is conditioned on these.
@@ -585,9 +591,10 @@ A memory-backed coach: effective-dated profile + goals, a reflection layer produ
 
 ### V3 — Proactive coaching + watchOS
 - Rigorous readiness: 60-day SDNN baseline vs 7-day acute, 0.75 SD band; Athlytic-style exertion (30d max HR, 60d RHR). Overtraining/illness flags (RHR up + HRV down + temp up). ACWR-driven deload suggestions. Daily briefing built from insights, not raw HRV. watchOS companion; opportunistic `WCSession.transferUserInfo` sync.
+- **Retroactive HR-per-set**: after a workout, pull the watch's HR samples in each set's time window (using the M3.5 set timestamps) and attach HR to sets/exercises, giving an objective effort signal alongside RPE.
 
 ### V4 — Live telemetry + calendar + autoregulation
-- watchOS `HKWorkoutSession` + `HKLiveWorkoutBuilder`; live HR via `WCSession.sendMessage` during sessions. Dynamic rest timer (extend on a cardiovascular spike). In-session autoregulation: adjust prescribed load from live readiness/RPE. `GoogleCalendarTool` so the coach shifts heavy days around busy life events.
+- watchOS `HKWorkoutSession` + `HKLiveWorkoutBuilder`; live HR via `WCSession.sendMessage` during sessions. Dynamic rest timer (extend on a cardiovascular spike). In-session autoregulation: the M3.5 cue engine gains LIVE HR (HR-per-set in the moment, e.g. "HR still 150, rest longer"), and adjusts prescribed load from live readiness/RPE. `GoogleCalendarTool` so the coach shifts heavy days around busy life events.
 
 ### V5 — Dietary vision + endurance + polish
 - Local Vision-Language meal analysis ("Camera + Note") feeding the energy-balance engine; grams in SwiftData, Smart Serving Units in UI. Endurance/zone coaching off VO2max and running efficiency. Duolingo-style encouraging haptics on milestones.

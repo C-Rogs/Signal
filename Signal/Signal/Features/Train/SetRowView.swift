@@ -7,6 +7,7 @@ struct SetRowView: View {
     let formatter: DisplayUnitFormatter
     let previousHint: String?
     let onFillPrevious: (() -> Void)?
+    let onActivate: () -> Void
     let onCommit: (SetFieldCommit) -> Void
     let onToggleComplete: (Bool) -> Void
     let onDelete: () -> Void
@@ -37,6 +38,7 @@ struct SetRowView: View {
         formatter: DisplayUnitFormatter,
         previousHint: String?,
         onFillPrevious: (() -> Void)?,
+        onActivate: @escaping () -> Void = {},
         onCommit: @escaping (SetFieldCommit) -> Void,
         onToggleComplete: @escaping (Bool) -> Void,
         onDelete: @escaping () -> Void
@@ -46,6 +48,7 @@ struct SetRowView: View {
         self.formatter = formatter
         self.previousHint = previousHint
         self.onFillPrevious = onFillPrevious
+        self.onActivate = onActivate
         self.onCommit = onCommit
         self.onToggleComplete = onToggleComplete
         self.onDelete = onDelete
@@ -96,6 +99,9 @@ struct SetRowView: View {
             syncFromModel()
         }
         .onChange(of: focusedField) { oldValue, newValue in
+            if newValue != nil, oldValue == nil {
+                onActivate()
+            }
             if oldValue != nil, newValue == nil {
                 commitFields()
             }

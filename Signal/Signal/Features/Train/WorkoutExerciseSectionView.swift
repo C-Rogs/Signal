@@ -15,6 +15,8 @@ struct WorkoutExerciseSectionView: View {
     @State private var showReplacePicker = false
     @State private var showRemoveConfirm = false
     @State private var showSupersetPicker = false
+    @State private var activeCues: [PersistentIdentifier: String] = [:]
+    @State private var cueDismissTask: Task<Void, Never>?
 
     private var sortedSets: [SetEntry] {
         exercise.sets.sorted { $0.setIndex < $1.setIndex }
@@ -129,31 +131,89 @@ struct WorkoutExerciseSectionView: View {
 
     @ViewBuilder
     private func setRow(for set: SetEntry) -> some View {
-        SetRowView(
-            set: set,
-            mode: mode,
-            formatter: formatter,
-            previousHint: previousHint(for: set),
-            onFillPrevious: fillPreviousAction(for: set),
-            onCommit: { fields in
-                try? store.commitSetFields(set, fields: fields)
-                onNeedsRefresh()
-            },
-            onToggleComplete: { completed in
-                try? store.toggleSetComplete(set, exercise: exercise, completed: completed)
-                onNeedsRefresh()
-                if completed, let partner = supersetPartner {
-                    onSupersetScroll(partner.persistentModelID)
+        VStack(alignment: .leading, spacing: 0) {
+            SetRowView(
+                set: set,
+                mode: mode,
+                formatter: formatter,
+                previousHint: previousHint(for: set),
+                onFillPrevious: fillPreviousAction(for: set),
+                onActivate: {
+                    dismissAllCues()
+                    try? store.activateSet(set)
+                },
+                onCommit: { fields in
+                    dismissAllCues()
+                    try? store.commitSetFields(set, fields: fields)
+                    onNeedsRefresh()
+                },
+                onToggleComplete: { completed in
+                    dismissAllCues()
+                    handleSetCompleteToggle(set: set, completed: completed)
+                },
+                onDelete: {
+                    dismissAllCues()
+                    try? store.deleteSet(set, from: exercise)
+                    onNeedsRefresh()
                 }
-            },
-            onDelete: {
-                try? store.deleteSet(set, from: exercise)
-                onNeedsRefresh()
+            )
+            if let cue = activeCues[set.persistentModelID] {
+                SetCueBannerView(message: cue)
+                    .transition(.opacity)
             }
-        )
+        }
+        .animation(.easeOut(duration: 0.25), value: activeCues[set.persistentModelID])
         .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
         .listRowBackground(Color.clear)
         .listRowSeparator(.hidden)
+    }
+
+    private func handleSetCompleteToggle(set: SetEntry, completed: Bool) {
+        try? store.toggleSetComplete(set, exercise: exercise, completed: completed)
+        onNeedsRefresh()
+        if completed {
+            if let message = SetCueEvaluator.cue(
+                for: set,
+                exercise: exercise,
+                session: session,
+                mode: mode,
+                in: modelContext
+            ) {
+                showCue(message, for: set)
+            }
+            if let partner = supersetPartner {
+                onSupersetScroll(partner.persistentModelID)
+            }
+        } else {
+            dismissCue(for: set)
+        }
+    }
+
+    private func showCue(_ message: String, for set: SetEntry) {
+        let setID = set.persistentModelID
+        cueDismissTask?.cancel()
+        activeCues[setID] = message
+        cueDismissTask = Task {
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled else { return }
+            if activeCues[setID] == message {
+                activeCues.removeValue(forKey: setID)
+            }
+        }
+    }
+
+    private func dismissCue(for set: SetEntry) {
+        activeCues.removeValue(forKey: set.persistentModelID)
+        if activeCues.isEmpty {
+            cueDismissTask?.cancel()
+            cueDismissTask = nil
+        }
+    }
+
+    private func dismissAllCues() {
+        cueDismissTask?.cancel()
+        cueDismissTask = nil
+        activeCues.removeAll()
     }
 
     private var workingSetsDivider: some View {

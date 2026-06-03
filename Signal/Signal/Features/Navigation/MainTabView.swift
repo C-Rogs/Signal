@@ -40,6 +40,9 @@ struct MainTabView: View {
                 if tab != .train, coordinator.activeSession == nil {
                     coordinator.isViewingActiveWorkout = false
                 }
+                if tab == .dashboard {
+                    NotificationCenter.default.post(name: .signalDashboardBecameSelected, object: nil)
+                }
             }
             .sheet(isPresented: wellnessSheetPresented) {
                 TrainWellnessFinishSheet(healthKitManager: healthKitManager)

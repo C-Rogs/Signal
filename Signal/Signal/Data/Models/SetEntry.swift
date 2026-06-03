@@ -12,6 +12,8 @@ final class SetEntry {
     var rpe: Double?
     var isCompleted: Bool = false
     var hasBeenEdited: Bool = false
+    var startedAt: Date?
+    var completedAt: Date?
 
     var exercise: WorkoutExercise?
 
@@ -24,7 +26,9 @@ final class SetEntry {
         durationSeconds: Int? = nil,
         rpe: Double? = nil,
         isCompleted: Bool = false,
-        hasBeenEdited: Bool = false
+        hasBeenEdited: Bool = false,
+        startedAt: Date? = nil,
+        completedAt: Date? = nil
     ) {
         self.setIndex = setIndex
         self.setType = setType
@@ -35,5 +39,7 @@ final class SetEntry {
         self.rpe = rpe
         self.isCompleted = isCompleted
         self.hasBeenEdited = hasBeenEdited
+        self.startedAt = startedAt
+        self.completedAt = completedAt
     }
 }

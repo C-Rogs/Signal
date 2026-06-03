@@ -1,14 +1,24 @@
 import os
 import SwiftData
 import SwiftUI
-import UIKit
+
+extension Notification.Name {
+    static let signalDashboardBecameSelected = Notification.Name("signalDashboardBecameSelected")
+}
 
 struct DashboardView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(HealthKitManager.self) private var healthKitManager
     @Environment(UnitPreferences.self) private var unitPreferences
     @Query(sort: \DailyMetric.date, order: .forward) private var metrics: [DailyMetric]
     @Query(sort: \DailyNutrition.date, order: .forward) private var nutritionRows: [DailyNutrition]
+    @Query(
+        filter: #Predicate<WorkoutSession> { $0.endTime != nil },
+        sort: \WorkoutSession.startTime,
+        order: .reverse
+    )
+    private var completedWorkouts: [WorkoutSession]
     @State private var viewModel = DashboardViewModel()
 
     private var unitFormatter: DisplayUnitFormatter {
@@ -16,85 +26,147 @@ struct DashboardView: View {
     }
 
     var body: some View {
-        ZStack {
-            screenBackground
-                .ignoresSafeArea()
+        @Bindable var viewModel = viewModel
+        dashboardRoot(viewModel: viewModel)
+    }
 
-            dashboardScroll
-
-            if showsSyncOverlay {
-                syncOverlay
+    private func dashboardRoot(viewModel: DashboardViewModel) -> some View {
+        Group {
+            if showsEmptyDataState {
+                fillHeightScroll(emptyDashboardContent)
+            } else {
+                fillHeightScroll(metricsDashboardContent(viewModel: viewModel))
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background {
+            screenBackground.ignoresSafeArea()
         }
         .navigationTitle("Signal")
         .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                if healthKitManager.isSyncing {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(Color("Primary"))
-                }
-            }
+        .toolbarBackground(navigationBarBackground, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbar { dashboardToolbar }
+        .accessibilityIdentifier("dashboardRoot")
+        .onAppear(perform: handleAppear)
+        .onChange(of: scenePhase) { _, phase in
+            handleScenePhaseChange(phase)
         }
-        .onAppear {
-            paintHostWindowForScheme()
-            viewModel.reload(metrics: metrics, nutrition: nutritionRows)
-            Log.ui.info("dashboard appeared")
-        }
-        .onChange(of: colorScheme) { _, _ in
-            paintHostWindowForScheme()
+        .onReceive(NotificationCenter.default.publisher(for: .signalDashboardBecameSelected)) { _ in
+            reloadViewModel()
         }
         .task(id: storeRefreshToken) {
-            viewModel.reload(metrics: metrics, nutrition: nutritionRows)
+            reloadViewModel()
         }
     }
 
-    private var showsSyncOverlay: Bool {
-        metrics.isEmpty
-            && nutritionRows.isEmpty
-            && healthKitManager.accessState == .ready
-            && healthKitManager.isSyncing
+    @ToolbarContentBuilder
+    private var dashboardToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            if healthKitManager.isSyncing {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(Color("Primary"))
+            }
+        }
     }
 
-    private var syncOverlay: some View {
-        VStack(spacing: 12) {
+    private func handleAppear() {
+        reloadViewModel()
+        Log.ui.info("dashboard appeared empty=\(showsEmptyDataState, privacy: .public)")
+    }
+
+    private func handleScenePhaseChange(_ phase: ScenePhase) {
+        guard phase == .active else { return }
+        reloadViewModel()
+    }
+
+    private var navigationBarBackground: Color {
+        colorScheme == .dark ? .black : Color("Background")
+    }
+
+    private func reloadViewModel() {
+        viewModel.reload(metrics: metrics, nutrition: nutritionRows)
+    }
+
+    private func fillHeightScroll<Content: View>(_ content: Content) -> some View {
+        GeometryReader { geometry in
+            ScrollView {
+                content
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: geometry.size.height, alignment: .top)
+            }
+            .scrollContentBackground(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
+            .refreshable {
+                await refreshFromStore()
+            }
+        }
+    }
+
+    private var showsHealthSyncInEmptyState: Bool {
+        healthKitManager.accessState == .ready && healthKitManager.isSyncing
+    }
+
+    private var latestCompletedWorkout: WorkoutSession? {
+        completedWorkouts.first
+    }
+
+    @ViewBuilder
+    private var emptyDashboardContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            dashboardHeaderBanners
+
+            if let workout = latestCompletedWorkout {
+                recentWorkoutCard(workout)
+            }
+
+            if showsHealthSyncInEmptyState {
+                healthSyncEmptyState
+            } else {
+                dashboardEmptyState
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+    }
+
+    private func metricsDashboardContent(viewModel: DashboardViewModel) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            dashboardHeaderBanners
+            metricsContent(viewModel: viewModel)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+    }
+
+    @ViewBuilder
+    private var dashboardHeaderBanners: some View {
+        if healthKitManager.accessState != .ready {
+            HealthKitAccessBanner()
+        }
+
+        if let error = healthKitManager.lastSyncErrorMessage {
+            syncErrorBanner(message: error)
+        }
+    }
+
+    private var healthSyncEmptyState: some View {
+        VStack(spacing: 16) {
             ProgressView("Syncing Health data...")
                 .tint(Color("Primary"))
+                .controlSize(.large)
+            Text("Pull to refresh after sync finishes.")
+                .font(.metadataCaption)
+                .foregroundStyle(Color("TextSecondary"))
+                .multilineTextAlignment(.center)
         }
-        .padding(24)
-        .background(colorScheme == .dark ? Color.black.opacity(0.72) : Color("Background").opacity(0.92))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .frame(maxWidth: .infinity, minHeight: 280)
+        .padding(.top, 8)
     }
 
     @ViewBuilder
-    private var dashboardScroll: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                if healthKitManager.accessState != .ready {
-                    HealthKitAccessBanner()
-                }
-
-                if let error = healthKitManager.lastSyncErrorMessage {
-                    syncErrorBanner(message: error)
-                }
-
-                if showsEmptyDataState {
-                    dashboardEmptyState
-                } else {
-                    metricsContent
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-        }
-        .refreshable {
-            await refreshFromStore()
-        }
-    }
-
-    @ViewBuilder
-    private var metricsContent: some View {
+    private func metricsContent(viewModel: DashboardViewModel) -> some View {
         DashboardWindowPicker(viewModel: viewModel)
 
         DashboardRecoveryCard(
@@ -142,14 +214,14 @@ struct DashboardView: View {
             )
         }
 
-        if hasExpandedSignals {
-            expandedSection
+        if hasExpandedSignals(viewModel: viewModel) {
+            expandedSection(viewModel: viewModel)
         }
     }
 
     private var dashboardEmptyState: some View {
         ContentUnavailableView {
-            Label("No data yet", systemImage: "heart.text.square")
+            Label("No recovery data yet", systemImage: "heart.text.square")
         } description: {
             Text(emptyStateMessage)
         } actions: {
@@ -163,8 +235,32 @@ struct DashboardView: View {
                 .tint(Color("Primary"))
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 24)
+        .frame(maxWidth: .infinity, minHeight: 280)
+        .padding(.top, 8)
+    }
+
+    private func recentWorkoutCard(_ session: WorkoutSession) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Latest workout")
+                .font(.cardLabel)
+                .foregroundStyle(Color("TextPrimary"))
+            Text(session.title)
+                .font(.headline)
+                .foregroundStyle(Color("TextPrimary"))
+            if let end = session.endTime {
+                Text(end.formatted(date: .abbreviated, time: .shortened))
+                    .font(.metadataCaption)
+                    .foregroundStyle(Color("TextSecondary"))
+            }
+            Text("Saved in Train. Recovery charts need Apple Health daily metrics or an import from Profile.")
+                .font(.metadataCaption)
+                .foregroundStyle(Color("TextSecondary"))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color("Surface"))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private var emptyStateMessage: String {
@@ -179,7 +275,28 @@ struct DashboardView: View {
     }
 
     private var showsEmptyDataState: Bool {
-        metrics.isEmpty && nutritionRows.isEmpty
+        !hasMeaningfulRecoveryData
+    }
+
+    private var hasMeaningfulRecoveryData: Bool {
+        if nutritionRows.contains(where: hasMeaningfulNutrition) {
+            return true
+        }
+        return metrics.contains(where: hasMeaningfulMetric)
+    }
+
+    private func hasMeaningfulMetric(_ metric: DailyMetric) -> Bool {
+        metric.hrvSDNN_ms != nil
+            || metric.restingHR != nil
+            || metric.activeEnergy_kcal != nil
+            || metric.sleepHours != nil
+            || metric.bodyMassKg != nil
+            || metric.stepCount != nil
+            || metric.appleExerciseMinutes != nil
+    }
+
+    private func hasMeaningfulNutrition(_ row: DailyNutrition) -> Bool {
+        row.dietaryEnergyKcal != nil || row.proteinG != nil
     }
 
     private func syncErrorBanner(message: String) -> some View {
@@ -212,15 +329,19 @@ struct DashboardView: View {
             "\($0.date.timeIntervalSince1970)-\($0.dietaryEnergyKcal ?? 0)"
         }.joined(separator: "|")
         let syncStamp = healthKitManager.lastSyncFinishedAt?.timeIntervalSince1970 ?? 0
+        let syncing = healthKitManager.isSyncing
+        let workoutHead = completedWorkouts.first.map {
+            String(describing: $0.persistentModelID)
+        } ?? "none"
         let units = "\(unitPreferences.massUnit.rawValue)-\(unitPreferences.distanceUnit.rawValue)"
-        return "\(metrics.count)-\(nutritionRows.count)-\(metricTail)-\(nutritionTail)-\(syncStamp)-\(units)"
+        return "\(metrics.count)-\(nutritionRows.count)-\(metricTail)-\(nutritionTail)-\(syncStamp)-\(syncing)-\(workoutHead)-\(units)"
     }
 
     private var screenBackground: Color {
         colorScheme == .dark ? .black : Color("Background")
     }
 
-    private var hasExpandedSignals: Bool {
+    private func hasExpandedSignals(viewModel: DashboardViewModel) -> Bool {
         !viewModel.bodyMassPoints.isEmpty
             || !viewModel.stepPoints.isEmpty
             || !viewModel.exercisePoints.isEmpty
@@ -228,7 +349,7 @@ struct DashboardView: View {
     }
 
     @ViewBuilder
-    private var expandedSection: some View {
+    private func expandedSection(viewModel: DashboardViewModel) -> some View {
         if !viewModel.bodyMassPoints.isEmpty {
             DashboardMetricCard(
                 title: "Body Mass",
@@ -330,17 +451,7 @@ struct DashboardView: View {
                 try? await Task.sleep(for: .milliseconds(200))
             }
         }
-        viewModel.reload(metrics: metrics, nutrition: nutritionRows)
-    }
-
-    private func paintHostWindowForScheme() {
-        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene else {
-            return
-        }
-        let color: UIColor = colorScheme == .dark ? .black : .white
-        for window in scene.windows {
-            window.backgroundColor = color
-        }
+        reloadViewModel()
     }
 }
 

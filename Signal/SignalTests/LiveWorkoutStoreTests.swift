@@ -171,6 +171,44 @@ final class LiveWorkoutStoreTests: XCTestCase {
         XCTAssertEqual(linked.count, 3)
     }
 
+    func testSetTimestampsOnEditAndComplete() throws {
+        let session = try store.startEmpty()
+        let exercise = try store.addExercise(to: session, catalogEntry: nil, exerciseTitle: "Row")
+        let first = try XCTUnwrap(exercise.sets.sorted { $0.setIndex < $1.setIndex }.first)
+        _ = try store.addSet(to: exercise)
+        let second = try XCTUnwrap(
+            exercise.sets.sorted { $0.setIndex < $1.setIndex }.last
+        )
+
+        XCTAssertNil(first.startedAt)
+        try store.commitSetFields(
+            first,
+            fields: SetFieldCommit(
+                setType: WorkoutSetType.normal.storageValue,
+                weightKg: 60,
+                reps: 8,
+                distanceKm: nil,
+                durationSeconds: nil,
+                rpe: 7
+            )
+        )
+        XCTAssertNotNil(first.startedAt)
+        XCTAssertNil(first.completedAt)
+
+        try store.toggleSetComplete(first, exercise: exercise, completed: true)
+        XCTAssertNotNil(first.completedAt)
+        XCTAssertNotNil(second.startedAt)
+
+        try store.toggleSetComplete(first, exercise: exercise, completed: false)
+        XCTAssertNil(first.completedAt)
+
+        let relaunched = LiveWorkoutStore(context: ModelContext(container))
+        let active = try relaunched.activeSession()
+        let restoredFirst = active?.exercises.first?.sets.sorted { $0.setIndex < $1.setIndex }.first
+        XCTAssertNotNil(restoredFirst?.startedAt)
+        XCTAssertNil(restoredFirst?.completedAt)
+    }
+
     func testCardioSetFields() throws {
         let session = try store.startEmpty()
         let catalog = ExerciseCatalog(
