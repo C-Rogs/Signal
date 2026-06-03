@@ -152,6 +152,7 @@ enum HevyCSVParser {
             let dayStart = calendar.startOfDay(for: key.startTime)
             let first = sessionRows[0]
             let endTime = sessionRows.compactMap(\.endTime).max()
+                ?? key.startTime.addingTimeInterval(3600)
             let exercises = Self.buildExercises(from: sessionRows)
             return HevyParsedSession(
                 title: key.title,

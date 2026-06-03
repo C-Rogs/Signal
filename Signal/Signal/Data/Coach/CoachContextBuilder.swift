@@ -107,8 +107,10 @@ actor CoachContextBuilder {
     @MainActor
     private static func buildRecentWorkouts(modelContainer: ModelContainer) -> [String] {
         let context = ModelContext(modelContainer)
+        let twoWeeksAgo = Calendar.current.date(byAdding: .day, value: -14, to: Date())
+            ?? .distantPast
         var descriptor = FetchDescriptor<WorkoutSession>(
-            predicate: #Predicate { $0.endTime != nil },
+            predicate: #Predicate { $0.startTime >= twoWeeksAgo },
             sortBy: [SortDescriptor(\.startTime, order: .reverse)]
         )
         descriptor.fetchLimit = 2

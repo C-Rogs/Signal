@@ -26,6 +26,7 @@ struct RootView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
+                EmbeddingRunPolicy.applicationDidBecomeActive()
                 paintHostWindowForScheme()
                 healthKitManager.refreshAccessState()
                 healthKitManager.syncOnForegroundIfReady()
@@ -35,7 +36,8 @@ struct RootView: View {
         .onChange(of: colorScheme) { _, _ in
             paintHostWindowForScheme()
         }
-        .task(id: downloadState.retryGeneration) {
+        .task(id: embeddingPreloadTaskID) {
+            guard scenePhase == .active else { return }
             guard !EmbeddingBackend.useNLContextualEmbeddingFallback else { return }
             await runEmbeddingPreloadDeferred()
         }
@@ -97,9 +99,14 @@ struct RootView: View {
         }
     }
 
+    private var embeddingPreloadTaskID: String {
+        "\(downloadState.retryGeneration)-\(scenePhase == .active ? "active" : "inactive")"
+    }
+
     private func runEmbeddingPreloadDeferred() async {
         await Task.yield()
         try? await Task.sleep(for: .milliseconds(500))
+        guard await MainActor.run(body: { EmbeddingRunPolicy.mayUseMetal }) else { return }
         guard !EmbeddingBackend.useNLContextualEmbeddingFallback else {
             downloadState.markReady()
             return
@@ -109,6 +116,8 @@ struct RootView: View {
             _ = try await GemmaEmbeddingService.shared.ensureLoaded()
             downloadState.markReady()
             Log.ui.info("embedding preload finished")
+        } catch EmbeddingServiceError.metalWorkNotPermittedInBackground {
+            Log.ui.info("embedding preload paused; app is not active")
         } catch {
             let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             downloadState.fail(message.isEmpty ? "Embedding model could not load." : message)

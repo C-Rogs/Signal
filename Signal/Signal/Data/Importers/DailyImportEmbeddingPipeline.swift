@@ -95,6 +95,9 @@ enum DailyImportEmbeddingPipeline {
 
             for item in batch {
                 try Task.checkCancellation()
+                while !(await MainActor.run { EmbeddingRunPolicy.mayUseMetal }) {
+                    await EmbeddingRunPolicy.waitUntilMayUseMetal()
+                }
                 let vector = try await embeddingService.embed(item.embeddingText, kind: .document)
                 try await MainActor.run {
                     let context = ModelContext(modelContainer)
