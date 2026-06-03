@@ -21,6 +21,7 @@ struct SignalApp: App {
             _ = DerivedMetricsService.shared
             _ = ReflectionEngine.shared
             _ = SetHRAttributionTrigger.shared
+            WatchConnectivityService.shared.activate()
             _healthKitManager = State(
                 wrappedValue: HealthKitManager(modelContainer: container)
             )

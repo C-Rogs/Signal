@@ -91,6 +91,7 @@ final class DashboardViewModel {
             referenceDay: referenceDay,
             calendar: calendar
         )
+        WatchConnectivityService.shared.push(score: recoveryScore)
         recomputeSeries()
     }
 

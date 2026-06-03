@@ -9,9 +9,14 @@ import SwiftUI
 
 @main
 struct SignalWatch_Watch_AppApp: App {
+    @State private var receiver = WatchConnectivityReceiver()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(receiver: receiver)
+                .onAppear {
+                    receiver.activate()
+                }
         }
     }
 }
