@@ -200,7 +200,8 @@ final class HealthKitManager {
             }
             NotificationCenter.default.post(
                 name: .healthKitProcessDeltaDidFinish,
-                object: nil
+                object: nil,
+                userInfo: ["modelContainer": modelContainer]
             )
             await DerivedMetricsService.shared.invalidateCache()
             Log.sync.info(

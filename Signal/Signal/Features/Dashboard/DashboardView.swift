@@ -7,10 +7,12 @@ extension Notification.Name {
 }
 
 struct DashboardView: View {
+    @Binding var navigationPath: [DashboardDestination]
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
     @Environment(HealthKitManager.self) private var healthKitManager
     @Environment(UnitPreferences.self) private var unitPreferences
+    @Query(sort: \Insight.createdAt, order: .reverse) private var insights: [Insight]
     @Query(sort: \DailyMetric.date, order: .forward) private var metrics: [DailyMetric]
     @Query(sort: \DailyNutrition.date, order: .forward) private var nutritionRows: [DailyNutrition]
     @Query(
@@ -175,6 +177,12 @@ struct DashboardView: View {
             window: viewModel.selectedWindow
         )
 
+        if let bannerInsight = topPriorityInsight {
+            DashboardInsightBanner(insight: bannerInsight) {
+                navigationPath.append(.insights)
+            }
+        }
+
         DashboardMetricCard(
             title: "HRV",
             valueText: DashboardFormatting.hrv(viewModel.latestHRV),
@@ -276,6 +284,24 @@ struct DashboardView: View {
 
     private var showsEmptyDataState: Bool {
         !hasMeaningfulRecoveryData
+    }
+
+    private var topPriorityInsight: Insight? {
+        let now = Date()
+        return insights
+            .filter { insight in
+                guard !insight.isActioned else { return false }
+                guard insight.severity == .alert || insight.severity == .warning else { return false }
+                guard let expires = insight.expiresAt else { return true }
+                return expires > now
+            }
+            .sorted { lhs, rhs in
+                if lhs.severity != rhs.severity {
+                    return lhs.severity == .alert
+                }
+                return lhs.createdAt > rhs.createdAt
+            }
+            .first
     }
 
     /// Dashboard charts need at least one populated value, not merely a `DailyMetric` row.
@@ -460,7 +486,7 @@ struct DashboardView: View {
 
 #Preview("Dashboard") {
     NavigationStack {
-        DashboardView()
+        DashboardView(navigationPath: .constant([]))
     }
     .environment(HealthKitManager(modelContainer: try! SignalModelContainer.make(inMemoryOnly: true)))
     .environment(UnitPreferences.shared)

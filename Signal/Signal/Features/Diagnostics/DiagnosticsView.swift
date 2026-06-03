@@ -22,6 +22,7 @@ struct DiagnosticsView: View {
                         syncSection(viewModel: viewModel)
                         importSummarySection
                         ragSmokeTestSection(viewModel: viewModel)
+                        askCoachSection(viewModel: viewModel)
                         dayDumpSection(viewModel: viewModel)
                         retrievalUATSection(viewModel: viewModel)
                     } else {
@@ -39,6 +40,8 @@ struct DiagnosticsView: View {
                 viewModel = DiagnosticsViewModel(modelContainer: modelContext.container)
             }
             viewModel?.refresh(healthKitManager: healthKitManager)
+            viewModel?.refreshCoachModelStatus()
+            viewModel?.prewarmCoach()
             Log.ui.info("diagnostics view appeared")
         }
         .navigationDestination(isPresented: $showsDataQualityFlags) {
@@ -279,6 +282,121 @@ struct DiagnosticsView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.top, 4)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func askCoachSection(viewModel: DiagnosticsViewModel) -> some View {
+        elevatedCard {
+            Text("Ask coach")
+                .font(.cardLabel)
+                .foregroundStyle(Color("TextPrimary"))
+
+            Text("Streams a Foundation Models answer using assembled profile, insights, metrics, RAG, and recent workouts. Build context first to confirm RAG without calling the model.")
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Text("Foundation model")
+                Spacer()
+                Text(viewModel.coachModelStatusLabel)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(viewModel.coachCanAsk ? Color("Primary") : .orange)
+            }
+
+            Button("Refresh model status") {
+                viewModel.refreshCoachModelStatus()
+            }
+            .buttonStyle(.bordered)
+            .tint(Color("Primary"))
+
+            if let help = viewModel.coachModelHelpText {
+                DisclosureGroup("Apple Intelligence troubleshooting") {
+                    Text(help)
+                        .font(.system(.caption, design: .monospaced))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+            }
+
+            TextField("Ask the coach", text: Bindable(viewModel).coachQueryText, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(2...5)
+                .autocorrectionDisabled()
+
+            HStack(spacing: 12) {
+                Button("Build context") {
+                    viewModel.previewCoachContext()
+                }
+                .buttonStyle(.bordered)
+                .tint(Color("Primary"))
+                .disabled(
+                    viewModel.coachIsBuildingContext
+                        || viewModel.coachIsResponding
+                        || viewModel.coachQueryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
+
+                Button("Ask") {
+                    viewModel.askCoach()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color("Primary"))
+                .disabled(
+                    viewModel.coachIsResponding
+                        || viewModel.coachIsBuildingContext
+                        || viewModel.coachQueryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
+            }
+
+            if viewModel.coachIsBuildingContext {
+                ProgressView("Building context...")
+                    .tint(Color("Primary"))
+            }
+
+            if viewModel.coachIsResponding {
+                ProgressView("Coach is responding...")
+                    .tint(Color("Primary"))
+            }
+
+            if let error = viewModel.coachError {
+                Text(error)
+                    .foregroundStyle(.orange)
+            }
+
+            if !viewModel.coachContextSummary.isEmpty {
+                Text(viewModel.coachContextSummary)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Color("TextPrimary"))
+                    .textSelection(.enabled)
+            }
+
+            if !viewModel.coachRAGPreview.isEmpty {
+                DisclosureGroup("RAG retrieved") {
+                    Text(viewModel.coachRAGPreview)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(Color("TextSecondary"))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+            }
+
+            if !viewModel.coachResponseText.isEmpty {
+                ScrollView {
+                    Text(viewModel.coachResponseText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
+                .frame(maxHeight: 240)
+            }
+
+            if !viewModel.coachContextPreview.isEmpty {
+                DisclosureGroup("Full context sent") {
+                    Text(viewModel.coachContextPreview)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(Color("TextSecondary"))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
                 }
             }
         }

@@ -107,9 +107,17 @@ struct MainTabView: View {
 }
 
 private struct DashboardTabRoot: View {
+    @State private var path: [DashboardDestination] = []
+
     var body: some View {
-        NavigationStack {
-            DashboardView()
+        NavigationStack(path: $path) {
+            DashboardView(navigationPath: $path)
+                .navigationDestination(for: DashboardDestination.self) { destination in
+                    switch destination {
+                    case .insights:
+                        InsightsView()
+                    }
+                }
         }
     }
 }
@@ -121,9 +129,11 @@ private struct TrainTabRoot: View {
 }
 
 private struct CoachTabRoot: View {
+    @Environment(\.modelContext) private var modelContext
+
     var body: some View {
         NavigationStack {
-            CoachPlaceholderView()
+            ChatView(modelContainer: modelContext.container)
         }
     }
 }

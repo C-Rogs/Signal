@@ -1,9 +1,11 @@
 import os
+import SwiftData
 import SwiftUI
 import UIKit
 
 struct RootView: View {
     @Environment(HealthKitManager.self) private var healthKitManager
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
     @Bindable private var downloadState = EmbeddingDownloadState.shared
@@ -27,6 +29,7 @@ struct RootView: View {
                 paintHostWindowForScheme()
                 healthKitManager.refreshAccessState()
                 healthKitManager.syncOnForegroundIfReady()
+                runReflectionIfForegroundDue()
             }
         }
         .onChange(of: colorScheme) { _, _ in
@@ -112,6 +115,14 @@ struct RootView: View {
             Log.ui.error(
                 "embedding preload failed: \(String(describing: error), privacy: .public)"
             )
+        }
+    }
+
+    private func runReflectionIfForegroundDue() {
+        guard ReflectionSchedule.shouldRunOnForeground() else { return }
+        let context = modelContext
+        Task {
+            await ReflectionEngine.shared.runReflection(in: context)
         }
     }
 

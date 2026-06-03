@@ -19,6 +19,7 @@ struct SignalApp: App {
             CatalogBootstrap.runIfNeeded(modelContainer: container)
             DataQualityMigration.runIfNeeded(modelContainer: container)
             _ = DerivedMetricsService.shared
+            _ = ReflectionEngine.shared
             _healthKitManager = State(
                 wrappedValue: HealthKitManager(modelContainer: container)
             )

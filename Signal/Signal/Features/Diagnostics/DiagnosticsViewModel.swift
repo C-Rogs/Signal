@@ -68,6 +68,17 @@ final class DiagnosticsViewModel {
     )
     var dataQualityFlagRows: [DataQualityFlagRow] = []
     var isLoadingDerivedMetrics = false
+    var coachQueryText = ""
+    var coachResponseText = ""
+    var coachContextPreview = ""
+    var coachRAGPreview = ""
+    var coachContextSummary = ""
+    var coachModelStatusLabel = "Checking..."
+    var coachModelHelpText: String?
+    var coachCanAsk = true
+    var coachIsBuildingContext = false
+    var coachError: String?
+    var coachIsResponding = false
 
     var uatReportCharacterCount: Int { uatReportText.count }
     var dayDumpReportCharacterCount: Int { dayDumpReportText.count }
@@ -82,9 +93,128 @@ final class DiagnosticsViewModel {
 
     private let modelContainer: ModelContainer
     private let retrievalTopK = DiagnosticsRetrieval.defaultTopK
+    private let coach: FoundationModelsCoach
+    private let coachContextBuilder = CoachContextBuilder()
+    private var coachTask: Task<Void, Never>?
 
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
+        self.coach = FoundationModelsCoach(modelContainer: modelContainer)
+    }
+
+    func prewarmCoach() {
+        refreshCoachModelStatus()
+        Task {
+            await coach.prewarm()
+        }
+    }
+
+    func refreshCoachModelStatus() {
+        let status = CoachModelAvailabilityFormatter.currentStatus()
+        coachModelStatusLabel = status.label
+        coachCanAsk = status.canAskCoach
+        coachModelHelpText = status.helpText
+        Log.coach.info("coach diagnostics model status=\(status.label, privacy: .public)")
+    }
+
+    func previewCoachContext() {
+        let trimmed = coachQueryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        coachTask?.cancel()
+        coachError = nil
+        coachResponseText = ""
+        coachContextPreview = ""
+        coachRAGPreview = ""
+        coachContextSummary = ""
+        coachIsBuildingContext = true
+
+        coachTask = Task {
+            do {
+                let diagnostics = try await buildCoachContextDiagnostics(for: trimmed)
+                try Task.checkCancellation()
+                await MainActor.run {
+                    applyCoachContextDiagnostics(diagnostics)
+                    coachIsBuildingContext = false
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    coachIsBuildingContext = false
+                }
+            } catch {
+                await MainActor.run {
+                    coachIsBuildingContext = false
+                    coachError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func askCoach() {
+        let trimmed = coachQueryText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        refreshCoachModelStatus()
+        guard coachCanAsk else {
+            coachError = "Foundation model is not ready. Build context to confirm RAG, then retry Ask after Apple Intelligence is available."
+            return
+        }
+
+        coachTask?.cancel()
+        coachError = nil
+        coachResponseText = ""
+        coachIsResponding = true
+
+        coachTask = Task {
+            do {
+                let context = try await coachContextBuilder.buildContext(
+                    for: trimmed,
+                    modelContainer: modelContainer
+                )
+                let preview = context.assembledPrompt(query: trimmed)
+                await MainActor.run {
+                    applyCoachContextDiagnostics(
+                        CoachContextDiagnostics(
+                            ragDayCount: context.ragSummaries.count,
+                            ragCharacterCount: context.ragSummaries.reduce(0) { $0 + $1.count },
+                            insightCount: context.activeInsights.count,
+                            recentWorkoutCount: context.recentWorkouts.count,
+                            assembledPromptCharacters: preview.count,
+                            ragPreview: Self.ragSectionPreview(from: context.ragSummaries),
+                            fullContextPreview: preview
+                        )
+                    )
+                }
+
+                let stream = try await coach.respond(to: trimmed, context: context)
+                for try await chunk in stream {
+                    try Task.checkCancellation()
+                    await MainActor.run {
+                        coachResponseText += chunk
+                    }
+                }
+                await MainActor.run {
+                    coachIsResponding = false
+                    Log.coach.info("coach diagnostics response chars=\(self.coachResponseText.count, privacy: .public)")
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    coachIsResponding = false
+                }
+            } catch let error as CoachError {
+                await MainActor.run {
+                    coachIsResponding = false
+                    coachError = Self.describeCoachError(error)
+                    Log.coach.error("coach diagnostics failed: \(self.coachError ?? "", privacy: .public)")
+                }
+            } catch {
+                await MainActor.run {
+                    coachIsResponding = false
+                    coachError = error.localizedDescription
+                    Log.coach.error("coach diagnostics failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        }
     }
 
     func refresh(healthKitManager: HealthKitManager) {
@@ -364,5 +494,50 @@ final class DiagnosticsViewModel {
             return description
         }
         return error.localizedDescription
+    }
+
+    private static func describeCoachError(_ error: CoachError) -> String {
+        switch error {
+        case .busy:
+            return "Coach is already responding. Wait for the current answer to finish."
+        case .contextTooLarge:
+            return "Context is too large for the on-device model even after trimming."
+        case .rateLimited:
+            return "On-device model rate limited. Try again in a moment."
+        case .generationFailed(let underlying):
+            if !CoachModelAvailabilityFormatter.currentStatus().canAskCoach {
+                return "Foundation model is not ready. \(CoachModelAvailabilityFormatter.currentStatus().label). Retry after Apple Intelligence finishes downloading."
+            }
+            return underlying.localizedDescription
+        }
+    }
+
+    private func buildCoachContextDiagnostics(for query: String) async throws -> CoachContextDiagnostics {
+        let context = try await coachContextBuilder.buildContext(
+            for: query,
+            modelContainer: modelContainer
+        )
+        let preview = context.assembledPrompt(query: query)
+        return CoachContextDiagnostics(
+            ragDayCount: context.ragSummaries.count,
+            ragCharacterCount: context.ragSummaries.reduce(0) { $0 + $1.count },
+            insightCount: context.activeInsights.count,
+            recentWorkoutCount: context.recentWorkouts.count,
+            assembledPromptCharacters: preview.count,
+            ragPreview: Self.ragSectionPreview(from: context.ragSummaries),
+            fullContextPreview: preview
+        )
+    }
+
+    private func applyCoachContextDiagnostics(_ diagnostics: CoachContextDiagnostics) {
+        coachContextSummary = diagnostics.summaryLine
+        coachRAGPreview = diagnostics.ragPreview
+        coachContextPreview = diagnostics.fullContextPreview
+        Log.coach.info("coach diagnostics context \(diagnostics.summaryLine, privacy: .public)")
+    }
+
+    private static func ragSectionPreview(from summaries: [String]) -> String {
+        guard !summaries.isEmpty else { return "(no RAG days retrieved)" }
+        return summaries.joined(separator: "\n\n")
     }
 }
