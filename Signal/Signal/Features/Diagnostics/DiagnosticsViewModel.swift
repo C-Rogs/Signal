@@ -58,6 +58,7 @@ final class DiagnosticsViewModel {
     var uatReportText = ""
     var dayDumpReportText = ""
     var dayDumpError: String?
+    var syncAnchorResetMessage: String?
 
     var uatReportCharacterCount: Int { uatReportText.count }
     var dayDumpReportCharacterCount: Int { dayDumpReportText.count }
@@ -206,6 +207,21 @@ final class DiagnosticsViewModel {
             dayDumpReportText = ""
             dayDumpError = error.localizedDescription
             Log.ui.error("diagnostics day dump failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    func resetSyncAnchors(healthKitManager: HealthKitManager) {
+        syncAnchorResetMessage = nil
+        let context = ModelContext(modelContainer)
+        do {
+            let removed = try SyncAnchorStore.deleteAll(in: context)
+            syncAnchorRows = Self.loadSyncAnchorRows(in: context)
+            syncAnchorResetMessage = "Removed \(removed) anchor(s). Run Sync now to backfill from Health."
+            Log.sync.info("diagnostics sync anchors reset count=\(removed, privacy: .public)")
+            healthKitManager.syncNow()
+        } catch {
+            syncAnchorResetMessage = error.localizedDescription
+            Log.ui.error("diagnostics sync anchor reset failed: \(String(describing: error), privacy: .public)")
         }
     }
 

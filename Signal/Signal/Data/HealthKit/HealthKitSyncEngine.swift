@@ -21,6 +21,17 @@ struct HealthKitSyncOutcome: Sendable {
     let noOp: Bool
 }
 
+enum HealthKitSyncEngineError: LocalizedError {
+    case aggregationFailed(dayKey: String, stage: String, underlying: Error)
+
+    var errorDescription: String? {
+        switch self {
+        case let .aggregationFailed(dayKey, stage, underlying):
+            "HealthKit aggregate failed day=\(dayKey) stage=\(stage): \(underlying.localizedDescription)"
+        }
+    }
+}
+
 enum HealthKitSyncEngine {
     static func processDelta(
         healthStore: HKHealthStore,
@@ -124,20 +135,37 @@ enum HealthKitSyncEngine {
         metrics.reserveCapacity(sortedDays.count)
         nutritionItems.reserveCapacity(sortedDays.count)
         for dayStart in sortedDays {
-            if let metric = try await HealthKitDayAggregator.aggregate(
-                dayStart: dayStart,
-                healthStore: healthStore,
-                calendar: calendar,
-                lookbackStart: lookbackStart
-            ) {
-                metrics.append(metric)
+            let dayKey = Summarizer.dayKey(for: dayStart, calendar: calendar)
+            do {
+                if let metric = try await HealthKitDayAggregator.aggregate(
+                    dayStart: dayStart,
+                    healthStore: healthStore,
+                    calendar: calendar,
+                    lookbackStart: lookbackStart
+                ) {
+                    metrics.append(metric)
+                }
+            } catch {
+                throw HealthKitSyncEngineError.aggregationFailed(
+                    dayKey: dayKey,
+                    stage: "metrics",
+                    underlying: error
+                )
             }
-            if let nutrition = try await HealthKitDayAggregator.aggregateNutrition(
-                dayStart: dayStart,
-                healthStore: healthStore,
-                calendar: calendar
-            ) {
-                nutritionItems.append(nutrition)
+            do {
+                if let nutrition = try await HealthKitDayAggregator.aggregateNutrition(
+                    dayStart: dayStart,
+                    healthStore: healthStore,
+                    calendar: calendar
+                ) {
+                    nutritionItems.append(nutrition)
+                }
+            } catch {
+                throw HealthKitSyncEngineError.aggregationFailed(
+                    dayKey: dayKey,
+                    stage: "nutrition",
+                    underlying: error
+                )
             }
         }
 

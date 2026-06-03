@@ -42,4 +42,16 @@ enum SyncAnchorStore {
         descriptor.fetchLimit = 1
         return try context.fetch(descriptor).first?.anchorData
     }
+
+    static func deleteAll(in context: ModelContext) throws -> Int {
+        let anchors = try context.fetch(FetchDescriptor<SyncAnchor>())
+        let count = anchors.count
+        for anchor in anchors {
+            context.delete(anchor)
+        }
+        if count > 0 {
+            try context.save()
+        }
+        return count
+    }
 }

@@ -103,6 +103,35 @@ struct DiagnosticsView: View {
                 Text("Metrics written: \(outcome.metricsWritten)")
                 Text("Vectors updated: \(outcome.vectorsWritten)")
                 Text("Elapsed: \(String(format: "%.1f", outcome.elapsedSeconds)) s")
+
+                Text("Samples fetched by type")
+                    .font(.cardLabel)
+                    .foregroundStyle(Color("TextPrimary"))
+                    .padding(.top, 8)
+
+                ForEach(outcome.samplesFetchedByType.sorted(by: { $0.key < $1.key }), id: \.key) { typeIdentifier, count in
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(typeIdentifier)
+                            .font(.system(.caption, design: .monospaced))
+                            .lineLimit(2)
+                        Spacer(minLength: 8)
+                        Text("\(count)")
+                            .font(.system(.caption, design: .monospaced))
+                    }
+                }
+            }
+
+            Button("Reset sync anchors") {
+                viewModel.resetSyncAnchors(healthKitManager: healthKitManager)
+            }
+            .buttonStyle(.bordered)
+            .tint(Color("Primary"))
+            .disabled(healthKitManager.isSyncing)
+
+            if let message = viewModel.syncAnchorResetMessage {
+                Text(message)
+                    .foregroundStyle(Color("TextSecondary"))
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Text("Sync anchors")

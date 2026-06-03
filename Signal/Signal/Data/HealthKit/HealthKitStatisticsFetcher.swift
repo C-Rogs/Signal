@@ -1,5 +1,6 @@
 import Foundation
 import HealthKit
+import os
 
 enum HealthKitStatisticsFetcher {
     static func cumulativeSum(
@@ -21,6 +22,13 @@ enum HealthKitStatisticsFetcher {
                 options: .cumulativeSum
             ) { _, statistics, error in
                 if let error {
+                    if HealthKitQueryErrors.isNoData(error) {
+                        Log.sync.debug(
+                            "statistics cumulativeSum no data type=\(quantityType.identifier, privacy: .public)"
+                        )
+                        continuation.resume(returning: nil)
+                        return
+                    }
                     continuation.resume(throwing: error)
                     return
                 }
