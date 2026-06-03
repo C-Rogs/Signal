@@ -9,6 +9,8 @@ struct WorkoutHistoryDetailView: View {
     let session: WorkoutSession
 
     @State private var exercises: [WorkoutExercise] = []
+    @State private var workHeartRateBySetEntryID: [UUID: SetHeartRateData] = [:]
+    @State private var restHeartRateByNextSetEntryID: [UUID: SetHeartRateData] = [:]
 
     private var formatter: DisplayUnitFormatter {
         DisplayUnitFormatter(preferences: unitPreferences)
@@ -33,8 +35,8 @@ struct WorkoutHistoryDetailView: View {
                                 .foregroundStyle(.secondary)
                                 .font(.subheadline)
                         } else {
-                            ForEach(sets, id: \.persistentModelID) { set in
-                                setSummary(set, exercise: exercise)
+                            ForEach(Array(sets.enumerated()), id: \.element.persistentModelID) { index, set in
+                                setSummary(set, exercise: exercise, nextSet: index + 1 < sets.count ? sets[index + 1] : nil)
                             }
                         }
                     }
@@ -47,6 +49,7 @@ struct WorkoutHistoryDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: session.persistentModelID) {
             loadExercises()
+            loadHeartRateData()
         }
     }
 
@@ -63,23 +66,66 @@ struct WorkoutHistoryDetailView: View {
             .sorted { $0.order < $1.order }
     }
 
-    @ViewBuilder
-    private func setSummary(_ set: SetEntry, exercise: WorkoutExercise) -> some View {
-        let mode = ExerciseLoggingMode.from(catalogEntry: exercise.catalogEntry)
-        switch mode {
-        case .strength:
-            HStack {
-                Text("Set \(set.setIndex + 1)")
-                Spacer()
-                Text("\(formatter.formatMassKg(set.weightKg)) × \(set.reps.map(String.init) ?? "—")")
-                    .foregroundStyle(.secondary)
+    @MainActor
+    private func loadHeartRateData() {
+        let sessionUUID = session.resolvedSessionID(in: modelContext)
+        let rows = (try? SetHeartRateDataStore.fetch(sessionID: sessionUUID, in: modelContext)) ?? []
+        var work: [UUID: SetHeartRateData] = [:]
+        var rest: [UUID: SetHeartRateData] = [:]
+        for row in rows {
+            if row.isRestInterval {
+                rest[row.setEntryID] = row
+            } else {
+                work[row.setEntryID] = row
             }
-        case .cardio:
-            HStack {
-                Text("Set \(set.setIndex + 1)")
-                Spacer()
-                Text("\(formatter.formatDistanceKm(set.distanceKm)) / \(formatDuration(set.durationSeconds))")
-                    .foregroundStyle(.secondary)
+        }
+        workHeartRateBySetEntryID = work
+        restHeartRateByNextSetEntryID = rest
+    }
+
+    @ViewBuilder
+    private func setSummary(
+        _ set: SetEntry,
+        exercise: WorkoutExercise,
+        nextSet: SetEntry?
+    ) -> some View {
+        let setType = WorkoutSetType(storageValue: set.setType)
+        let isWorkingSet = setType != .warmup
+        let workHR = workHeartRateBySetEntryID[set.entryID]
+        let restHR = nextSet.flatMap { restHeartRateByNextSetEntryID[$0.entryID] }
+
+        VStack(alignment: .leading, spacing: 4) {
+            switch ExerciseLoggingMode.from(catalogEntry: exercise.catalogEntry) {
+            case .strength:
+                HStack {
+                    Text("Set \(set.setIndex + 1)")
+                    Spacer()
+                    Text("\(formatter.formatMassKg(set.weightKg)) × \(set.reps.map(String.init) ?? "—")")
+                        .foregroundStyle(.secondary)
+                    if isWorkingSet, let workHR {
+                        Text(SetHeartRateDisplay.workingSetLabel(avgBPM: workHR.avgBPM))
+                            .font(.subheadline)
+                            .foregroundStyle(SetHeartRateDisplay.bpmColor(for: workHR.avgBPM))
+                    }
+                }
+            case .cardio:
+                HStack {
+                    Text("Set \(set.setIndex + 1)")
+                    Spacer()
+                    Text("\(formatter.formatDistanceKm(set.distanceKm)) / \(formatDuration(set.durationSeconds))")
+                        .foregroundStyle(.secondary)
+                    if isWorkingSet, let workHR {
+                        Text(SetHeartRateDisplay.workingSetLabel(avgBPM: workHR.avgBPM))
+                            .font(.subheadline)
+                            .foregroundStyle(SetHeartRateDisplay.bpmColor(for: workHR.avgBPM))
+                    }
+                }
+            }
+
+            if isWorkingSet, let restHR {
+                Text(SetHeartRateDisplay.restLabel(avgBPM: restHR.avgBPM))
+                    .font(.caption)
+                    .foregroundStyle(Color("TextSecondary"))
             }
         }
     }

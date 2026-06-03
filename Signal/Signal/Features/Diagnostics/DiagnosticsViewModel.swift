@@ -79,6 +79,12 @@ final class DiagnosticsViewModel {
     var coachIsBuildingContext = false
     var coachError: String?
     var coachIsResponding = false
+    var recoveryDiagnostics: RecoveryDiagnosticsSnapshot?
+    var hrAttributionDiagnostics = HRAttributionDiagnosticsSnapshot(
+        totalRows: 0,
+        fullSessionCount: 0,
+        partialSessionCount: 0
+    )
 
     var uatReportCharacterCount: Int { uatReportText.count }
     var dayDumpReportCharacterCount: Int { dayDumpReportText.count }
@@ -271,6 +277,8 @@ final class DiagnosticsViewModel {
 
             syncAnchorRows = Self.loadSyncAnchorRows(in: context)
             dataQualityFlagRows = DerivedMetricsDiagnosticsLoader.loadDataQualityFlags(in: context)
+            recoveryDiagnostics = RecoveryDiagnosticsLoader.load(in: context)
+            hrAttributionDiagnostics = HRAttributionDiagnosticsLoader.load(in: context)
             Log.ui.info(
                 "diagnostics refreshed metrics=\(self.dailyMetricCount, privacy: .public) vectors=\(self.healthVectorCount, privacy: .public) syncFinished=\(healthKitManager.lastSyncFinishedAt != nil, privacy: .public)"
             )

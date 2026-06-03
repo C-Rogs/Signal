@@ -19,6 +19,7 @@ struct HealthKitSyncOutcome: Sendable {
     let anchorsAdvanced: [String: Bool]
     let elapsedSeconds: TimeInterval
     let noOp: Bool
+    let newHeartRateSampleSpan: DateInterval?
 }
 
 enum HealthKitSyncEngineError: LocalizedError {
@@ -54,6 +55,7 @@ enum HealthKitSyncEngine {
 
         var deltas: [HealthKitAnchoredDelta] = []
         var workoutDelta: HealthKitAnchoredDelta?
+        var newHeartRateSampleSpan: DateInterval?
         for kind in HealthKitTier1Kind.anchoredSyncKinds {
             let delta = try await fetchAnchoredDelta(
                 kind: kind,
@@ -70,6 +72,13 @@ enum HealthKitSyncEngine {
             if kind == .workout {
                 workoutDelta = delta
                 continue
+            }
+
+            if kind == .heartRate, !delta.addedSamples.isEmpty {
+                newHeartRateSampleSpan = Self.mergedSpan(
+                    existing: newHeartRateSampleSpan,
+                    samples: delta.addedSamples
+                )
             }
 
             for sample in delta.addedSamples {
@@ -125,7 +134,8 @@ enum HealthKitSyncEngine {
                 vectorsWritten: 0,
                 anchorsAdvanced: anchorsAdvanced,
                 elapsedSeconds: elapsed,
-                noOp: true
+                noOp: true,
+                newHeartRateSampleSpan: newHeartRateSampleSpan
             )
         }
 
@@ -212,8 +222,20 @@ enum HealthKitSyncEngine {
             vectorsWritten: vectorsWritten,
             anchorsAdvanced: anchorsAdvanced,
             elapsedSeconds: elapsed,
-            noOp: false
+            noOp: false,
+            newHeartRateSampleSpan: newHeartRateSampleSpan
         )
+    }
+
+    private static func mergedSpan(existing: DateInterval?, samples: [HKSample]) -> DateInterval? {
+        guard !samples.isEmpty else { return existing }
+        let sampleStart = samples.map(\.startDate).min()!
+        let sampleEnd = samples.map(\.endDate).max()!
+        let incoming = DateInterval(start: sampleStart, end: sampleEnd)
+        guard let existing else { return incoming }
+        let start = min(existing.start, incoming.start)
+        let end = max(existing.end, incoming.end)
+        return DateInterval(start: start, end: end)
     }
 
     private static func lookbackStartDate(calendar: Calendar) -> Date {

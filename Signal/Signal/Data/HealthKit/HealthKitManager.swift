@@ -198,10 +198,14 @@ final class HealthKitManager {
             if clearDirtyOnSuccess {
                 backgroundCoordinator?.clearDirtyFlagAfterSuccessfulSync()
             }
+            var userInfo: [String: Any] = ["modelContainer": modelContainer]
+            if let span = outcome.newHeartRateSampleSpan {
+                userInfo["newHeartRateSampleSpan"] = span
+            }
             NotificationCenter.default.post(
                 name: .healthKitProcessDeltaDidFinish,
                 object: nil,
-                userInfo: ["modelContainer": modelContainer]
+                userInfo: userInfo
             )
             await DerivedMetricsService.shared.invalidateCache()
             Log.sync.info(

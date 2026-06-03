@@ -20,6 +20,7 @@ struct SignalApp: App {
             DataQualityMigration.runIfNeeded(modelContainer: container)
             _ = DerivedMetricsService.shared
             _ = ReflectionEngine.shared
+            _ = SetHRAttributionTrigger.shared
             _healthKitManager = State(
                 wrappedValue: HealthKitManager(modelContainer: container)
             )

@@ -13,6 +13,7 @@ enum SignalModelContainer {
         WorkoutSession.self,
         WorkoutExercise.self,
         SetEntry.self,
+        SetHeartRateData.self,
         ExerciseCatalog.self,
         Routine.self,
         RoutineExercise.self,

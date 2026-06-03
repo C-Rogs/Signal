@@ -3,6 +3,7 @@ import SwiftData
 
 @Model
 final class SetEntry {
+    var entryID: UUID
     var setIndex: Int
     var setType: String
     var weightKg: Double?
@@ -18,6 +19,7 @@ final class SetEntry {
     var exercise: WorkoutExercise?
 
     init(
+        entryID: UUID = UUID(),
         setIndex: Int,
         setType: String,
         weightKg: Double? = nil,
@@ -30,6 +32,7 @@ final class SetEntry {
         startedAt: Date? = nil,
         completedAt: Date? = nil
     ) {
+        self.entryID = entryID
         self.setIndex = setIndex
         self.setType = setType
         self.weightKg = weightKg

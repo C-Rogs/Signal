@@ -18,6 +18,8 @@ struct DiagnosticsView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     if let viewModel {
                         storeHealthSection(viewModel: viewModel)
+                        hrvAnalysisSection(viewModel: viewModel)
+                        hrAttributionSection(viewModel: viewModel)
                         derivedMetricsSection(viewModel: viewModel)
                         syncSection(viewModel: viewModel)
                         importSummarySection
@@ -48,6 +50,52 @@ struct DiagnosticsView: View {
             if let viewModel {
                 DataQualityFlagsListView(flags: viewModel.dataQualityFlagRows)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func hrvAnalysisSection(viewModel: DiagnosticsViewModel) -> some View {
+        elevatedCard {
+            Text("HRV analysis")
+                .font(.cardLabel)
+                .foregroundStyle(Color("TextPrimary"))
+
+            if let diagnostics = viewModel.recoveryDiagnostics {
+                Text("Baseline mean ± SD: \(diagnostics.baselineMeanText) ± \(diagnostics.baselineSDText) ms")
+                Text("Acute 7-day mean: \(diagnostics.acuteMeanText) ms")
+                Text("Upper band: \(diagnostics.upperBandText) ms")
+                Text("Lower band: \(diagnostics.lowerBandText) ms")
+                Text("Classification: \(diagnostics.classificationLabel)")
+                Text("Data points used: \(diagnostics.dataPointsUsed)")
+                Text("RHR delta: \(formatDelta(viewModel.recoveryDiagnostics?.score.rhrDelta))")
+                Text("Sleep delta: \(formatDelta(viewModel.recoveryDiagnostics?.score.sleepDelta)) h")
+                Text(
+                    "Score breakdown: HRV \(diagnostics.hrvTermText), RHR \(diagnostics.rhrTermText), sleep \(diagnostics.sleepTermText), total \(diagnostics.totalScoreText)"
+                )
+            } else {
+                Text("No HRV history available.")
+                    .foregroundStyle(Color("TextSecondary"))
+            }
+        }
+    }
+
+    private func formatDelta(_ value: Double?) -> String {
+        guard let value else { return "n/a" }
+        let sign = value >= 0 ? "+" : ""
+        return "\(sign)\(String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), value))"
+    }
+
+    @ViewBuilder
+    private func hrAttributionSection(viewModel: DiagnosticsViewModel) -> some View {
+        elevatedCard {
+            Text("HR attribution")
+                .font(.cardLabel)
+                .foregroundStyle(Color("TextPrimary"))
+
+            let snapshot = viewModel.hrAttributionDiagnostics
+            Text("SetHeartRateData rows: \(snapshot.totalRows)")
+            Text("Sessions with full attribution: \(snapshot.fullSessionCount)")
+            Text("Sessions with partial attribution: \(snapshot.partialSessionCount)")
         }
     }
 
