@@ -1,3 +1,4 @@
+import SwiftData
 import XCTest
 @testable import Signal
 
@@ -142,14 +143,14 @@ final class CueEngineTests: XCTestCase {
         let completed = working(rpe: nil)
         let cueInput = input(completed: completed, lastSession: nil, targetReps: nil)
         XCTAssertEqual(CueEngine.tier(for: cueInput), .neutral)
-        XCTAssertEqual(CueEngine.cue(for: cueInput), "Set logged.")
+        XCTAssertNil(CueEngine.cue(for: cueInput))
     }
 
     func testNilLastSessionFallsThroughWithoutCrash() {
         let completed = working(weightKg: 105, reps: 8, rpe: 8)
         let cueInput = input(completed: completed, lastSession: nil, targetReps: nil)
-        XCTAssertNotNil(CueEngine.cue(for: cueInput))
         XCTAssertEqual(CueEngine.tier(for: cueInput), .neutral)
+        XCTAssertNil(CueEngine.cue(for: cueInput))
     }
 
     func testStrongPRBeatsFatigue() {
@@ -210,6 +211,36 @@ final class CueEngineTests: XCTestCase {
         XCTAssertNil(CueEngine.cue(for: input(completed: warmup)))
     }
 
+    func testWarmupHighRPEStillReturnsNoCue() {
+        let warmup = SetCueSnapshot(setIndex: 0, weightKg: 40, reps: 10, rpe: 8, isWarmup: true)
+        XCTAssertTrue(warmup.isWarmup)
+        XCTAssertNil(CueEngine.cue(for: input(completed: warmup)))
+    }
+
+    func testFirstHardSetIsHardButOKNotStop() {
+        let first = working(setIndex: 0, rpe: 9)
+        let cueInput = input(completed: first, allCompleted: [first])
+        XCTAssertEqual(CueEngine.tier(for: cueInput), .hardButOK)
+    }
+
+    func testStopOnSecondHardSetSameLoadNotFatigue() {
+        let first = working(setIndex: 0, weightKg: 100, reps: 8, rpe: 9)
+        let second = working(setIndex: 1, weightKg: 100, reps: 8, rpe: 9)
+        let cueInput = input(
+            completed: second,
+            prior: first,
+            allCompleted: [first, second]
+        )
+        XCTAssertEqual(CueEngine.tier(for: cueInput), .stop)
+    }
+
+    func testNeutralTierReturnsNilCue() {
+        let completed = working(rpe: nil)
+        let cueInput = input(completed: completed, lastSession: nil, targetReps: nil)
+        XCTAssertEqual(CueEngine.tier(for: cueInput), .neutral)
+        XCTAssertNil(CueEngine.cue(for: cueInput))
+    }
+
     func testCardioModeReturnsNoCue() {
         let cardio = ExerciseCueInput(
             sessionID: sessionID,
@@ -224,9 +255,52 @@ final class CueEngineTests: XCTestCase {
         XCTAssertNil(CueEngine.cue(for: cardio))
     }
 
-    func testDefaultRIRTarget() {
-        XCTAssertEqual(CueEngine.defaultRIRTarget, 2)
+    func testFallbackTargetRIR() {
+        XCTAssertEqual(CueEngine.fallbackTargetRIR, 2)
         let cueInput = input(completed: working())
-        XCTAssertEqual(cueInput.defaultRIRTarget, 2)
+        XCTAssertEqual(cueInput.targetRIR, 2)
     }
+
+    func testTargetRIRZeroDoesNotChangeTierLogic() {
+        let completed = SetCueSnapshot(
+            setIndex: 1,
+            weightKg: 100,
+            reps: 8,
+            rpe: 7.5,
+            isWarmup: false
+        )
+        let last = SetCueSnapshot(
+            setIndex: 1,
+            weightKg: 95,
+            reps: 8,
+            rpe: 8,
+            isWarmup: false
+        )
+        let base = ExerciseCueInput(
+            sessionID: sessionID,
+            exerciseID: exerciseID,
+            mode: .strength,
+            completedSet: completed,
+            priorSetInSession: nil,
+            allCompletedSets: [completed],
+            lastSessionSet: last,
+            targetReps: 8,
+            targetRIR: 2
+        )
+        let powerlifting = ExerciseCueInput(
+            sessionID: sessionID,
+            exerciseID: exerciseID,
+            mode: .strength,
+            completedSet: completed,
+            priorSetInSession: nil,
+            allCompletedSets: [completed],
+            lastSessionSet: last,
+            targetReps: 8,
+            targetRIR: 0
+        )
+        XCTAssertEqual(CueEngine.tier(for: base), CueEngine.tier(for: powerlifting))
+        XCTAssertEqual(base.targetRIR, 2)
+        XCTAssertEqual(powerlifting.targetRIR, 0)
+    }
+
 }

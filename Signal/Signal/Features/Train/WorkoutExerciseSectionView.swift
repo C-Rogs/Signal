@@ -12,7 +12,9 @@ struct WorkoutExerciseSectionView: View {
     let onSupersetScroll: (PersistentIdentifier) -> Void
     let onNeedsRefresh: () -> Void
 
+    @Environment(TrainPreferences.self) private var trainPreferences
     @State private var showReplacePicker = false
+    @State private var dismissedWarmupSuggestion = false
     @State private var showRemoveConfirm = false
     @State private var showSupersetPicker = false
     @State private var activeCues: [PersistentIdentifier: String] = [:]
@@ -48,6 +50,20 @@ struct WorkoutExerciseSectionView: View {
 
     var body: some View {
         Section {
+            if let recommendation = warmupRecommendation {
+                WarmupSuggestionBannerView(
+                    summary: recommendation.summary,
+                    onAdd: {
+                        try? store.addSuggestedWarmupSets(to: exercise, recommendation: recommendation)
+                        dismissedWarmupSuggestion = true
+                        onNeedsRefresh()
+                    },
+                    onDismiss: {
+                        dismissedWarmupSuggestion = true
+                    }
+                )
+            }
+
             SetTableHeaderView(
                 mode: mode,
                 massColumnTitle: massColumnTitle,
@@ -360,7 +376,7 @@ struct WorkoutExerciseSectionView: View {
                     reps: template.reps,
                     distanceKm: template.distanceKm,
                     durationSeconds: template.durationSeconds,
-                    rpe: template.rpe
+                    rpe: nil
                 )
             )
             onNeedsRefresh()
@@ -378,5 +394,44 @@ struct WorkoutExerciseSectionView: View {
         return session.exercises.first {
             $0.supersetId == id && $0.persistentModelID != exercise.persistentModelID
         }
+    }
+
+    private var warmupRecommendation: WarmupRecommendation? {
+        guard !dismissedWarmupSuggestion else { return nil }
+        let anchor = anchorWorkingSetFields()
+        return WarmupRecommendationEngine.recommend(
+            WarmupRecommendationInput(
+                enabled: trainPreferences.suggestWarmupSets,
+                mode: mode,
+                movementPattern: exercise.catalogEntry?.movementPattern,
+                exerciseOrder: exercise.order,
+                goal: trainingGoal,
+                anchorWeightKg: anchor.weightKg,
+                anchorReps: anchor.reps,
+                alreadyHasWarmupSets: !warmupSets.isEmpty
+            )
+        )
+    }
+
+    private var trainingGoal: GoalType {
+        .hypertrophy
+    }
+
+    private func anchorWorkingSetFields() -> (weightKg: Double?, reps: Int?) {
+        if let set = workingSets.first(where: { $0.weightKg != nil || $0.reps != nil }) {
+            return (set.weightKg, set.reps)
+        }
+        if let set = sortedSets.first(where: { $0.weightKg != nil || $0.reps != nil }) {
+            return (set.weightKg, set.reps)
+        }
+        if let template = try? LastSessionAutofill.templates(
+            catalogEntry: exercise.catalogEntry,
+            exerciseTitle: exercise.exerciseTitle,
+            mode: mode,
+            in: modelContext
+        ).first {
+            return (template.weightKg, template.reps)
+        }
+        return (nil, nil)
     }
 }

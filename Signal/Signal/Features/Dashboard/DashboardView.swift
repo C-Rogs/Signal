@@ -278,6 +278,9 @@ struct DashboardView: View {
         !hasMeaningfulRecoveryData
     }
 
+    /// Dashboard charts need at least one populated value, not merely a `DailyMetric` row.
+    /// Empty SwiftData rows (all fields nil) can exist after partial sync and previously forced the
+    /// metrics layout with no visible series. Any one of the fields below is enough to show charts.
     private var hasMeaningfulRecoveryData: Bool {
         if nutritionRows.contains(where: hasMeaningfulNutrition) {
             return true

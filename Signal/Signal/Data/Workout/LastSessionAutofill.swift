@@ -13,6 +13,8 @@ struct SetAutofillTemplate: Sendable, Equatable {
 
 @MainActor
 enum LastSessionAutofill {
+    /// Weight/reps (or cardio distance/duration) from the last completed session. RPE is always nil:
+    /// effort is logged fresh each set; use `previousSet` only for cue comparisons and the Previous column.
     static func templates(
         catalogEntry: ExerciseCatalog?,
         exerciseTitle: String,
@@ -40,7 +42,7 @@ enum LastSessionAutofill {
                 reps: mode == .strength ? set.reps : nil,
                 distanceKm: mode == .cardio ? set.distanceKm : nil,
                 durationSeconds: mode == .cardio ? set.durationSeconds : nil,
-                rpe: set.rpe
+                rpe: nil
             )
         }
     }

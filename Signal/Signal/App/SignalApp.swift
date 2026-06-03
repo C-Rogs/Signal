@@ -7,6 +7,7 @@ struct SignalApp: App {
     private let modelContainer: ModelContainer
     @State private var healthKitManager: HealthKitManager
     @State private var unitPreferences = UnitPreferences.shared
+    @State private var trainPreferences = TrainPreferences.shared
     @State private var liveWorkoutCoordinator = LiveWorkoutCoordinator()
 
     init() {
@@ -29,6 +30,7 @@ struct SignalApp: App {
             RootView()
                 .environment(healthKitManager)
                 .environment(unitPreferences)
+                .environment(trainPreferences)
                 .environment(liveWorkoutCoordinator)
         }
         .modelContainer(modelContainer)

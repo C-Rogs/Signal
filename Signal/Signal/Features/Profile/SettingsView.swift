@@ -1,8 +1,10 @@
+import SwiftData
 import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(UnitPreferences.self) private var unitPreferences
+    @Environment(TrainPreferences.self) private var trainPreferences
     @Bindable private var downloadState = EmbeddingDownloadState.shared
 
     var body: some View {
@@ -11,6 +13,16 @@ struct SettingsView: View {
                 .ignoresSafeArea()
 
             List {
+                Section {
+                    Toggle("Suggest warmup sets", isOn: Bindable(trainPreferences).suggestWarmupSets)
+                } header: {
+                    Text("Train")
+                } footer: {
+                    Text(
+                        "During a workout, Signal can suggest ramp sets for early compound lifts. Hypertrophy defaults to about 45% and 65% of your first working weight when load is known."
+                    )
+                }
+
                 Section {
                     Picker("Weight", selection: Bindable(unitPreferences).massUnit) {
                         ForEach(MassUnit.allCases) { unit in
@@ -133,4 +145,6 @@ struct SettingsView: View {
         SettingsView()
     }
     .environment(UnitPreferences.shared)
+    .environment(TrainPreferences.shared)
+    .modelContainer(try! SignalModelContainer.make(inMemoryOnly: true))
 }

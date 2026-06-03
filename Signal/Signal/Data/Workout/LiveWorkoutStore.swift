@@ -168,7 +168,7 @@ final class LiveWorkoutStore {
             reps: template?.reps,
             distanceKm: template?.distanceKm,
             durationSeconds: template?.durationSeconds,
-            rpe: template?.rpe,
+            rpe: nil,
             isCompleted: false,
             hasBeenEdited: false
         )
@@ -176,6 +176,66 @@ final class LiveWorkoutStore {
         exercise.sets.append(set)
         try save("addSet")
         return set
+    }
+
+    func addSuggestedWarmupSets(
+        to exercise: WorkoutExercise,
+        recommendation: WarmupRecommendation
+    ) throws {
+        let mode = ExerciseLoggingMode.from(catalogEntry: exercise.catalogEntry)
+        let sorted = exercise.sets.sorted { $0.setIndex < $1.setIndex }
+        let insertCount = recommendation.setCount
+        guard insertCount > 0 else { return }
+
+        for set in sorted {
+            set.setIndex += insertCount
+        }
+
+        let anchorKg = anchorWorkingWeightKg(for: exercise, sortedSets: sorted, mode: mode)
+
+        for offset in 0..<insertCount {
+            let fraction = recommendation.weightFractions[offset]
+            let weightKg: Double?
+            if let anchorKg, anchorKg > 0 {
+                weightKg = anchorKg * fraction
+            } else {
+                weightKg = nil
+            }
+            let set = SetEntry(
+                setIndex: offset,
+                setType: WorkoutSetType.warmup.storageValue,
+                weightKg: weightKg,
+                reps: recommendation.reps,
+                distanceKm: nil,
+                durationSeconds: nil,
+                rpe: nil,
+                isCompleted: false,
+                hasBeenEdited: false
+            )
+            set.exercise = exercise
+            exercise.sets.append(set)
+        }
+        try save("addSuggestedWarmupSets")
+    }
+
+    private func anchorWorkingWeightKg(
+        for exercise: WorkoutExercise,
+        sortedSets: [SetEntry],
+        mode: ExerciseLoggingMode
+    ) -> Double? {
+        let fromWorking = sortedSets.compactMap { set -> Double? in
+            guard WorkoutSetType(storageValue: set.setType) != .warmup else { return nil }
+            return set.weightKg
+        }.first
+        if let fromWorking { return fromWorking }
+        if let any = sortedSets.compactMap(\.weightKg).first { return any }
+        let templates = try? LastSessionAutofill.templates(
+            catalogEntry: exercise.catalogEntry,
+            exerciseTitle: exercise.exerciseTitle,
+            mode: mode,
+            in: context
+        )
+        return templates?.compactMap(\.weightKg).first
     }
 
     func deleteSet(_ set: SetEntry, from exercise: WorkoutExercise) throws {

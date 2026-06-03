@@ -19,7 +19,7 @@ struct ExerciseCueInput: Sendable, Equatable {
     let allCompletedSets: [SetCueSnapshot]
     let lastSessionSet: SetCueSnapshot?
     let targetReps: Int?
-    let defaultRIRTarget: Int
+    let targetRIR: Int
 
     init(
         sessionID: String,
@@ -30,7 +30,7 @@ struct ExerciseCueInput: Sendable, Equatable {
         allCompletedSets: [SetCueSnapshot],
         lastSessionSet: SetCueSnapshot?,
         targetReps: Int?,
-        defaultRIRTarget: Int = 2
+        targetRIR: Int = CueEngine.fallbackTargetRIR
     ) {
         self.sessionID = sessionID
         self.exerciseID = exerciseID
@@ -40,7 +40,7 @@ struct ExerciseCueInput: Sendable, Equatable {
         self.allCompletedSets = allCompletedSets
         self.lastSessionSet = lastSessionSet
         self.targetReps = targetReps
-        self.defaultRIRTarget = defaultRIRTarget
+        self.targetRIR = targetRIR
     }
 }
 
@@ -56,13 +56,14 @@ enum CueTier: String, Sendable, CaseIterable {
 }
 
 enum CueEngine {
-    static let defaultRIRTarget = 2
+    static let fallbackTargetRIR = 2
 
     static func cue(for input: ExerciseCueInput) -> String? {
         guard input.mode == .strength else { return nil }
         guard !input.completedSet.isWarmup else { return nil }
 
         let tier = classifyTier(for: input)
+        guard tier != .neutral else { return nil }
         return message(for: tier, input: input)
     }
 
@@ -158,9 +159,11 @@ enum CueEngine {
     }
 
     static func isStop(current: SetCueSnapshot, allCompleted: [SetCueSnapshot]) -> Bool {
-        guard isHighRPE(current.rpe) else { return false }
-        let hardCount = allCompleted.filter { isHighRPE($0.rpe) && !$0.isWarmup }.count
-        return hardCount >= 2
+        guard isHighRPE(current.rpe), !current.isWarmup else { return false }
+        let priorHardSets = allCompleted.filter {
+            $0.setIndex < current.setIndex && isHighRPE($0.rpe) && !$0.isWarmup
+        }.count
+        return priorHardSets >= 1
     }
 
     static func beatLastSession(current: SetCueSnapshot, last: SetCueSnapshot?) -> Bool {
@@ -338,6 +341,12 @@ enum SetCueEvaluator {
             targetReps: CueEngine.targetReps(lastSessionSet: lastSessionSet)
         )
         let tier = CueEngine.tier(for: input)
+        guard tier != .neutral else {
+            Log.workout.debug(
+                "set cue setIndex=\(set.setIndex, privacy: .public) tier=neutral (no banner)"
+            )
+            return nil
+        }
         let message = CueEngine.message(for: tier, input: input)
         Log.workout.debug(
             "set cue setIndex=\(set.setIndex, privacy: .public) tier=\(tier.rawValue, privacy: .public) message=\(message, privacy: .public)"
