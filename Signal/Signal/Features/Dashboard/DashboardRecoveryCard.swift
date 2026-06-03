@@ -1,9 +1,10 @@
 import SwiftUI
 
 struct DashboardRecoveryCard: View {
-    let indicator: RecoveryIndicator
+    let score: RecoveryScore
     let rollingMeans: MetricRollingMeans
     let window: RecoveryWindow
+    let hrvChartRange: ClosedRange<Double>?
 
     private var windowMean: WindowMean {
         rollingMeans.mean(for: window)
@@ -21,19 +22,33 @@ struct DashboardRecoveryCard: View {
                 statusBadge
             }
 
-            Text(DashboardFormatting.recoveryScore(indicator.score))
+            Text(DashboardFormatting.recoveryScore(score.value))
                 .font(.metricValue)
-                .foregroundStyle(statusColor)
+                .foregroundStyle(scoreColor)
+
+            Text(classificationSubtitle)
+                .font(.metadataCaption)
+                .fontWeight(.medium)
+                .foregroundStyle(classificationColor)
+
+            if let analysis = score.hrvAnalysis,
+               score.hrvClassification != .insufficientData,
+               let chartRange = hrvChartRange
+            {
+                HRVBandIndicator(analysis: analysis, chartRange: chartRange)
+            }
+
+            confidenceLine
 
             VStack(alignment: .leading, spacing: 6) {
                 baselineRow(
                     label: "HRV today",
-                    today: DashboardFormatting.hrv(indicator.todayHRV),
+                    today: DashboardFormatting.hrv(score.todayHRV),
                     baseline: baselineHRVText
                 )
                 baselineRow(
                     label: "Resting HR",
-                    today: DashboardFormatting.heartRate(indicator.todayRestingHR),
+                    today: DashboardFormatting.heartRate(score.todayRestingHR),
                     baseline: baselineRHRText
                 )
             }
@@ -50,27 +65,50 @@ struct DashboardRecoveryCard: View {
             .fontWeight(.semibold)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .foregroundStyle(statusColor)
-            .background(statusColor.opacity(0.15))
+            .foregroundStyle(scoreColor)
+            .background(scoreColor.opacity(0.15))
             .clipShape(Capsule())
     }
 
     private var statusTitle: String {
-        switch indicator.status {
-        case .recovered: "Recovered"
-        case .steady: "Steady"
-        case .fatigued: "Fatigued"
-        case .unknown: "No data"
+        switch score.value {
+        case 70...: "Recovered"
+        case 45..<70: "Steady"
+        default: "Fatigued"
         }
     }
 
-    private var statusColor: Color {
-        switch indicator.status {
-        case .recovered: Color("Positive")
-        case .steady: Color("Primary")
-        case .fatigued: Color("Warning")
-        case .unknown: Color("TextSecondary")
+    private var scoreColor: Color {
+        switch score.value {
+        case 70...: Color("Positive")
+        case 45..<70: Color("Primary")
+        default: Color("Warning")
         }
+    }
+
+    private var classificationSubtitle: String {
+        switch score.hrvClassification {
+        case .aboveUpperBand: "Elevated"
+        case .withinBand: "Normal"
+        case .belowLowerBand: "Suppressed"
+        case .insufficientData: "Building baseline..."
+        }
+    }
+
+    private var classificationColor: Color {
+        switch score.hrvClassification {
+        case .aboveUpperBand: Color("Positive")
+        case .withinBand: Color("TextSecondary")
+        case .belowLowerBand: Color("Warning")
+        case .insufficientData: Color("TextSecondary")
+        }
+    }
+
+    private var confidenceLine: some View {
+        let points = score.hrvAnalysis?.dataPointsUsed ?? 0
+        return Text("Confidence \(score.confidence.rawValue) · \(points) HRV days")
+            .font(.metadataCaption)
+            .foregroundStyle(Color("TextSecondary"))
     }
 
     private var baselineHRVText: String {

@@ -1,7 +1,7 @@
 import SwiftUI
 
 enum Symbol: String, CaseIterable {
-    case heartVariability = "heart.rate"
+    case heartVariability = "waveform.path.ecg"
     case recovery = "bolt.heart"
     case sleep = "bed.double"
     case energy = "flame"

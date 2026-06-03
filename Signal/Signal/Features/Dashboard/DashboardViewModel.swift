@@ -19,13 +19,16 @@ final class DashboardViewModel {
         thirtyDay: WindowMean(hrvSDNN: nil, restingHR: nil, sampleDays: 0),
         sixtyDay: WindowMean(hrvSDNN: nil, restingHR: nil, sampleDays: 0)
     )
-    var recoveryIndicator = RecoveryIndicator(
-        score: nil,
-        status: .unknown,
+    var recoveryScore = RecoveryScore(
+        value: 50,
+        hrvClassification: .insufficientData,
+        hrvAnalysis: nil,
+        rhrDelta: nil,
+        sleepDelta: nil,
+        confidence: .low,
+        breakdown: RecoveryScoreBreakdown(hrvTerm: 0, rhrTerm: 0, sleepTerm: 0, total: 50),
         todayHRV: nil,
-        todayRestingHR: nil,
-        baselineHRV: nil,
-        baselineRestingHR: nil
+        todayRestingHR: nil
     )
     var hrvPoints: [DashboardChartPoint] = []
     var restingHRPoints: [DashboardChartPoint] = []
@@ -83,7 +86,7 @@ final class DashboardViewModel {
             referenceDay: referenceDay,
             calendar: calendar
         )
-        recoveryIndicator = RecoveryEngine.recoveryIndicator(
+        recoveryScore = RecoveryScoreCalculator.compute(
             metrics: metricSnapshots,
             referenceDay: referenceDay,
             calendar: calendar
@@ -256,6 +259,12 @@ final class DashboardViewModel {
         }
 
         return (nil, "")
+    }
+
+    var hrvChartRange: ClosedRange<Double>? {
+        let values = hrvPoints.map(\.value)
+        guard let minValue = values.min(), let maxValue = values.max() else { return nil }
+        return minValue...maxValue
     }
 
     var nutritionSubtitle: String? {

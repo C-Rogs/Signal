@@ -1,5 +1,6 @@
 import Foundation
 import MLX
+import UIKit
 import MLXEmbedders
 import MLXEmbeddersHFAPI
 import MLXEmbeddersTokenizers
@@ -28,6 +29,9 @@ actor GemmaEmbeddingService: EmbeddingService {
 
     func embedBatch(_ texts: [String], kind: EmbeddingKind) async throws -> [[Float]] {
         guard !texts.isEmpty else { return [] }
+        guard await MainActor.run(body: { EmbeddingRunPolicy.mayUseMetal }) else {
+            throw EmbeddingServiceError.metalWorkNotPermittedInBackground
+        }
 
         let modelContainer = try await ensureLoaded()
         let prompted = texts.map { kind.prompted($0) }
@@ -90,6 +94,9 @@ actor GemmaEmbeddingService: EmbeddingService {
         if let container {
             await EmbeddingDownloadState.shared.markReady()
             return container
+        }
+        guard await MainActor.run(body: { EmbeddingRunPolicy.mayUseMetal }) else {
+            throw EmbeddingServiceError.metalWorkNotPermittedInBackground
         }
         if let loadTask {
             let loaded = try await loadTask.value

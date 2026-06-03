@@ -172,9 +172,10 @@ struct DashboardView: View {
         DashboardWindowPicker(viewModel: viewModel)
 
         DashboardRecoveryCard(
-            indicator: viewModel.recoveryIndicator,
+            score: viewModel.recoveryScore,
             rollingMeans: viewModel.rollingMeans,
-            window: viewModel.selectedWindow
+            window: viewModel.selectedWindow,
+            hrvChartRange: viewModel.hrvChartRange
         )
 
         if let bannerInsight = topPriorityInsight {

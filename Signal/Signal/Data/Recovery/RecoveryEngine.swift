@@ -1,5 +1,6 @@
 import Foundation
 import os
+import SwiftData
 
 enum RecoveryWindow: Int, CaseIterable, Sendable, Identifiable {
     case seven = 7
@@ -44,26 +45,28 @@ struct MetricRollingMeans: Sendable, Equatable {
     }
 }
 
-enum RecoveryStatus: String, Sendable {
-    case recovered
-    case steady
-    case fatigued
-    case unknown
-}
+actor RecoveryEngine {
+    static let shared = RecoveryEngine()
 
-struct RecoveryIndicator: Sendable, Equatable {
-    let score: Double?
-    let status: RecoveryStatus
-    let todayHRV: Double?
-    let todayRestingHR: Double?
-    let baselineHRV: Double?
-    let baselineRestingHR: Double?
-}
+    func computeScore(in context: ModelContext) async -> RecoveryScore {
+        await MainActor.run {
+            let metrics = Self.fetchMetricSnapshots(in: context)
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = .current
+            let referenceDay = calendar.startOfDay(for: Date())
+            let score = RecoveryScoreCalculator.compute(
+                metrics: metrics,
+                referenceDay: referenceDay,
+                calendar: calendar
+            )
+            Log.recovery.info(
+                "recovery score=\(score.value, format: .fixed(precision: 0), privacy: .public) classification=\(score.hrvClassification.rawValue, privacy: .public) confidence=\(score.confidence.rawValue, privacy: .public)"
+            )
+            return score
+        }
+    }
 
-enum RecoveryEngine {
-    private static let baselineWindowDays = 30
-
-    static func rollingMeans(
+    nonisolated static func rollingMeans(
         metrics: [DailyMetricSnapshot],
         referenceDay: Date,
         calendar: Calendar
@@ -76,76 +79,7 @@ enum RecoveryEngine {
         )
     }
 
-    static func recoveryIndicator(
-        metrics: [DailyMetricSnapshot],
-        referenceDay: Date,
-        calendar: Calendar
-    ) -> RecoveryIndicator {
-        let end = calendar.startOfDay(for: referenceDay)
-        let today = metrics.first { calendar.isDate($0.date, inSameDayAs: end) }
-        let baselineMetrics = metricsInWindow(
-            metrics: metrics,
-            end: end,
-            days: baselineWindowDays,
-            calendar: calendar,
-            excludingReferenceDay: true
-        )
-
-        let baselineHRV = arithmeticMean(baselineMetrics.compactMap(\.hrvSDNN))
-        let baselineRHR = arithmeticMean(baselineMetrics.compactMap(\.restingHR))
-        let todayHRV = today?.hrvSDNN
-        let todayRHR = today?.restingHR
-
-        var components: [Double] = []
-        if let todayHRV, let baselineHRV, baselineHRV > 0 {
-            components.append(min(1.15, todayHRV / baselineHRV) / 1.15)
-        }
-        if let todayRHR, let baselineRHR, todayRHR > 0 {
-            components.append(min(1.15, baselineRHR / todayRHR) / 1.15)
-        }
-
-        guard !components.isEmpty else {
-            Log.recovery.info("recovery indicator unavailable; insufficient HRV or RHR data")
-            return RecoveryIndicator(
-                score: nil,
-                status: .unknown,
-                todayHRV: todayHRV,
-                todayRestingHR: todayRHR,
-                baselineHRV: baselineHRV,
-                baselineRestingHR: baselineRHR
-            )
-        }
-
-        let normalized = components.reduce(0, +) / Double(components.count)
-        let score = (normalized * 100).rounded()
-        let status = status(forScore: score)
-
-        Log.recovery.info(
-            "recovery score=\(score, format: .fixed(precision: 0), privacy: .public) status=\(status.rawValue, privacy: .public)"
-        )
-
-        return RecoveryIndicator(
-            score: score,
-            status: status,
-            todayHRV: todayHRV,
-            todayRestingHR: todayRHR,
-            baselineHRV: baselineHRV,
-            baselineRestingHR: baselineRHR
-        )
-    }
-
-    private static func status(forScore score: Double) -> RecoveryStatus {
-        switch score {
-        case 70...:
-            .recovered
-        case 45..<70:
-            .steady
-        default:
-            .fatigued
-        }
-    }
-
-    private static func windowMean(
+    private nonisolated static func windowMean(
         metrics: [DailyMetricSnapshot],
         end: Date,
         days: Int,
@@ -165,7 +99,7 @@ enum RecoveryEngine {
         )
     }
 
-    private static func metricsInWindow(
+    private nonisolated static func metricsInWindow(
         metrics: [DailyMetricSnapshot],
         end: Date,
         days: Int,
@@ -186,9 +120,18 @@ enum RecoveryEngine {
         }
     }
 
-    private static func arithmeticMean(_ values: [Double]) -> Double? {
+    private nonisolated static func arithmeticMean(_ values: [Double]) -> Double? {
         guard !values.isEmpty else { return nil }
         return values.reduce(0, +) / Double(values.count)
+    }
+
+    @MainActor
+    private static func fetchMetricSnapshots(in context: ModelContext) -> [DailyMetricSnapshot] {
+        let descriptor = FetchDescriptor<DailyMetric>(
+            sortBy: [SortDescriptor(\.date, order: .forward)]
+        )
+        guard let rows = try? context.fetch(descriptor) else { return [] }
+        return rows.map { DailyMetricSnapshot(metric: $0) }
     }
 }
 

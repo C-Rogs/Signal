@@ -171,23 +171,25 @@ enum ReflectionRules {
         calendar: Calendar
     ) -> [InsightSpec] {
         let metrics = snapshot.dailyMetrics.filter { $0.hrvSDNN_ms != nil }
-        guard metrics.count >= 4 else { return [] }
-
-        let baselineValues = metrics.suffix(30).compactMap(\.hrvSDNN_ms)
-        guard !baselineValues.isEmpty else { return [] }
-        let mean = baselineValues.reduce(0, +) / Double(baselineValues.count)
+        guard metrics.count >= 14 else { return [] }
 
         let consecutive = trailingConsecutiveDays(
             metrics: metrics,
             calendar: calendar,
             referenceDate: referenceDate,
             maxLookback: 10,
-            predicate: { ($0.hrvSDNN_ms ?? .infinity) < mean }
+            predicate: { sample in
+                hrvBandClassification(
+                    at: sample.date,
+                    metrics: metrics,
+                    calendar: calendar
+                ) == .belowLowerBand
+            }
         )
         guard consecutive.count >= 3 else { return [] }
 
         let body =
-            "HRV has been below your baseline for \(consecutive.count) days. Prioritise sleep and keep intensity moderate."
+            "HRV has been below your normal band for \(consecutive.count) days. Prioritise sleep and keep intensity moderate."
         return [
             InsightSpec(
                 dedupeKey: "hrvSuppressed.baseline.\(snapshot.isoWeek.keySegment)",
@@ -341,6 +343,22 @@ enum ReflectionRules {
             let head = items.dropLast().joined(separator: ", ")
             return "\(head), and \(items.last!)"
         }
+    }
+
+    static func hrvBandClassification(
+        at referenceDate: Date,
+        metrics: [DailyMetricSample],
+        calendar: Calendar
+    ) -> HRVBandClassification {
+        let end = calendar.startOfDay(for: referenceDate)
+        let series = metrics
+            .filter {
+                calendar.startOfDay(for: $0.date) <= end && $0.hrvSDNN_ms != nil
+            }
+            .sorted { $0.date < $1.date }
+            .map { (date: $0.date, sdnn: $0.hrvSDNN_ms!) }
+        guard !series.isEmpty else { return .insufficientData }
+        return HRVAnalyzer.analyze(series).classification
     }
 
     static func trailingConsecutiveDays(

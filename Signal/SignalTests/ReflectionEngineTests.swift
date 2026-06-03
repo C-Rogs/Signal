@@ -84,29 +84,27 @@ final class ReflectionEngineTests: XCTestCase {
     }
 
     func testHrvSuppressedRequiresThreeConsecutiveDays() {
-        let isoWeek = ISOWeekIdentifier.current(calendar: calendar, referenceDate: referenceDate)
-        let ref = referenceDate!
-        let days = (0..<5).compactMap { offset -> DailyMetricSample? in
+        let ref = calendar.startOfDay(for: Date(timeIntervalSince1970: 1_780_000_000))
+        let isoWeek = ISOWeekIdentifier.current(calendar: calendar, referenceDate: ref)
+        let days = (0..<25).compactMap { offset -> DailyMetricSample? in
             guard let date = calendar.date(byAdding: .day, value: -offset, to: ref) else { return nil }
-            let value: Double = offset < 3 ? 30 : 55
+            let value: Double = offset < 10 ? 28 : 55
             return DailyMetricSample(date: date, hrvSDNN_ms: value, sleepHours: nil)
         }
         let consecutive = ReflectionRules.hrvSuppressedRules(
-            snapshot: minimalSnapshot(metrics: days, isoWeek: isoWeek),
+            snapshot: minimalSnapshot(metrics: days, isoWeek: isoWeek, referenceDate: ref),
             referenceDate: ref,
             calendar: calendar
         )
         XCTAssertEqual(consecutive.count, 1)
 
-        let gapDay = DailyMetricSample(
-            date: calendar.date(byAdding: .day, value: -2, to: ref)!,
-            hrvSDNN_ms: 55,
-            sleepHours: nil
-        )
-        var nonConsecutive = days
-        nonConsecutive[2] = gapDay
+        let blockedDays = (0..<25).compactMap { offset -> DailyMetricSample? in
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: ref) else { return nil }
+            let value: Double = offset < 2 ? 28 : 55
+            return DailyMetricSample(date: date, hrvSDNN_ms: value, sleepHours: nil)
+        }
         let blocked = ReflectionRules.hrvSuppressedRules(
-            snapshot: minimalSnapshot(metrics: nonConsecutive, isoWeek: isoWeek),
+            snapshot: minimalSnapshot(metrics: blockedDays, isoWeek: isoWeek, referenceDate: ref),
             referenceDate: ref,
             calendar: calendar
         )
@@ -176,10 +174,11 @@ final class ReflectionEngineTests: XCTestCase {
     private func minimalSnapshot(
         acwr: ACWRResult? = nil,
         metrics: [DailyMetricSample] = [],
-        isoWeek: ISOWeekIdentifier
+        isoWeek: ISOWeekIdentifier,
+        referenceDate: Date? = nil
     ) -> ReflectionSnapshot {
         ReflectionSnapshot(
-            referenceDate: referenceDate,
+            referenceDate: referenceDate ?? self.referenceDate,
             isoWeek: isoWeek,
             volumeRows: [],
             acwr: acwr,
