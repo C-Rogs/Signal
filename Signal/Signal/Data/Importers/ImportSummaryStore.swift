@@ -1,10 +1,10 @@
 import Foundation
 
 enum ImportSummaryStore {
-    private static let healthSummaryKey = "com.cameronro.signal.importSummary.health"
-    private static let hevySummaryKey = "com.cameronro.signal.importSummary.hevy"
-    private static let healthRecordedAtKey = "com.cameronro.signal.importSummary.healthAt"
-    private static let hevyRecordedAtKey = "com.cameronro.signal.importSummary.hevyAt"
+    private static let healthSummaryKey = "\(SignalIdentifiers.persistenceKeyPrefix).importSummary.health"
+    private static let hevySummaryKey = "\(SignalIdentifiers.persistenceKeyPrefix).importSummary.hevy"
+    private static let healthRecordedAtKey = "\(SignalIdentifiers.persistenceKeyPrefix).importSummary.healthAt"
+    private static let hevyRecordedAtKey = "\(SignalIdentifiers.persistenceKeyPrefix).importSummary.hevyAt"
 
     static var healthSummary: String? {
         UserDefaults.standard.string(forKey: healthSummaryKey)

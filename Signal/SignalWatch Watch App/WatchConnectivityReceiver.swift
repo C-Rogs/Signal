@@ -9,7 +9,7 @@ final class WatchConnectivityReceiver: NSObject {
     var payload: WatchPayload?
 
     private let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.cameronro.Signal.watchkitapp",
+        subsystem: Bundle.main.bundleIdentifier ?? SignalIdentifiers.watchApp,
         category: "watch"
     )
 
@@ -37,6 +37,8 @@ final class WatchConnectivityReceiver: NSObject {
         do {
             payload = try WatchPayload.decode(from: applicationContext)
             logger.info("watch loaded cached context score=\(self.payload?.scoreInt ?? -1, privacy: .public)")
+            WatchComplicationRefresh.publish(context: applicationContext)
+            logger.info("watch complication timeline reload requested")
         } catch {
             logger.error("watch cached context decode failed: \(String(describing: error), privacy: .public)")
         }
@@ -63,12 +65,16 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
 
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         Task { @MainActor in
-            do {
-                payload = try WatchPayload.decode(from: applicationContext)
-                logger.info("watch received context score=\(self.payload?.scoreInt ?? -1, privacy: .public)")
-            } catch {
-                logger.error("watch context decode failed: \(String(describing: error), privacy: .public)")
-            }
+            applyCachedContext(applicationContext)
+            logger.info("watch received context score=\(self.payload?.scoreInt ?? -1, privacy: .public)")
+        }
+    }
+
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        Task { @MainActor in
+            guard !userInfo.isEmpty else { return }
+            applyCachedContext(userInfo)
+            logger.info("watch received complication userInfo score=\(self.payload?.scoreInt ?? -1, privacy: .public)")
         }
     }
 

@@ -115,4 +115,54 @@ struct WatchPayloadTests {
         let decoded = try WatchPayload.decode(from: context)
         #expect(decoded == payload)
     }
+
+    @Test func recoveryWidgetSnapshotFromPayload() {
+        let payload = WatchPayload(
+            recoveryScore: 82,
+            hrvClassification: HRVBandClassification.aboveUpperBand.rawValue,
+            confidence: RecoveryConfidence.high.rawValue,
+            todayHRV: 50,
+            todayRestingHR: 58,
+            lastUpdated: Date()
+        )
+        let snapshot = RecoveryWidgetSnapshot.make(from: payload)
+        #expect(snapshot.scoreText == "82")
+        #expect(snapshot.hrvLabel == "Above Baseline")
+        #expect(snapshot.colorToken == "Positive")
+    }
+
+    @Test func recoveryWidgetSnapshotWaitingWhenNil() {
+        let snapshot = RecoveryWidgetSnapshot.make(from: nil)
+        #expect(snapshot == .waiting)
+        #expect(snapshot.scoreText == "—")
+        #expect(snapshot.hrvLabel == "Waiting")
+    }
+
+    @Test func recoveryWidgetSnapshotTimelineRefreshPolicy() {
+        let payload = WatchPayload(
+            recoveryScore: 55,
+            hrvClassification: HRVBandClassification.withinBand.rawValue,
+            confidence: RecoveryConfidence.medium.rawValue,
+            todayHRV: nil,
+            todayRestingHR: nil,
+            lastUpdated: Date()
+        )
+        let snapshot = RecoveryWidgetSnapshot.make(from: payload)
+        #expect(snapshot.scoreText == "55")
+        #expect(snapshot.hrvLabel == "Within Range")
+        #expect(snapshot.colorToken == "Warning")
+        #expect(snapshot != .waiting)
+    }
+
+    @Test func watchPayloadHRVBandDisplayLabel() {
+        let below = WatchPayload(
+            recoveryScore: 30,
+            hrvClassification: HRVBandClassification.belowLowerBand.rawValue,
+            confidence: RecoveryConfidence.low.rawValue,
+            todayHRV: nil,
+            todayRestingHR: nil,
+            lastUpdated: Date()
+        )
+        #expect(below.hrvBandDisplayLabel == "Below Baseline")
+    }
 }

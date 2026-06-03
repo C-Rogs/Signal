@@ -1,13 +1,14 @@
 import Foundation
 import os
 import WatchConnectivity
+import WidgetKit
 
 @MainActor
 final class WatchConnectivityService: NSObject {
     static let shared = WatchConnectivityService()
 
     private let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.cameronro.Signal",
+        subsystem: Bundle.main.bundleIdentifier ?? SignalIdentifiers.iosApp,
         category: "watch"
     )
 
@@ -30,11 +31,30 @@ final class WatchConnectivityService: NSObject {
 
     func push(score: RecoveryScore) {
         pendingScore = score
+        cacheForLocalWidgets(score: score)
+        retryPendingPush()
+    }
+
+    private func cacheForLocalWidgets(score: RecoveryScore) {
+        let payload = WatchPayload(score: score)
+        guard let context = try? payload.encodeToApplicationContext() else { return }
+        let cached = WatchPayloadCache.write(context: context)
+        WidgetCenter.shared.reloadTimelines(ofKind: WatchPayloadCache.iosWidgetKind)
+        logger.info(
+            "ios widget cache updated score=\(payload.scoreInt, privacy: .public) cached=\(cached, privacy: .public)"
+        )
+    }
+
+    func retryPendingPush() {
         guard WCSession.isSupported() else { return }
 
         let session = WCSession.default
         guard session.activationState == .activated else {
-            logger.info("watch push deferred until WCSession activates score=\(Int(score.value.rounded()), privacy: .public)")
+            if let score = pendingScore {
+                logger.info(
+                    "watch push deferred until WCSession activates score=\(Int(score.value.rounded()), privacy: .public)"
+                )
+            }
             return
         }
         deliverPendingScoreIfNeeded(using: session)
@@ -42,11 +62,12 @@ final class WatchConnectivityService: NSObject {
 
     private func deliverPendingScoreIfNeeded(using session: WCSession) {
         guard let score = pendingScore else { return }
-        guard session.isPaired, session.isWatchAppInstalled else {
-            logger.info(
-                "watch push skipped paired=\(session.isPaired, privacy: .public) installed=\(session.isWatchAppInstalled, privacy: .public)"
-            )
+        guard session.isPaired else {
+            logger.info("watch push skipped not paired")
             return
+        }
+        if !session.isWatchAppInstalled {
+            logger.info("watch push attempting isWatchAppInstalled=false")
         }
 
         let payload = WatchPayload(score: score)
@@ -56,9 +77,21 @@ final class WatchConnectivityService: NSObject {
             logger.info(
                 "watch context pushed score=\(payload.scoreInt, privacy: .public) classification=\(payload.hrvClassification, privacy: .public)"
             )
+            pushComplicationUserInfo(context: context, session: session, score: payload.scoreInt)
         } catch {
             logger.error("watch context push failed: \(String(describing: error), privacy: .public)")
         }
+    }
+
+    private func pushComplicationUserInfo(context: [String: Any], session: WCSession, score: Int) {
+        guard session.isComplicationEnabled else {
+            logger.info("watch complication push skipped complication not enabled")
+            return
+        }
+        _ = session.transferCurrentComplicationUserInfo(context)
+        logger.info(
+            "watch complication userInfo transferred score=\(score, privacy: .public) remaining=\(session.remainingComplicationUserInfoTransfers, privacy: .public)"
+        )
     }
 }
 
@@ -95,6 +128,17 @@ extension WatchConnectivityService: WCSessionDelegate {
         Task { @MainActor in
             logger.info("WCSession deactivated")
             session.activate()
+        }
+    }
+
+    nonisolated func sessionWatchStateDidChange(_ session: WCSession) {
+        Task { @MainActor in
+            logger.info(
+                "WCSession watch state changed paired=\(session.isPaired, privacy: .public) installed=\(session.isWatchAppInstalled, privacy: .public)"
+            )
+            if session.activationState == .activated {
+                deliverPendingScoreIfNeeded(using: session)
+            }
         }
     }
 }

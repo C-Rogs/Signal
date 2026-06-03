@@ -30,6 +30,7 @@ struct RootView: View {
                 paintHostWindowForScheme()
                 healthKitManager.refreshAccessState()
                 healthKitManager.syncOnForegroundIfReady()
+                WatchConnectivityService.shared.retryPendingPush()
                 runReflectionIfForegroundDue()
                 refreshDailyBriefingSchedule()
             }

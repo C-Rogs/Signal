@@ -2,7 +2,7 @@ import Foundation
 import os
 
 enum Log {
-    private static let subsystem = Bundle.main.bundleIdentifier ?? "com.cameronro.signal"
+    private static let subsystem = Bundle.main.bundleIdentifier ?? SignalIdentifiers.iosApp
 
     static let healthkit = Logger(subsystem: subsystem, category: "healthkit")
     static let `import` = Logger(subsystem: subsystem, category: "import")

@@ -1,7 +1,7 @@
 # Signal .cursorrules
 
 ## Project identity
-- App name: Signal. Bundle ID: com.cameronro.signal.
+- App name: Signal. iOS bundle ID: `com.cameronro.Signal` (capital S). App Group: `group.com.cameronro.signal` (lowercase; separate from bundle ID). Canonical list: `Signal/Data/Watch/SignalIdentifiers.swift`.
 - iOS 26+ target. Approved deps only: SwiftUI, SwiftData, MLX Swift. No others without approval.
 - Privacy-first: no network calls at runtime. No cloud SDKs, remote logging, or analytics.
 

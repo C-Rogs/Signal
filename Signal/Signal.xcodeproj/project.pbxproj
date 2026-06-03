@@ -15,6 +15,12 @@
 		F8505A122FD07FE000741614 /* SignalWatch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = F85059F22FD07FDF00741614 /* SignalWatch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		F8505A1F2FD0879700741614 /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F8505A1E2FD0879700741614 /* WatchConnectivity.framework */; platformFilter = ios; };
 		F8505A212FD087BA00741614 /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F8505A202FD087BA00741614 /* WatchConnectivity.framework */; };
+		F8505F182FD0D44700741614 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F8505F172FD0D44700741614 /* WidgetKit.framework */; };
+		F8505F1A2FD0D44700741614 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F8505F192FD0D44700741614 /* SwiftUI.framework */; };
+		F8505F252FD0D44900741614 /* SignalWatch Widget ExtensionExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F8505F162FD0D44700741614 /* SignalWatch Widget ExtensionExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F85061012FD0E10000741614 /* SignalWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F85060012FD0E10000741614 /* SignalWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F85061112FD0E10000741614 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F8505F172FD0D44700741614 /* WidgetKit.framework */; };
+		F85061212FD0E10000741614 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F8505F192FD0D44700741614 /* SwiftUI.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -53,6 +59,20 @@
 			remoteGlobalIDString = F85059F12FD07FDF00741614;
 			remoteInfo = "SignalWatch Watch App";
 		};
+		F8505F232FD0D44900741614 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F82793F12FCDABE200003386 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F8505F152FD0D44700741614;
+			remoteInfo = "SignalWatch Widget ExtensionExtension";
+		};
+		F85060912FD0E10000741614 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F82793F12FCDABE200003386 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F85060312FD0E10000741614;
+			remoteInfo = SignalWidgetExtension;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -67,6 +87,28 @@
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F8505F2A2FD0D44900741614 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				F8505F252FD0D44900741614 /* SignalWatch Widget ExtensionExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F85060712FD0E10000741614 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				F85061012FD0E10000741614 /* SignalWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -78,6 +120,10 @@
 		F8505A082FD07FE000741614 /* SignalWatch Watch AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "SignalWatch Watch AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		F8505A1E2FD0879700741614 /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk/System/Library/Frameworks/WatchConnectivity.framework; sourceTree = DEVELOPER_DIR; };
 		F8505A202FD087BA00741614 /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS26.5.sdk/System/Library/Frameworks/WatchConnectivity.framework; sourceTree = DEVELOPER_DIR; };
+		F8505F162FD0D44700741614 /* SignalWatch Widget ExtensionExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "SignalWatch Widget ExtensionExtension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		F85060012FD0E10000741614 /* SignalWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SignalWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F8505F172FD0D44700741614 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		F8505F192FD0D44700741614 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -87,6 +133,22 @@
 				Info.plist,
 			);
 			target = F82793F82FCDABE200003386 /* Signal */;
+		};
+		F8505F292FD0D44900741614 /* Exceptions for "SignalWatch Widget Extension" folder in "SignalWatch Widget ExtensionExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = F8505F152FD0D44700741614 /* SignalWatch Widget ExtensionExtension */;
+		};
+		F85060212FD0E10000741614 /* Exceptions for "SignalWidget" folder in "SignalWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				README.md,
+				SignalWidget.entitlements,
+			);
+			target = F85060312FD0E10000741614 /* SignalWidgetExtension */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -122,6 +184,22 @@
 		F8505A0B2FD07FE000741614 /* SignalWatch Watch AppUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "SignalWatch Watch AppUITests";
+			sourceTree = "<group>";
+		};
+		F8505F1B2FD0D44700741614 /* SignalWatch Widget Extension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F8505F292FD0D44900741614 /* Exceptions for "SignalWatch Widget Extension" folder in "SignalWatch Widget ExtensionExtension" target */,
+			);
+			path = "SignalWatch Widget Extension";
+			sourceTree = "<group>";
+		};
+		F85060112FD0E10000741614 /* SignalWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F85060212FD0E10000741614 /* Exceptions for "SignalWidget" folder in "SignalWidgetExtension" target */,
+			);
+			path = SignalWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -176,6 +254,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F8505F132FD0D44700741614 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F8505F1A2FD0D44700741614 /* SwiftUI.framework in Frameworks */,
+				F8505F182FD0D44700741614 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F85060512FD0E10000741614 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F85061212FD0E10000741614 /* SwiftUI.framework in Frameworks */,
+				F85061112FD0E10000741614 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -188,6 +284,8 @@
 				F85059F32FD07FDF00741614 /* SignalWatch Watch App */,
 				F8505A012FD07FE000741614 /* SignalWatch Watch AppTests */,
 				F8505A0B2FD07FE000741614 /* SignalWatch Watch AppUITests */,
+				F8505F1B2FD0D44700741614 /* SignalWatch Widget Extension */,
+				F85060112FD0E10000741614 /* SignalWidget */,
 				F8505A1D2FD0879700741614 /* Frameworks */,
 				F82793FA2FCDABE200003386 /* Products */,
 			);
@@ -202,6 +300,8 @@
 				F85059F22FD07FDF00741614 /* SignalWatch Watch App.app */,
 				F85059FE2FD07FE000741614 /* SignalWatch Watch AppTests.xctest */,
 				F8505A082FD07FE000741614 /* SignalWatch Watch AppUITests.xctest */,
+				F8505F162FD0D44700741614 /* SignalWatch Widget ExtensionExtension.appex */,
+				F85060012FD0E10000741614 /* SignalWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -211,6 +311,8 @@
 			children = (
 				F8505A202FD087BA00741614 /* WatchConnectivity.framework */,
 				F8505A1E2FD0879700741614 /* WatchConnectivity.framework */,
+				F8505F172FD0D44700741614 /* WidgetKit.framework */,
+				F8505F192FD0D44700741614 /* SwiftUI.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -225,11 +327,13 @@
 				F82793F52FCDABE200003386 /* Sources */,
 				F82793F62FCDABE200003386 /* Frameworks */,
 				F82793F72FCDABE200003386 /* Resources */,
+				F85060712FD0E10000741614 /* Embed Foundation Extensions */,
 				F8505A132FD07FE000741614 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				F85060A12FD0E10000741614 /* PBXTargetDependency */,
 				F8505A112FD07FE000741614 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
@@ -300,10 +404,12 @@
 				F85059EE2FD07FDF00741614 /* Sources */,
 				F85059EF2FD07FDF00741614 /* Frameworks */,
 				F85059F02FD07FDF00741614 /* Resources */,
+				F8505F2A2FD0D44900741614 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				F8505F242FD0D44900741614 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				F85059F32FD07FDF00741614 /* SignalWatch Watch App */,
@@ -361,6 +467,50 @@
 			productReference = F8505A082FD07FE000741614 /* SignalWatch Watch AppUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		F8505F152FD0D44700741614 /* SignalWatch Widget ExtensionExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F8505F262FD0D44900741614 /* Build configuration list for PBXNativeTarget "SignalWatch Widget ExtensionExtension" */;
+			buildPhases = (
+				F8505F122FD0D44700741614 /* Sources */,
+				F8505F132FD0D44700741614 /* Frameworks */,
+				F8505F142FD0D44700741614 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				F8505F1B2FD0D44700741614 /* SignalWatch Widget Extension */,
+			);
+			name = "SignalWatch Widget ExtensionExtension";
+			packageProductDependencies = (
+			);
+			productName = "SignalWatch Widget ExtensionExtension";
+			productReference = F8505F162FD0D44700741614 /* SignalWatch Widget ExtensionExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		F85060312FD0E10000741614 /* SignalWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F85060D12FD0E10000741614 /* Build configuration list for PBXNativeTarget "SignalWidgetExtension" */;
+			buildPhases = (
+				F85060412FD0E10000741614 /* Sources */,
+				F85060512FD0E10000741614 /* Frameworks */,
+				F85060612FD0E10000741614 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				F85060112FD0E10000741614 /* SignalWidget */,
+			);
+			name = SignalWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = SignalWidgetExtension;
+			productReference = F85060012FD0E10000741614 /* SignalWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -393,6 +543,12 @@
 						CreatedOnToolsVersion = 26.5;
 						TestTargetID = F85059F12FD07FDF00741614;
 					};
+					F8505F152FD0D44700741614 = {
+						CreatedOnToolsVersion = 26.5;
+					};
+					F85060312FD0E10000741614 = {
+						CreatedOnToolsVersion = 26.5;
+					};
 				};
 			};
 			buildConfigurationList = F82793F42FCDABE200003386 /* Build configuration list for PBXProject "Signal" */;
@@ -422,6 +578,8 @@
 				F85059F12FD07FDF00741614 /* SignalWatch Watch App */,
 				F85059FD2FD07FE000741614 /* SignalWatch Watch AppTests */,
 				F8505A072FD07FE000741614 /* SignalWatch Watch AppUITests */,
+				F8505F152FD0D44700741614 /* SignalWatch Widget ExtensionExtension */,
+				F85060312FD0E10000741614 /* SignalWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -463,6 +621,20 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		F8505A062FD07FE000741614 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F8505F142FD0D44700741614 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F85060612FD0E10000741614 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -514,6 +686,20 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F8505F122FD0D44700741614 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F85060412FD0E10000741614 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -541,6 +727,16 @@
 			isa = PBXTargetDependency;
 			target = F85059F12FD07FDF00741614 /* SignalWatch Watch App */;
 			targetProxy = F8505A102FD07FE000741614 /* PBXContainerItemProxy */;
+		};
+		F8505F242FD0D44900741614 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F8505F152FD0D44700741614 /* SignalWatch Widget ExtensionExtension */;
+			targetProxy = F8505F232FD0D44900741614 /* PBXContainerItemProxy */;
+		};
+		F85060A12FD0E10000741614 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F85060312FD0E10000741614 /* SignalWidgetExtension */;
+			targetProxy = F85060912FD0E10000741614 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -864,6 +1060,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "SignalWatch Watch App/SignalWatch Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = SXWJBD2V3V;
@@ -879,6 +1076,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cameronro.Signal.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -897,6 +1095,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "SignalWatch Watch App/SignalWatch Watch App.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = SXWJBD2V3V;
@@ -912,6 +1111,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.cameronro.Signal.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1018,6 +1218,142 @@
 			};
 			name = Release;
 		};
+		F8505F272FD0D44900741614 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = "SignalWatch Widget Extension/SignalWatch Widget Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SXWJBD2V3V;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "SignalWatch Widget Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "SignalWatch Widget Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cameronro.Signal.watchkitapp.SignalWatch-Widget-Extension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.5;
+			};
+			name = Debug;
+		};
+		F8505F282FD0D44900741614 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = "SignalWatch Widget Extension/SignalWatch Widget Extension.entitlements";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SXWJBD2V3V;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "SignalWatch Widget Extension/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "SignalWatch Widget Extension";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.cameronro.Signal.watchkitapp.SignalWatch-Widget-Extension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 26.5;
+			};
+			name = Release;
+		};
+		F85060B12FD0E10000741614 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SignalWidget/SignalWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SXWJBD2V3V;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SignalWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SignalWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cameronro.Signal.SignalWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		F85060C12FD0E10000741614 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SignalWidget/SignalWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SXWJBD2V3V;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SignalWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SignalWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cameronro.Signal.SignalWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1080,6 +1416,24 @@
 			buildConfigurations = (
 				F8505A182FD07FE000741614 /* Debug */,
 				F8505A192FD07FE000741614 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F8505F262FD0D44900741614 /* Build configuration list for PBXNativeTarget "SignalWatch Widget ExtensionExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F8505F272FD0D44900741614 /* Debug */,
+				F8505F282FD0D44900741614 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F85060D12FD0E10000741614 /* Build configuration list for PBXNativeTarget "SignalWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F85060B12FD0E10000741614 /* Debug */,
+				F85060C12FD0E10000741614 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

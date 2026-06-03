@@ -16,6 +16,19 @@ struct WatchPayload: Codable, Sendable, Equatable {
         return "Negative"
     }
 
+    var hrvBandDisplayLabel: String {
+        switch hrvClassification {
+        case "aboveUpperBand":
+            "Above Baseline"
+        case "withinBand":
+            "Within Range"
+        case "belowLowerBand":
+            "Below Baseline"
+        default:
+            "Tracking..."
+        }
+    }
+
     init(
         recoveryScore: Double,
         hrvClassification: String,

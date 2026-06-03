@@ -7,7 +7,7 @@ actor SetHRAttributionTrigger {
     static let shared = SetHRAttributionTrigger()
 
     private let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.cameronro.signal",
+        subsystem: Bundle.main.bundleIdentifier ?? SignalIdentifiers.iosApp,
         category: "heartrate"
     )
     private var delayedFinishTask: Task<Void, Never>?

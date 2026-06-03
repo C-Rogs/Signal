@@ -12,6 +12,10 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: receiver.payload?.scoreInt) { _, score in
+            guard score != nil else { return }
+            WatchComplicationRefresh.reloadTimelineOnly()
+        }
     }
 
     private var waitingContent: some View {
@@ -35,7 +39,7 @@ struct ContentView: View {
                 .minimumScaleFactor(0.7)
                 .lineLimit(1)
 
-            Text(hrvLabel(for: payload.hrvClassification))
+            Text(payload.hrvBandDisplayLabel)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -50,19 +54,6 @@ struct ContentView: View {
         if score >= 70 { return .green }
         if score >= 40 { return .orange }
         return .red
-    }
-
-    private func hrvLabel(for rawValue: String) -> String {
-        switch rawValue {
-        case "aboveUpperBand":
-            "Above Baseline"
-        case "withinBand":
-            "Within Range"
-        case "belowLowerBand":
-            "Below Baseline"
-        default:
-            "Tracking..."
-        }
     }
 
     private func updatedLabel(for date: Date) -> String {

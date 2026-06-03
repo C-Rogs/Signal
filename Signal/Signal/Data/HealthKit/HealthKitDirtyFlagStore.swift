@@ -1,7 +1,7 @@
 import Foundation
 
 enum HealthKitDirtyFlagStore {
-    private static let key = "com.cameronro.signal.healthKitSyncDirty"
+    private static let key = "\(SignalIdentifiers.persistenceKeyPrefix).healthKitSyncDirty"
 
     static var isDirty: Bool {
         UserDefaults.standard.bool(forKey: key)

@@ -16,7 +16,7 @@ actor SetHRAttributionService {
 
     private let healthStore: HKHealthStore
     private let logger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.cameronro.signal",
+        subsystem: Bundle.main.bundleIdentifier ?? SignalIdentifiers.iosApp,
         category: "heartrate"
     )
 
