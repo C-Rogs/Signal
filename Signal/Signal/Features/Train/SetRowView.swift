@@ -92,6 +92,7 @@ struct SetRowView: View {
                 onDone: {
                     loggedRPE = sheetRPE
                     commitFields()
+                    markCompleteIfNeeded()
                 }
             )
         }
@@ -252,6 +253,11 @@ struct SetRowView: View {
             return Color.white.opacity(loggedRPE == nil ? 0.1 : 0.16)
         }
         return Color("TextSecondary").opacity(loggedRPE == nil ? 0.1 : 0.14)
+    }
+
+    private func markCompleteIfNeeded() {
+        guard !set.isCompleted else { return }
+        onToggleComplete(true)
     }
 
     private var completeButton: some View {
