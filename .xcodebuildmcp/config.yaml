@@ -25,6 +25,6 @@ sessionDefaultsProfiles:
     scheme: Signal
     configuration: Debug
     bundleId: com.cameronro.Signal
-    deviceId: 3E68EF63-F6E7-555E-8A58-71D2DBAF88C9
+    deviceId: "00008140-001E34E10A01801C"
     platform: iOS
     derivedDataPath: "./.derivedDataDevice"

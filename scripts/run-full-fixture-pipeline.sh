@@ -3,8 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROJECT_DIR="$ROOT/Signal"
-BUILD_SIM_ID="20DDD35B-812A-49BE-9DCF-0685401ACC15"
-TEST_SIM_ID="311A9753-3F61-44C8-8BE6-AC7BC69558D4"
+SIM_ID="20DDD35B-812A-49BE-9DCF-0685401ACC15"
 
 export SIGNAL_HEALTH_EXPORT_XML="${SIGNAL_HEALTH_EXPORT_XML:-$ROOT/fixtures/export.xml}"
 export SIGNAL_HEVY_CSV="${SIGNAL_HEVY_CSV:-$ROOT/fixtures/HevyExport.csv}"
@@ -26,14 +25,14 @@ echo "Optional faster path: SIGNAL_USE_NL_EMBEDDING=1 $0"
 echo ""
 
 (cd "$PROJECT_DIR" && xcodebuild -scheme Signal \
-  -destination "platform=iOS Simulator,id=${BUILD_SIM_ID}" \
+  -destination "platform=iOS Simulator,id=${SIM_ID}" \
   build)
 
 (cd "$PROJECT_DIR" && \
   TEST_RUNNER_SIGNAL_HEALTH_EXPORT_XML="$SIGNAL_HEALTH_EXPORT_XML" \
   TEST_RUNNER_SIGNAL_HEVY_CSV="$SIGNAL_HEVY_CSV" \
   xcodebuild -scheme Signal \
-  -destination "platform=iOS Simulator,id=${TEST_SIM_ID}" \
+  -destination "platform=iOS Simulator,id=${SIM_ID}" \
   test -only-testing:SignalTests/FullFixturePipelineTests/fullImportPipelineHealthThenHevyWithMLVerification)
 
 echo "Done."
