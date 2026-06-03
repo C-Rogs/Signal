@@ -62,6 +62,28 @@ struct DailyBriefingComposerTests {
         #expect(content.body.contains("Training load is below"))
     }
 
+    @Test func composeUsesNoticeStrainDetailWhenOnlyNoticeFlags() {
+        let flags = ReadinessFlagsAssessment(
+            signals: [
+                ReadinessSignal(
+                    kind: .restingHRElevated,
+                    severity: .notice,
+                    coachingLine: "Resting heart rate is above your recent average."
+                ),
+            ],
+            aggregateSeverity: .notice,
+            headline: "Recovery looks a little off today",
+            detail: "Keep training moderate and prioritise sleep."
+        )
+        let content = DailyBriefingComposer.compose(
+            recoveryScore: sampleScore(value: 58, classification: .withinBand),
+            insight: DailyBriefingInsightLine(bodyText: "Volume is low.", severity: .warning),
+            flags: flags
+        )
+        #expect(content.body.contains("prioritise sleep"))
+        #expect(!content.body.contains("Volume is low"))
+    }
+
     @Test func selectPriorityInsightPicksAlertOverWarning() {
         let chosen = DailyBriefingComposer.selectPriorityInsight(
             from: [

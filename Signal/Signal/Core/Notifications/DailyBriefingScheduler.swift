@@ -62,17 +62,20 @@ final class DailyBriefingScheduler {
             return
         }
 
+        let referenceDay = Calendar.current.startOfDay(for: Date())
+        let calendar = Calendar.current
+        let metrics = fetchMetricSnapshots(in: context)
         let score = RecoveryScoreCalculator.compute(
-            metrics: fetchMetricSnapshots(in: context),
-            referenceDay: Calendar.current.startOfDay(for: Date()),
-            calendar: Calendar.current
+            metrics: metrics,
+            referenceDay: referenceDay,
+            calendar: calendar
         )
         let flags = ReadinessFlagEvaluator.evaluate(
             ReadinessFlagInput(
-                metrics: fetchMetricSnapshots(in: context),
+                metrics: metrics,
                 recoveryScore: score,
-                referenceDay: Calendar.current.startOfDay(for: Date()),
-                calendar: Calendar.current
+                referenceDay: referenceDay,
+                calendar: calendar
             )
         )
         let insightLine = fetchPriorityInsightLine(in: context)

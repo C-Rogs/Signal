@@ -11,6 +11,8 @@ final class WatchConnectivityService: NSObject {
         category: "watch"
     )
 
+    private var pendingScore: RecoveryScore?
+
     private override init() {
         super.init()
     }
@@ -27,11 +29,23 @@ final class WatchConnectivityService: NSObject {
     }
 
     func push(score: RecoveryScore) {
+        pendingScore = score
         guard WCSession.isSupported() else { return }
 
         let session = WCSession.default
+        guard session.activationState == .activated else {
+            logger.info("watch push deferred until WCSession activates score=\(Int(score.value.rounded()), privacy: .public)")
+            return
+        }
+        deliverPendingScoreIfNeeded(using: session)
+    }
+
+    private func deliverPendingScoreIfNeeded(using session: WCSession) {
+        guard let score = pendingScore else { return }
         guard session.isPaired, session.isWatchAppInstalled else {
-            logger.debug("watch push skipped paired=\(session.isPaired) installed=\(session.isWatchAppInstalled)")
+            logger.info(
+                "watch push skipped paired=\(session.isPaired, privacy: .public) installed=\(session.isWatchAppInstalled, privacy: .public)"
+            )
             return
         }
 
@@ -59,8 +73,14 @@ extension WatchConnectivityService: WCSessionDelegate {
                 logger.error(
                     "WCSession activation failed state=\(activationState.rawValue, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
                 )
-            } else {
-                logger.info("WCSession activated state=\(activationState.rawValue, privacy: .public)")
+                return
+            }
+
+            logger.info(
+                "WCSession activated state=\(activationState.rawValue, privacy: .public) paired=\(session.isPaired, privacy: .public) installed=\(session.isWatchAppInstalled, privacy: .public)"
+            )
+            if activationState == .activated {
+                deliverPendingScoreIfNeeded(using: session)
             }
         }
     }

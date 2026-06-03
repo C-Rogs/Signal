@@ -53,5 +53,5 @@ final class NotificationPreferences {
     private static let hourKey = "signal.notifications.briefingHour"
     private static let minuteKey = "signal.notifications.briefingMinute"
     static let defaultHour = 7
-    static let defaultMinute = 30
+    static let defaultMinute = 0
 }

@@ -19,14 +19,24 @@ extension WatchPayload {
     }
 
     func encodeToApplicationContext() throws -> [String: Any] {
-        let data = try Self.makeEncoder().encode(self)
-        guard let dictionary = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw WatchPayloadCodingError.invalidDictionary
+        var dictionary: [String: Any] = [
+            "recoveryScore": recoveryScore,
+            "hrvClassification": hrvClassification,
+            "confidence": confidence,
+            "lastUpdated": Self.iso8601Formatter.string(from: lastUpdated),
+        ]
+        if let todayHRV {
+            dictionary["todayHRV"] = todayHRV
+        }
+        if let todayRestingHR {
+            dictionary["todayRestingHR"] = todayRestingHR
         }
         return dictionary
     }
-}
 
-enum WatchPayloadCodingError: Error {
-    case invalidDictionary
+    private static let iso8601Formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
 }

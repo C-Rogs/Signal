@@ -103,6 +103,48 @@ struct ReadinessFlagEvaluatorTests {
         #expect(assessment?.signals.contains(where: { $0.kind == .wristTemperatureElevated }) == true)
     }
 
+    @Test func returnsNilWhenNoSignalsFire() {
+        let end = calendar.startOfDay(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let metrics = (-14...0).map { offset in
+            snapshot(date: day(offset: offset, from: end), hrv: 50, rhr: 60, wristTemp: 0.1)
+        }
+        let score = RecoveryScoreCalculator.compute(metrics: metrics, referenceDay: end, calendar: calendar)
+        let assessment = ReadinessFlagEvaluator.evaluate(
+            ReadinessFlagInput(
+                metrics: metrics,
+                recoveryScore: score,
+                referenceDay: end,
+                calendar: calendar
+            )
+        )
+        #expect(assessment == nil)
+    }
+
+    @Test func threeSignalsProduceElevatedSeverity() {
+        let end = calendar.startOfDay(for: Date(timeIntervalSince1970: 1_700_000_000))
+        var values = Array(repeating: 55.0, count: 23)
+        values.append(contentsOf: Array(repeating: 28.0, count: 7))
+        let metrics = (-29...0).enumerated().map { index, offset in
+            snapshot(
+                date: day(offset: offset, from: end),
+                hrv: values[index],
+                rhr: offset == 0 ? 66 : 60,
+                wristTemp: offset == 0 ? 0.6 : 0.1
+            )
+        }
+        let score = RecoveryScoreCalculator.compute(metrics: metrics, referenceDay: end, calendar: calendar)
+        let assessment = ReadinessFlagEvaluator.evaluate(
+            ReadinessFlagInput(
+                metrics: metrics,
+                recoveryScore: score,
+                referenceDay: end,
+                calendar: calendar
+            )
+        )
+        #expect(assessment?.aggregateSeverity == .elevated)
+        #expect(assessment?.signals.count == 3)
+    }
+
     @Test func recoveryStrainRuleRequiresTwoSignals() {
         let end = calendar.startOfDay(for: Date(timeIntervalSince1970: 1_700_000_000))
         let isoWeek = ISOWeekIdentifier.current(calendar: calendar, referenceDate: end)

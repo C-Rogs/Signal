@@ -15,6 +15,7 @@ final class WatchConnectivityReceiver: NSObject {
 
     override init() {
         super.init()
+        activate()
     }
 
     func activate() {
@@ -23,10 +24,12 @@ final class WatchConnectivityReceiver: NSObject {
             return
         }
         let session = WCSession.default
-        session.delegate = self
-        session.activate()
+        if session.delegate == nil {
+            session.delegate = self
+            session.activate()
+            logger.info("WCSession activation requested on watch")
+        }
         applyCachedContext(session.receivedApplicationContext)
-        logger.info("WCSession activation requested on watch")
     }
 
     private func applyCachedContext(_ applicationContext: [String: Any]) {

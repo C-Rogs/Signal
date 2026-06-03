@@ -96,4 +96,23 @@ struct WatchPayloadTests {
         #expect(decoded == payload)
         #expect(abs(decoded.lastUpdated.timeIntervalSince(original)) < 1)
     }
+
+    @Test func applicationContextRoundTripWithNilOptionals() throws {
+        let original = Date(timeIntervalSince1970: 1_700_000_000)
+        let payload = WatchPayload(
+            recoveryScore: 55,
+            hrvClassification: HRVBandClassification.withinBand.rawValue,
+            confidence: RecoveryConfidence.medium.rawValue,
+            todayHRV: nil,
+            todayRestingHR: nil,
+            lastUpdated: original
+        )
+
+        let context = try payload.encodeToApplicationContext()
+        #expect(context["todayHRV"] == nil)
+        #expect(context["todayRestingHR"] == nil)
+
+        let decoded = try WatchPayload.decode(from: context)
+        #expect(decoded == payload)
+    }
 }

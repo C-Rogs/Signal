@@ -39,7 +39,50 @@ struct WatchPayload: Codable, Sendable, Equatable {
     }
 
     static func decode(from applicationContext: [String: Any]) throws -> WatchPayload {
-        let data = try JSONSerialization.data(withJSONObject: applicationContext)
-        return try makeDecoder().decode(WatchPayload.self, from: data)
+        guard !applicationContext.isEmpty else {
+            throw WatchPayloadCodingError.emptyContext
+        }
+
+        guard let recoveryScore = doubleValue(in: applicationContext, key: "recoveryScore"),
+              let hrvClassification = applicationContext["hrvClassification"] as? String,
+              let confidence = applicationContext["confidence"] as? String,
+              let lastUpdated = dateValue(in: applicationContext, key: "lastUpdated")
+        else {
+            throw WatchPayloadCodingError.invalidDictionary
+        }
+
+        return WatchPayload(
+            recoveryScore: recoveryScore,
+            hrvClassification: hrvClassification,
+            confidence: confidence,
+            todayHRV: doubleValue(in: applicationContext, key: "todayHRV"),
+            todayRestingHR: doubleValue(in: applicationContext, key: "todayRestingHR"),
+            lastUpdated: lastUpdated
+        )
     }
+
+    private static func doubleValue(in dictionary: [String: Any], key: String) -> Double? {
+        if let value = dictionary[key] as? Double { return value }
+        if let value = dictionary[key] as? NSNumber { return value.doubleValue }
+        return nil
+    }
+
+    private static func dateValue(in dictionary: [String: Any], key: String) -> Date? {
+        if let value = dictionary[key] as? Date { return value }
+        if let value = dictionary[key] as? String {
+            return iso8601Formatter.date(from: value)
+        }
+        return nil
+    }
+
+    private static let iso8601Formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+}
+
+enum WatchPayloadCodingError: Error {
+    case invalidDictionary
+    case emptyContext
 }

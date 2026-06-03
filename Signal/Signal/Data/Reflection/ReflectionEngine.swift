@@ -28,6 +28,7 @@ actor ReflectionEngine {
             return specs.count
         }
         _ = specCount
+        await DailyBriefingScheduler.shared.refreshSchedule(in: context)
     }
 
     @MainActor
