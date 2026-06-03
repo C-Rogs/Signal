@@ -148,6 +148,14 @@ final class HealthKitManager {
         }
     }
 
+    func fetchProfileHealthSnapshot(modelContext: ModelContext) async -> ProfileHealthSnapshot {
+        await ProfileHealthKitReader.fetchSnapshot(
+            healthStore: healthStore,
+            accessState: accessState,
+            modelContext: modelContext
+        )
+    }
+
     private func performSync(trigger: String, clearDirtyOnSuccess: Bool) async {
         guard HKHealthStore.isHealthDataAvailable() else {
             accessState = .unavailable

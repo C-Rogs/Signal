@@ -151,6 +151,8 @@ enum HealthKitTier1Kind: String, CaseIterable, Sendable {
                 types.insert(kind.sampleType)
             }
         }
+        types.insert(HKCharacteristicType(.dateOfBirth))
+        types.insert(HKCharacteristicType(.biologicalSex))
         return types
     }
 }

@@ -1,84 +1,107 @@
-# M4 agent handoff (Profile + goals)
+# M4 architecture handoff (Profile + goals)
 
-Last updated after commit on `main` that adds warmup suggestions + cue/RPE fixes. Use this to start or resume **M4** without re-discovering local WIP.
+Last updated: after profile Health sync, UI polish, and `2e8df88` baseline on `main`.
 
-## Product goal (from spec)
+## Product scope (V2 M4)
 
-**M4. Profile + goals** (`build-a-very-detailed-foamy-pixel.md`):
+Shipped slice (not full foamy-pixel M4):
 
-- `UserProfile` + goal model (effective-dated profile facts per spec; current WIP uses a simpler `TrainingGoal` row).
-- Lightweight onboarding: sex/height/bodyweight target, equipment, availability, experience, injuries, active goal(s).
-- **All coaching conditioned on profile/goals** (cue RIR targets, warmup prescription goal, future prescription).
+- SwiftData: `UserProfile`, `BodyweightEntry` (append-only), `TrainingGoal` (singleton `primary`).
+- Profile UI: about you + training goal, explicit save, Health auto-fill.
+- Coaching hooks: `ProfileGoalRepository.targetRIR` / `primaryGoal` wired into cues (RIR on `ExerciseCueInput`) and warmup engine.
+- **Out of scope for this slice:** effective-dated profile history, equipment, injuries, first-run onboarding sheet, JSON export.
 
-## Already shipped on `main` (do not redo)
+## Data model
 
-| Area | Status |
-|------|--------|
-| M3.5 set timestamps | `SetEntry.startedAt` / `completedAt`, `LiveWorkoutStore` chains next set |
-| M3.5 cue engine | `CueEngine.swift`, `SetCueEvaluator`, `SetCueBannerView`, tier tests |
-| Warmup suggestions | `WarmupRecommendationEngine`, `TrainPreferences` toggle in Settings, banner in `WorkoutExerciseSectionView` |
-| RPE logging UX | No RPE autofill on new sets; **logging RPE via sheet auto-completes the set** (`SetRowView.markCompleteIfNeeded`) |
-| `GoalType` enum | Committed (`hypertrophy`, `strength`, `powerlifting`, `generalFitness`) with `defaultRIR` |
+| Model | Key | Notes |
+|-------|-----|--------|
+| `UserProfile` | `profileKey == "me"` | `heightCm`, `bodyweightKg` (latest snapshot), `dateOfBirth`, `biologicalSex` (`male` / `female` / `other` / nil) |
+| `BodyweightEntry` | — | Append-only log `{ date, kg }`; never update rows in app code |
+| `TrainingGoal` | `goalKey == "primary"` | `primaryGoal` (`GoalType`), `weeklyTrainingDays` 1–7, `targetRIR` 0–5, `notes`, `updatedAt` |
 
-### Integration points waiting on M4
+`GoalType.defaultRIR`: hypertrophy 2, strength 1, powerlifting 0, generalFitness 2.
 
-1. **`CueEngine` / `SetCueEvaluator`**  
-   - `ExerciseCueInput` has `targetRIR` (default `CueEngine.fallbackTargetRIR = 2`).  
-   - Wire `ProfileGoalRepository.targetRIR(in:)` in `SetCueEvaluator` when M4 lands (local WIP had this; reverted on main to avoid orphan dependency).
+## Apple Health integration
 
-2. **`WorkoutExerciseSectionView.trainingGoal`**  
-   - Hardcoded `.hypertrophy` for `WarmupRecommendationInput`.  
-   - Replace with `fetchTrainingGoal` → `primaryGoal`.
+**Yes, HealthKit exposes date of birth and biological sex** as characteristics (not quantity samples):
 
-3. **Settings**  
-   - Train section has warmup toggle only.  
-   - Optional: restore "Profile and goals" `NavigationLink` to `ProfileGoalsView` once M4 ships.
+- `HKHealthStore.dateOfBirthComponents()` → `Date`
+- `HKHealthStore.biologicalSex()` → mapped to profile sex storage
 
-## Local WIP (exists on disk, **not** on `main`)
+These types are included in `HealthKitTier1Kind.authorizationReadTypes` (alongside existing Tier 1 reads). Users who already granted Health access may need to open Import and sync again for iOS to expose characteristics.
 
-Add these to the **Signal** target in Xcode (human owns `.pbxproj`):
+**Body weight**
 
-| File | Role |
-|------|------|
-| `Data/Models/UserProfile.swift` | SwiftData profile (height, DOB, sex, bodyweight snapshot) |
-| `Data/Models/TrainingGoal.swift` | Primary goal, weekly days, `targetRIR`, notes |
-| `Data/Models/BodyweightEntry.swift` | Bodyweight history |
-| `Data/Profile/ProfileGoalRepository.swift` | fetch/create, `targetRIR`, bodyweight append |
-| `Features/Profile/ProfileGoalsView.swift` | Edit form |
-| `Features/Profile/ProfileGoalsViewModel.swift` | `@Observable` VM |
-| `SignalTests/ProfileTests.swift` | Repository tests |
+- Live: latest `HKQuantityType.bodyMass` sample (sorted by `endDate`).
+- Fallback: most recent `DailyMetric.bodyMassKg` from local Health sync/import (up to 120 days lookback).
+- **Recency:** only applied if measured within **30 days** (`ProfileHealthKitReader.recentBodyMassMaxAge`).
+- **Merge rule:** append `BodyweightEntry` when Health sample is newer than latest entry or profile has no weight; do not overwrite existing DOB/sex.
 
-**Also revert-then-needed edits (were local, reverted for scoped commits):**
+Flow on `ProfileGoalsView` appear:
 
-- `App/ModelContainer+Signal.swift`: add `UserProfile`, `BodyweightEntry`, `TrainingGoal` to `Schema([...])`.
-- `Features/Profile/ProfileView.swift`: `ProfileDestination.profileGoals` → `ProfileGoalsView()`.
+1. `ProfileGoalsViewModel.load()` → `HealthKitManager.fetchProfileHealthSnapshot`.
+2. `ProfileGoalRepository.applyHealthSnapshot` → optional banner ("Updated body weight from Apple Health", etc.).
+3. Form fields populated from SwiftData.
 
-**Untracked / out of scope for M4 core:** `Core/Notifications/` (do not pull in unless milestone says so).
+## Repository API (`ProfileGoalRepository`)
 
-## Suggested M4 task order
+- `fetchProfile` / `fetchTrainingGoal`: read-only; return `nil` on fresh install (no crash).
+- `fetchOrCreateProfile` / `fetchOrCreateTrainingGoal`: fetch by `profileKey` / `goalKey`, insert only when missing; idempotent; collapses duplicate rows if ever present.
+- Coaching reads use **fetch only** + defaults (`hypertrophy`, RIR 2), not create.
+- Profile screen **load** does not create rows; **save** (or Health apply with data) calls fetch-or-create.
+- `primaryGoal(in:)` → `.hypertrophy` if no row.
+- `targetRIR(in:)` → `2` if no row.
+- `appendBodyweight(kg:date:save:)`
+- `applyHealthSnapshot(_:to:in:)`
 
-1. Commit schema + models + repository + tests (with `ModelContainer` update).
-2. Ship `ProfileGoalsView` entry from Profile tab (not required in Settings if Profile tab is canonical).
-3. Wire `SetCueEvaluator` + warmup `trainingGoal` to repository.
-4. Minimal onboarding sheet (skippable) if spec requires first-run; else Profile-only edit is enough for V2 slice.
-5. Run `./scripts/build-and-test.sh`; device smoke on `H3XLDTHR74` for profile save + live workout cue/warmup after goal change.
+## UI
 
-## Constraints (repo rules)
+- **Entry:** Profile tab → Profile and goals; Settings → Profile and goals.
+- **Save:** pinned bottom bar, title `Save profile and goal`; states idle / saving / saved / failed with banners.
+- **Notifications:** `Notification.Name.goalDidChange` on save; `WorkoutExerciseSectionView` listens to refresh warmup suggestions.
 
-- iOS 26+, Swift 6, `@Observable`, no new SPM deps without approval.
-- **Do not edit** `.pbxproj`, entitlements, storyboards.
-- Privacy: no runtime network.
-- Build: XcodeBuildMCP `build_sim` id `20DDD35B`; tests id `311A9753`; device `H3XLDTHR74`.
-- Git: push as **C-Rogs** only; no Cursor commit trailers.
+## Coaching integration
 
-## Acceptance hints
+| Consumer | Source | Fallback |
+|----------|--------|----------|
+| `SetCueEvaluator` | `targetRIR(in:)` on `ExerciseCueInput` | RIR 2 |
+| `WorkoutExerciseSectionView` | `primaryGoal(in:)` for `WarmupRecommendationInput` | hypertrophy |
+| `CueEngine` tiers | unchanged | `targetRIR` stored for future prescription, not used in tier rules yet |
 
-- Changing primary goal updates `TrainingGoal.targetRIR` and changes cue/warmup behavior without app restart.
-- Profile fields persist across relaunch (SwiftData).
-- Existing workouts/cues unchanged for users with no goal row (fallback RIR 2, hypertrophy warmups until goal set).
+## File map
 
-## Recent commits (context)
+```
+Signal/Data/Models/UserProfile.swift
+Signal/Data/Models/BodyweightEntry.swift
+Signal/Data/Models/TrainingGoal.swift
+Signal/Data/Models/GoalType.swift
+Signal/Data/Profile/ProfileGoalRepository.swift
+Signal/Data/Profile/ProfileHealthKitReader.swift
+Signal/Core/Notifications/SignalNotifications.swift
+Signal/Features/Profile/ProfileGoalsView.swift
+Signal/Features/Profile/ProfileGoalsViewModel.swift
+SignalTests/ProfileTests.swift
+```
 
-- `2a5bb70` M3.5 cues + timestamps + dashboard layout
-- `446588a` Warmup suggestions + cue/RPE autofill fixes (+ `GoalType`)
-- (next) RPE sheet auto-completes set + this handoff doc
+Touches: `ModelContainer+Signal.swift`, `CueEngine.swift` (`SetCueEvaluator`), `WorkoutExerciseSectionView.swift`, `HealthKitManager.swift`, `HealthKitTier1Types.swift`, `ProfileView.swift`, `SettingsView.swift`.
+
+## Verification
+
+```bash
+./scripts/build-and-test.sh
+```
+
+Device smoke (`H3XLDTHR74`): Profile → allow Health → confirm weight/DOB fill when recent; save Strength → RIR 1; live workout warmup style changes.
+
+## Follow-ups (not M4)
+
+- Effective-dated `UserProfile` facts per long spec.
+- Onboarding sheet (skippable).
+- Use `targetRIR` in cue tier classification.
+- Local JSON export of profile/goal models.
+- Re-prompt Health if characteristics denied while quantity access granted.
+
+## Git
+
+- Commits: human only, **C-Rogs**, no Cursor trailers.
+- Push: `GH_TOKEN=$(gh auth token -u C-Rogs) git push origin main`
