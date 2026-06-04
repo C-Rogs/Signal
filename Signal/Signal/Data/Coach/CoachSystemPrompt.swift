@@ -22,6 +22,7 @@ enum CoachSessionFactory {
         [
             ExerciseHistoryTool(modelContainer: modelContainer),
             MuscleVolumeTool(modelContainer: modelContainer),
+            CalendarScheduleTool(),
         ]
     }
 

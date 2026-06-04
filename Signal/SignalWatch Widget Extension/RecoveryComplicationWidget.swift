@@ -5,6 +5,7 @@ import WidgetKit
 struct SignalWatchWidgetBundle: WidgetBundle {
     var body: some Widget {
         RecoveryComplicationWidget()
+        BodyBatteryComplicationWidget()
     }
 }
 

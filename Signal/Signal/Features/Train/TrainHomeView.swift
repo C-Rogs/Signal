@@ -22,6 +22,7 @@ struct TrainHomeView: View {
     @State private var showNewRoutine = false
     @State private var errorMessage: String?
     @State private var healthKitWriteNote: String?
+    @State private var busyDayChipTitle: String?
 
     init() {
         let liveSource = WorkoutSessionSource.live
@@ -58,6 +59,7 @@ struct TrainHomeView: View {
             collapseWorkoutNavigationIfNeeded()
             consumePendingRouteIfNeeded()
             consumeHealthKitWriteNoteIfNeeded()
+            reloadBusyDayChip()
         }
         .onChange(of: coordinator.pendingHealthKitWriteNote) { _, _ in
             consumeHealthKitWriteNoteIfNeeded()
@@ -112,6 +114,16 @@ struct TrainHomeView: View {
                 }
 
                 Section {
+                    if let busyDayChipTitle {
+                        Text(busyDayChipTitle)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color("Warning"))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Color("Warning").opacity(0.15))
+                            .clipShape(Capsule())
+                            .accessibilityIdentifier("busyDayChip")
+                    }
                     Button {
                         startOrResumeWorkout()
                     } label: {
@@ -281,5 +293,11 @@ struct TrainHomeView: View {
     private func deleteRoutine(_ routine: Routine) {
         modelContext.delete(routine)
         try? modelContext.save()
+    }
+
+    private func reloadBusyDayChip() {
+        Task {
+            busyDayChipTitle = await CalendarContextBuilder().todayBusyChipTitle()
+        }
     }
 }

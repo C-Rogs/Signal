@@ -129,6 +129,8 @@ struct WatchPayloadTests {
         #expect(snapshot.scoreText == "82")
         #expect(snapshot.hrvLabel == "Above Baseline")
         #expect(snapshot.colorToken == "Positive")
+        #expect(snapshot.scoreValue == 82)
+        #expect(snapshot.gaugeProgress == 0.82)
     }
 
     @Test func recoveryWidgetSnapshotWaitingWhenNil() {
@@ -136,6 +138,41 @@ struct WatchPayloadTests {
         #expect(snapshot == .waiting)
         #expect(snapshot.scoreText == "—")
         #expect(snapshot.hrvLabel == "Waiting")
+        #expect(snapshot.scoreValue == nil)
+        #expect(snapshot.gaugeProgress == 0)
+    }
+
+    @Test func recoveryWidgetSnapshotGaugeColorBoundariesMatchScoreToken() {
+        let at70 = WatchPayload(
+            recoveryScore: 70,
+            hrvClassification: HRVBandClassification.withinBand.rawValue,
+            confidence: RecoveryConfidence.high.rawValue,
+            todayHRV: nil,
+            todayRestingHR: nil,
+            lastUpdated: Date()
+        )
+        #expect(RecoveryWidgetSnapshot.make(from: at70).colorToken == "Positive")
+        #expect(RecoveryWidgetSnapshot.make(from: at70).gaugeProgress == 0.7)
+
+        let at40 = WatchPayload(
+            recoveryScore: 40,
+            hrvClassification: HRVBandClassification.withinBand.rawValue,
+            confidence: RecoveryConfidence.medium.rawValue,
+            todayHRV: nil,
+            todayRestingHR: nil,
+            lastUpdated: Date()
+        )
+        #expect(RecoveryWidgetSnapshot.make(from: at40).colorToken == "Warning")
+
+        let below40 = WatchPayload(
+            recoveryScore: 39,
+            hrvClassification: HRVBandClassification.belowLowerBand.rawValue,
+            confidence: RecoveryConfidence.low.rawValue,
+            todayHRV: nil,
+            todayRestingHR: nil,
+            lastUpdated: Date()
+        )
+        #expect(RecoveryWidgetSnapshot.make(from: below40).colorToken == "Negative")
     }
 
     @Test func recoveryWidgetSnapshotTimelineRefreshPolicy() {

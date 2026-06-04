@@ -6,6 +6,7 @@ private enum CoachContextLimits {
     static let maxDerivedMetricsSummaryChars = 800
     static let maxRAGSummariesTotalChars = 4000
     static let maxRecentWorkoutsTotalChars = 1200
+    static let maxCalendarSummaryChars = 600
     static let assembledPromptMaxChars = 7200
     static let maxInputChars = 8000
 }
@@ -18,19 +19,22 @@ struct CoachContext: Sendable, Equatable {
     var derivedMetricsSummary: String
     var ragSummaries: [String]
     var recentWorkouts: [String]
+    var calendarSummary: String
 
     init(
         userSummary: String,
         activeInsights: [String],
         derivedMetricsSummary: String,
         ragSummaries: [String],
-        recentWorkouts: [String]
+        recentWorkouts: [String],
+        calendarSummary: String = ""
     ) {
         self.userSummary = Self.clamped(userSummary, max: CoachContextLimits.maxUserSummaryChars)
         self.activeInsights = Self.clampedLines(activeInsights, maxTotal: CoachContextLimits.maxActiveInsightsTotalChars)
         self.derivedMetricsSummary = Self.clamped(derivedMetricsSummary, max: CoachContextLimits.maxDerivedMetricsSummaryChars)
         self.ragSummaries = Self.clampedLines(ragSummaries, maxTotal: CoachContextLimits.maxRAGSummariesTotalChars)
         self.recentWorkouts = Self.clampedLines(recentWorkouts, maxTotal: CoachContextLimits.maxRecentWorkoutsTotalChars)
+        self.calendarSummary = Self.clamped(calendarSummary, max: CoachContextLimits.maxCalendarSummaryChars)
     }
 
     func assembledPrompt(query: String) -> String {
@@ -50,6 +54,9 @@ struct CoachContext: Sendable, Equatable {
         }
         if !recentWorkouts.isEmpty {
             sections.append("## Recent workouts\n\(recentWorkouts.joined(separator: "\n"))")
+        }
+        if !calendarSummary.isEmpty {
+            sections.append("## Schedule\n\(calendarSummary)")
         }
 
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)

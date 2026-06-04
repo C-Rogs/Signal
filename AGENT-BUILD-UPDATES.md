@@ -265,3 +265,110 @@ See `HANDOFF-V4M3.md` (D9–D12). D1–D8 unchanged from V4 M2.
 | Train UI | `ActiveWorkoutView.swift`, `WorkoutExerciseSectionView.swift`, `WorkoutLiveSummaryBar.swift` |
 | Tests | `LiveLoadAutoregulationTests.swift` (new), `LiveWorkoutAutoregulationTests.swift` |
 | Handoff | `HANDOFF-V4M3.md` (new) |
+
+---
+
+## 2026-06-04 — V3 M5.1 Body Battery gauge complication
+
+### Shipped
+
+- **Snapshot:** `RecoveryWidgetSnapshot` adds `scoreValue`, `gaugeProgress` (0...1), and `gaugeTintColor` (green ≥70, orange 40 to 69, red below 40, matches watch `ContentView`).
+- **Watch:** Second WidgetKit configuration `BodyBatteryComplication` with display name **Body Battery**; `RecoveryGaugeComplicationView` uses `Gauge` + `.accessoryCircularCapacity` and center score label. **Recovery** circular and rectangular complications unchanged.
+- **Refresh:** `WatchComplicationRefresh` reloads both `RecoveryComplication` and `BodyBatteryComplication` kinds; log line mentions `recovery+bodyBattery`.
+- **SDK note:** `WidgetFamily.accessoryGauge` is not in watchOS 26 / iOS 26 SDK. Gauge slots use `accessoryCircular` with `Gauge` and `.accessoryCircularCapacity` (documented WidgetKit pattern). iOS Lock Screen gauge family skipped (no separate accessory gauge family on iPhone).
+
+### Field report — WidgetRenderer_Default watchdog (simulator)
+
+**Symptom:** `com.apple.chrono.WidgetRenderer-Default` SIGKILL `0x8BADF00D` after 10s `scene-update` while previewing widgets in Simulator.
+
+**Mitigation (agent):** Removed `containerBackground` + `EmptyView` gauge label from `RecoveryGaugeComplicationView` (minimal `Gauge` + tint only). If previews still hang, quit Simulator, run one scheme at a time, avoid Lock Screen widget gallery while tests run.
+
+### Gate A (agent)
+
+- `xcodebuild -scheme "SignalWatch Watch App" -destination 'platform=watchOS Simulator,id=93C9FE74-661C-43E7-BCEE-644772C166F4' build` **passed** (includes embedded watch app + widget extension).
+- `SignalTests/WatchPayloadTests` **not re-run** in agent shell (DerivedData lock, then sim boot timeout). Logic changes are snapshot-only; re-run locally: `./scripts/build-and-test.sh` with `-only-testing:SignalTests/WatchPayloadTests`.
+
+### Gate B (human, paired iPhone + Watch)
+
+1. `./scripts/install-watch-app.sh`
+2. iPhone: Signal → Dashboard (recovery loads).
+3. Watch: long-press face → Edit → complication slot under the time (gauge / semicircle on Contour).
+4. Choose **Body Battery** (not **Recovery**).
+5. Pass criteria:
+
+| ID | Test | Pass |
+|----|------|------|
+| G1 | Gauge slot visible | **Body Battery** appears in semicircle / gauge slot |
+| G2 | Score match | Arc fill + center number match iPhone Dashboard recovery |
+| G3 | Waiting | Before first sync: empty arc, center **—**, no crash |
+| G4 | Refresh | Dashboard pull refresh; gauge updates within ~1 min |
+
+Console: `category:watch` on iPhone and watch (`watch complication reload recovery+bodyBattery`).
+
+### Human Xcode
+
+Add to **SignalWatch Widget Extension** target if not compiling:
+
+- `SignalWatch Widget Extension/RecoveryGaugeComplicationView.swift`
+
+Ensure existing shared files remain on the extension target: `RecoveryWidgetSnapshot.swift`, `WatchPayloadCache.swift`, `WatchPayload.swift`.
+
+### Out of scope
+
+- Separate body battery drain algorithm (recovery score only)
+- `WidgetFamily.accessoryCorner` curved label follow-up
+- iOS Lock Screen gauge (no SDK family)
+- V4 M4 EventKit
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Shared | `RecoveryWidgetSnapshot.swift`, `WatchComplicationRefresh.swift` |
+| Watch widget | `RecoveryComplicationWidget.swift`, `RecoveryGaugeComplicationView.swift` (new) |
+| Tests | `WatchPayloadTests.swift` |
+
+---
+
+## 2026-06-04 — V4 M4 on-device calendar for coach and Train busy-day chip
+
+### Shipped
+
+- **EventKit store:** `CalendarEventStore` actor requests full calendar access, fetches events in an 8-day window (today plus 7).
+- **Context builder:** `CalendarContextBuilder` assembles schedule summaries and a today-only **Busy day** chip title using meeting-before-5pm and total-event heuristics.
+- **Coach:** `calendarSummary` section in `CoachContext`; `CalendarScheduleTool` registered on the FM session; access prompt on first chat send; `NSCalendarsFullAccessUsageDescription` in Info.plist.
+- **Train UI:** Orange **Busy day** capsule above Start Workout when today meets busy heuristics.
+- **Tests:** `CalendarContextBuilderTests` covers window filter, busy-day policy, summary assembly, and coach prompt section.
+
+### Gate A (agent)
+
+- `build_device` (Signal scheme, Cameron iPhone 16 Pro) **passed** (includes watch app + widget extension compile).
+- `CalendarContextBuilderTests` and `WatchPayloadTests` **not re-run** on sim (user requested device build only).
+
+### Gate B (human)
+
+1. Open Signal on iPhone, send a Coach message; approve calendar access when prompted.
+2. Train tab: confirm **Busy day** chip appears on a genuinely busy calendar day (or skip if calendar is light).
+3. Ask Coach: "What does my schedule look like this week?" Confirm schedule-aware answer.
+
+### Human Xcode
+
+- Confirm `RecoveryGaugeComplicationView.swift` is on **SignalWatch Widget Extension** target (if watch gauge slot missing after install).
+- EventKit calendar capability: verify **Calendars** is enabled on the Signal iOS target if access prompt never appears.
+
+### Out of scope
+
+- Google Calendar sync (on-device EventKit only)
+- Writing or editing calendar events
+- Busy-day chip refresh on foreground (loads on Train tab appear only)
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Calendar | `CalendarEventStore.swift`, `CalendarContextBuilder.swift` (new) |
+| Coach | `CalendarScheduleTool.swift`, `CoachContext.swift`, `CoachContextBuilder.swift`, `CoachSystemPrompt.swift`, `ChatViewModel.swift` |
+| Train UI | `TrainHomeView.swift` |
+| Logging | `Log.swift` |
+| Plist | `Info.plist` |
+| Tests | `CalendarContextBuilderTests.swift` (new) |

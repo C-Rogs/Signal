@@ -11,6 +11,7 @@ actor CoachContextBuilder {
             modelContainer: modelContainer
         )
         let metricsSnapshot = await DerivedMetricsService.shared.snapshot(modelContainer: modelContainer)
+        let calendarSummary = await CalendarContextBuilder().buildSummary() ?? ""
 
         return await MainActor.run {
             let userSummary = Self.buildUserSummary(modelContainer: modelContainer)
@@ -23,7 +24,8 @@ actor CoachContextBuilder {
                 activeInsights: activeInsights,
                 derivedMetricsSummary: derivedMetricsSummary,
                 ragSummaries: ragSummaries,
-                recentWorkouts: recentWorkouts
+                recentWorkouts: recentWorkouts,
+                calendarSummary: calendarSummary
             )
             context.prepareForModelInput(query: query)
             Log.coach.info(

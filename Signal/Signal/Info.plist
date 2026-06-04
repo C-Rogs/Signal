@@ -6,6 +6,8 @@
 	<string>Signal reads heart rate variability, resting heart rate, active energy, and sleep to build your private on-device health timeline.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Signal does not write health data in this version.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Signal reads your calendar on this device so the coach can suggest training around meetings and busy days.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
