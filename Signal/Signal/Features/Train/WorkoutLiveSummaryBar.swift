@@ -23,6 +23,14 @@ struct WorkoutLiveSummaryBar: View {
                 value: "\(summary.completedSetCount)",
                 emphasize: false
             )
+            if let heartRateBPM = summary.heartRateBPM {
+                statDivider
+                statColumn(
+                    title: "HR",
+                    value: "\(heartRateBPM)",
+                    emphasize: true
+                )
+            }
         }
         .padding(.vertical, 12)
         .accessibilityElement(children: .combine)
@@ -37,7 +45,15 @@ struct WorkoutLiveSummaryBar: View {
     }
 
     private var summaryAccessibilityLabel: String {
-        "Duration \(WorkoutLiveSummary.formatDuration(seconds: summary.durationSeconds)), volume \(formattedVolume), \(summary.completedSetCount) sets completed"
+        var parts = [
+            "Duration \(WorkoutLiveSummary.formatDuration(seconds: summary.durationSeconds))",
+            "volume \(formattedVolume)",
+            "\(summary.completedSetCount) sets completed",
+        ]
+        if let heartRateBPM = summary.heartRateBPM {
+            parts.append("heart rate \(heartRateBPM)")
+        }
+        return parts.joined(separator: ", ")
     }
 
     private var statDivider: some View {

@@ -1,15 +1,18 @@
 import SwiftData
 import SwiftUI
 import UIKit
+import UserNotifications
 
 @main
 struct SignalApp: App {
     private let modelContainer: ModelContainer
+    private let briefingNotificationDelegate: DailyBriefingNotificationDelegate
     @State private var healthKitManager: HealthKitManager
     @State private var unitPreferences = UnitPreferences.shared
     @State private var trainPreferences = TrainPreferences.shared
     @State private var notificationPreferences = NotificationPreferences.shared
     @State private var liveWorkoutCoordinator = LiveWorkoutCoordinator()
+    private let liveWorkoutWatchBridge = LiveWorkoutWatchBridge.shared
 
     init() {
         Self.applyDarkNavigationChrome()
@@ -27,6 +30,8 @@ struct SignalApp: App {
             _healthKitManager = State(
                 wrappedValue: HealthKitManager(modelContainer: container)
             )
+            briefingNotificationDelegate = DailyBriefingNotificationDelegate(modelContainer: container)
+            UNUserNotificationCenter.current().delegate = briefingNotificationDelegate
         } catch {
             fatalError("Failed to create ModelContainer: \(error)")
         }
@@ -40,6 +45,7 @@ struct SignalApp: App {
                 .environment(trainPreferences)
                 .environment(notificationPreferences)
                 .environment(liveWorkoutCoordinator)
+                .environment(liveWorkoutWatchBridge)
         }
         .modelContainer(modelContainer)
     }

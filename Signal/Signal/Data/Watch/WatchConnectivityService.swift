@@ -141,4 +141,10 @@ extension WatchConnectivityService: WCSessionDelegate {
             }
         }
     }
+
+    nonisolated func session(_ session: WCSession, didReceiveMessageData messageData: Data) {
+        Task { @MainActor in
+            LiveWorkoutWatchBridge.shared.ingest(messageData: messageData)
+        }
+    }
 }

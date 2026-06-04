@@ -73,8 +73,33 @@ extension WatchConnectivityReceiver: WCSessionDelegate {
     nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
         Task { @MainActor in
             guard !userInfo.isEmpty else { return }
+            if let data = userInfo[LiveWorkoutTelemetryUserInfoKey.payloadData] as? Data {
+                await ingestLiveTelemetry(data)
+                return
+            }
             applyCachedContext(userInfo)
             logger.info("watch received complication userInfo score=\(self.payload?.scoreInt ?? -1, privacy: .public)")
+        }
+    }
+
+    private func ingestLiveTelemetry(_ data: Data) async {
+        do {
+            let packet = try LiveWorkoutTelemetryPacket.decode(from: data)
+            await WatchLiveWorkoutSessionManager.shared.handleCommand(packet)
+            logger.info("watch received live telemetry userInfo kind=\(packet.kind.rawValue, privacy: .public)")
+        } catch {
+            logger.error("watch live telemetry userInfo decode failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    nonisolated func session(_ session: WCSession, didReceiveMessageData messageData: Data) {
+        Task { @MainActor in
+            do {
+                let packet = try LiveWorkoutTelemetryPacket.decode(from: messageData)
+                await WatchLiveWorkoutSessionManager.shared.handleCommand(packet)
+            } catch {
+                logger.error("watch live telemetry decode failed: \(String(describing: error), privacy: .public)")
+            }
         }
     }
 

@@ -5,6 +5,7 @@ struct TrainHomeView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
     @Environment(LiveWorkoutCoordinator.self) private var coordinator
+    @Environment(LiveWorkoutWatchBridge.self) private var watchBridge
 
     @Query(sort: \Routine.createdAt, order: .reverse) private var routines: [Routine]
     @Query(
@@ -240,10 +241,16 @@ struct TrainHomeView: View {
     private func startOrResumeWorkout() {
         do {
             if let session = inProgressSession {
+                Task {
+                    await watchBridge.beginWatchWorkout(for: session, modelContext: modelContext)
+                }
                 openActiveWorkout(sessionID: session.persistentModelID)
             } else {
                 let session = try store.startEmpty()
                 coordinator.refresh()
+                Task {
+                    await watchBridge.beginWatchWorkout(for: session, modelContext: modelContext)
+                }
                 path.append(.activeWorkout(session.persistentModelID))
             }
         } catch {
@@ -254,11 +261,17 @@ struct TrainHomeView: View {
     private func startRoutine(_ routine: Routine) {
         do {
             if let session = inProgressSession {
+                Task {
+                    await watchBridge.beginWatchWorkout(for: session, modelContext: modelContext)
+                }
                 openActiveWorkout(sessionID: session.persistentModelID)
                 return
             }
             let session = try store.start(from: routine)
             coordinator.refresh()
+            Task {
+                await watchBridge.beginWatchWorkout(for: session, modelContext: modelContext)
+            }
             path.append(.activeWorkout(session.persistentModelID))
         } catch {
             errorMessage = error.localizedDescription

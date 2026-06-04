@@ -8,6 +8,7 @@ struct ActiveWorkoutView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(UnitPreferences.self) private var unitPreferences
     @Environment(LiveWorkoutCoordinator.self) private var coordinator
+    @Environment(LiveWorkoutWatchBridge.self) private var watchBridge
     @Environment(\.scenePhase) private var scenePhase
 
     @Bindable var session: WorkoutSession
@@ -72,7 +73,10 @@ struct ActiveWorkoutView: View {
 
     private var liveSummary: WorkoutLiveSummary {
         _ = tick
-        return WorkoutLiveSummary.compute(for: session)
+        return WorkoutLiveSummary.compute(
+            for: session,
+            heartRateBPM: watchBridge.latestHeartRateBPM
+        )
     }
 
     private var workoutList: some View {
@@ -232,6 +236,7 @@ struct ActiveWorkoutView: View {
     }
 
     private func finishWorkout() {
+        watchBridge.endWatchWorkout()
         do {
             try store.finishSession(session)
             ExerciseProgressStore.recordFinishedSession(session, in: modelContext)
@@ -246,6 +251,7 @@ struct ActiveWorkoutView: View {
     }
 
     private func discardWorkout() {
+        watchBridge.endWatchWorkout()
         do {
             try store.discardSession(session)
             coordinator.resetTrainNavigation()

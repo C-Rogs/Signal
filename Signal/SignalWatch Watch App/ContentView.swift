@@ -2,10 +2,15 @@ import SwiftUI
 
 struct ContentView: View {
     var receiver: WatchConnectivityReceiver
+    var workoutManager: WatchLiveWorkoutSessionManager
 
     var body: some View {
-        VStack(spacing: 6) {
-            if let payload = receiver.payload {
+        Group {
+            if workoutManager.isWorkoutActive {
+                activeWorkoutContent
+            } else if let status = workoutManager.statusMessage {
+                statusContent(status)
+            } else if let payload = receiver.payload {
                 recoveryContent(payload: payload)
             } else {
                 waitingContent
@@ -15,6 +20,55 @@ struct ContentView: View {
         .onChange(of: receiver.payload?.scoreInt) { _, score in
             guard score != nil else { return }
             WatchComplicationRefresh.reloadTimelineOnly()
+        }
+        .task {
+            await workoutManager.prepareOnLaunch()
+        }
+    }
+
+    private var activeWorkoutContent: some View {
+        VStack(spacing: 6) {
+            Text("Train")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            if let bpm = workoutManager.latestHeartRateBPM {
+                Text("\(bpm)")
+                    .font(.system(size: 52, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color.red)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+                Text("BPM")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ProgressView()
+                    .padding(.vertical, 8)
+                Text("Reading heart rate")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(activeWorkoutAccessibilityLabel)
+    }
+
+    private var activeWorkoutAccessibilityLabel: String {
+        if let bpm = workoutManager.latestHeartRateBPM {
+            return "Train workout active, heart rate \(bpm) beats per minute"
+        }
+        return "Train workout active, waiting for heart rate"
+    }
+
+    private func statusContent(_ message: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.title3)
+                .foregroundStyle(.orange)
+            Text(message)
+                .font(.caption)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -65,5 +119,8 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView(receiver: WatchConnectivityReceiver())
+    ContentView(
+        receiver: WatchConnectivityReceiver(),
+        workoutManager: WatchLiveWorkoutSessionManager.shared
+    )
 }

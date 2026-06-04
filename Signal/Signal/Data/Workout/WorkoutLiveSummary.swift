@@ -4,8 +4,13 @@ struct WorkoutLiveSummary: Sendable, Equatable {
     let durationSeconds: Int
     let volumeKg: Double
     let completedSetCount: Int
+    let heartRateBPM: Int?
 
-    static func compute(for session: WorkoutSession, now: Date = .now) -> WorkoutLiveSummary {
+    static func compute(
+        for session: WorkoutSession,
+        heartRateBPM: Int? = nil,
+        now: Date = .now
+    ) -> WorkoutLiveSummary {
         let duration = max(0, Int(now.timeIntervalSince(session.startTime)))
         var volumeKg = 0.0
         var completedSets = 0
@@ -23,7 +28,8 @@ struct WorkoutLiveSummary: Sendable, Equatable {
         return WorkoutLiveSummary(
             durationSeconds: duration,
             volumeKg: volumeKg,
-            completedSetCount: completedSets
+            completedSetCount: completedSets,
+            heartRateBPM: heartRateBPM
         )
     }
 
