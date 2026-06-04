@@ -372,3 +372,45 @@ Ensure existing shared files remain on the extension target: `RecoveryWidgetSnap
 | Logging | `Log.swift` |
 | Plist | `Info.plist` |
 | Tests | `CalendarContextBuilderTests.swift` (new) |
+
+---
+
+## 2026-06-04 — Coach/calendar sim test pass (3 rounds)
+
+### Shipped
+
+- **Round 0 (pre-test commit):** Event titles in schedule summaries, markdown headings, calendar prefetch on Coach tab, schedule-only coach rules.
+- **Round 1:** Removed EventKit blocking from chat send (fixed 5x `ChatViewModelTests` timeout); `CoachQueryIntent` pins schedule when truncating context; `SchedulingCalendar` for Swift 6; markdown while streaming.
+- **Round 2:** `Tomorrow:` day labels; suggestion chips send directly; resilient partial markdown; Train tab calendar prefetch; keyboard submit.
+- **Round 3:** All-day before timed event sort; em dash removed from recent workout lines; `DailyBriefingComposer` notice flags use readiness detail over insight; submit guard while busy.
+
+### Gate A (agent)
+
+- iPhone 16 Pro sim (`20DDD35B-812A-49BE-9DCF-0685401ACC15`), `-parallel-testing-enabled NO` where noted.
+- **Passed:** CalendarContextBuilderTests, CoachContextBuilderTests, ChatViewModelTests, ChatFeedbackTests, WatchPayloadTests, LiveWorkout/LiveLoad autoregulation, HevyImportPipelineGapTests, RAGRetrieverTests batch, DailyBriefingComposerTests (after fix).
+- **Not run:** Full `SignalTests` suite (sim proc limit hit mid-session; cleaned with `pkill xcodebuild` + `simctl shutdown all`). FullImportIntegrationTests skipped.
+
+### Gate B (human)
+
+1. Reinstall on device; Coach tab: confirm calendar prompt on first open (not mid-send), suggestion chips send, `###` headings render.
+2. Ask "What's on my calendar tomorrow?" Confirm event **title** appears.
+3. Morning briefing notification: notice-level readiness should mention strain detail, not a random insight.
+
+### Human Xcode
+
+- None.
+
+### Out of scope
+
+- FullImportIntegrationTests re-run
+- Push to remote (4 commits local ahead of origin)
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Calendar | `CalendarContextBuilder.swift`, `SchedulingCalendar.swift` |
+| Coach | `CoachContext.swift`, `CoachQueryIntent.swift`, `CoachContextBuilder.swift`, `CoachSystemPrompt.swift`, `ChatViewModel.swift`, `ChatView.swift`, `CoachMessageFormatting.swift` |
+| Train | `TrainHomeView.swift` |
+| Notifications | `DailyBriefingComposer.swift` |
+| Tests | `CalendarContextBuilderTests.swift`, `CoachContextBuilderTests.swift`, `CoachMessageFormattingTests.swift` |
