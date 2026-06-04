@@ -73,7 +73,7 @@ struct ChatView: View {
                     }
 
                     if !viewModel.streamingText.isEmpty {
-                        ChatAssistantBubble(text: viewModel.streamingText, isStreaming: true)
+                        ChatAssistantBubble(text: viewModel.streamingText)
                     }
 
                     Color.clear
@@ -130,7 +130,7 @@ struct ChatView: View {
     }
 
     private var thinkingBubble: some View {
-        ChatAssistantBubble(text: "Thinking...", isStreaming: true)
+        ChatAssistantBubble(text: "Thinking...")
             .opacity(thinkingPulse ? 0.45 : 1)
     }
 
@@ -192,7 +192,7 @@ private struct ChatMessageBubble: View {
             ChatUserBubble(text: message.text, timestamp: message.timestamp)
         case .assistant:
             VStack(alignment: .leading, spacing: 6) {
-                ChatAssistantBubble(text: message.text, isStreaming: false)
+                ChatAssistantBubble(text: message.text)
                 Text(message.timestamp, style: .time)
                     .font(.caption2)
                     .foregroundStyle(Color("TextSecondary"))
@@ -251,27 +251,19 @@ private struct ChatUserBubble: View {
 
 private struct ChatAssistantBubble: View {
     let text: String
-    let isStreaming: Bool
 
     var body: some View {
-        Group {
-            if isStreaming {
-                Text(text)
-                    .font(.body)
-            } else {
-                Text(attributedText)
-                    .font(.body)
-            }
-        }
-        .foregroundStyle(Color("TextPrimary"))
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(Color("Surface"))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .frame(maxWidth: .infinity, alignment: .leading)
+        Text(displayText)
+            .font(.body)
+            .foregroundStyle(Color("TextPrimary"))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Color("Surface"))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var attributedText: AttributedString {
+    private var displayText: AttributedString {
         CoachMessageFormatting.attributedMarkdown(text)
     }
 }

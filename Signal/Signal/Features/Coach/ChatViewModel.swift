@@ -113,7 +113,6 @@ final class ChatViewModel {
         }
 
         do {
-            _ = await CalendarEventStore.shared.requestAccessIfNeeded()
             let context = try await buildContext(query, modelContainer)
             guard !Task.isCancelled else { return }
 

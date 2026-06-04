@@ -67,7 +67,8 @@ struct CoachContext: Sendable, Equatable {
 
     mutating func truncatingToFitBudget(
         maxChars: Int = CoachContextLimits.assembledPromptMaxChars,
-        sampleQuery: String = ""
+        sampleQuery: String = "",
+        pinSchedule: Bool = false
     ) {
         let probe = sampleQuery.isEmpty ? "?" : sampleQuery
         while assembledPrompt(query: probe).count > maxChars {
@@ -77,6 +78,11 @@ struct CoachContext: Sendable, Equatable {
             }
             if recentWorkouts.count > 1 {
                 recentWorkouts = Array(recentWorkouts.prefix(1))
+                continue
+            }
+            if !pinSchedule, calendarSummary.count > 80 {
+                let keep = max(40, calendarSummary.count / 2)
+                calendarSummary = String(calendarSummary.prefix(keep))
                 continue
             }
             if derivedMetricsSummary.count > 120 {
@@ -95,7 +101,12 @@ struct CoachContext: Sendable, Equatable {
     }
 
     mutating func prepareForModelInput(query: String) {
-        truncatingToFitBudget(maxChars: CoachContextLimits.assembledPromptMaxChars, sampleQuery: query)
+        let pinSchedule = CoachQueryIntent.isScheduleFocused(query)
+        truncatingToFitBudget(
+            maxChars: CoachContextLimits.assembledPromptMaxChars,
+            sampleQuery: query,
+            pinSchedule: pinSchedule
+        )
         while assembledPrompt(query: query).count > CoachContextLimits.maxInputChars {
             if !ragSummaries.isEmpty {
                 ragSummaries.removeFirst()
@@ -103,6 +114,10 @@ struct CoachContext: Sendable, Equatable {
             }
             if recentWorkouts.count > 1 {
                 recentWorkouts = Array(recentWorkouts.prefix(1))
+                continue
+            }
+            if !pinSchedule, calendarSummary.count > 80 {
+                calendarSummary = String(calendarSummary.prefix(calendarSummary.count / 2))
                 continue
             }
             if derivedMetricsSummary.count > 80 {

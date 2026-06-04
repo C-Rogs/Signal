@@ -191,10 +191,8 @@ actor CalendarContextBuilder {
         self.store = store
     }
 
-    func buildSummary(
-        referenceDate: Date = .now,
-        calendar: Calendar = .current
-    ) async -> String? {
+    func buildSummary(referenceDate: Date = .now) async -> String? {
+        let calendar = SchedulingCalendar.make()
         let access = await store.currentAccessState()
         guard case .authorized = access else {
             Log.calendar.info(
@@ -216,10 +214,8 @@ actor CalendarContextBuilder {
         return summary
     }
 
-    func todayBusyChipTitle(
-        referenceDate: Date = .now,
-        calendar: Calendar = .current
-    ) async -> String? {
+    func todayBusyChipTitle(referenceDate: Date = .now) async -> String? {
+        let calendar = SchedulingCalendar.make()
         guard case .authorized = await store.currentAccessState() else { return nil }
 
         let window = CalendarLookahead.window(referenceDate: referenceDate, calendar: calendar)

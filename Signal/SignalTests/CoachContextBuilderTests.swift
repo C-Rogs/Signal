@@ -26,14 +26,22 @@ final class CoachContextBuilderTests: XCTestCase {
             activeInsights: ["• Keep protein up."],
             derivedMetricsSummary: "ACWR: 0.95 (Optimal).",
             ragSummaries: longRAG,
-            recentWorkouts: ["Jun 1 — Legs: Squat 140kg×5"]
+            recentWorkouts: ["Jun 1 — Legs: Squat 140kg×5"],
+            calendarSummary: "Tomorrow: Team sync 10:00 AM."
         )
         let userBefore = context.userSummary
         let insightsBefore = context.activeInsights
-        context.truncatingToFitBudget(maxChars: 500, sampleQuery: "?")
+        let calendarBefore = context.calendarSummary
+        context.prepareForModelInput(query: "What is on my calendar tomorrow?")
         XCTAssertLessThan(context.ragSummaries.count, longRAG.count)
         XCTAssertEqual(context.userSummary, userBefore)
         XCTAssertEqual(context.activeInsights, insightsBefore)
+        XCTAssertEqual(context.calendarSummary, calendarBefore)
+    }
+
+    func testScheduleIntentDetection() {
+        XCTAssertTrue(CoachQueryIntent.isScheduleFocused("What's in my calendar tomorrow?"))
+        XCTAssertFalse(CoachQueryIntent.isScheduleFocused("How did bench press progress this month?"))
     }
 
     @MainActor
