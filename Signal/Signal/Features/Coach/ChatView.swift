@@ -113,7 +113,7 @@ struct ChatView: View {
             FlowLayout(spacing: 8) {
                 ForEach(Self.suggestions, id: \.self) { suggestion in
                     Button {
-                        draftText = suggestion
+                        viewModel.sendMessage(suggestion)
                     } label: {
                         Text(suggestion)
                             .font(.metadataCaption)
@@ -140,6 +140,8 @@ struct ChatView: View {
                 .lineLimit(1 ... 4)
                 .textFieldStyle(.plain)
                 .focused($isInputFocused)
+                .submitLabel(.send)
+                .onSubmit(submitDraft)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(Color("Surface"))

@@ -147,9 +147,18 @@ enum CalendarSummaryFormatter {
             calendar: calendar,
             dayStart: dayStart
         )
-        let label = calendar.isDate(dayStart, inSameDayAs: referenceDate)
-            ? "Today"
-            : weekdayName(for: dayStart, calendar: calendar)
+        let label: String
+        if calendar.isDate(dayStart, inSameDayAs: referenceDate) {
+            label = "Today"
+        } else if let tomorrow = calendar.date(
+            byAdding: .day,
+            value: 1,
+            to: calendar.startOfDay(for: referenceDate)
+        ), calendar.isDate(dayStart, inSameDayAs: tomorrow) {
+            label = "Tomorrow"
+        } else {
+            label = weekdayName(for: dayStart, calendar: calendar)
+        }
         let listings = dayEvents
             .map { formatEventListing($0, calendar: calendar) }
             .joined(separator: ", ")

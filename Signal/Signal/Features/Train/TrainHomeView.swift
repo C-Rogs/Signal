@@ -297,6 +297,7 @@ struct TrainHomeView: View {
 
     private func reloadBusyDayChip() {
         Task {
+            _ = await CalendarEventStore.shared.requestAccessIfNeeded()
             busyDayChipTitle = await CalendarContextBuilder().todayBusyChipTitle()
         }
     }

@@ -155,6 +155,20 @@ final class CalendarContextBuilderTests: XCTestCase {
         XCTAssertTrue(summary.contains("(busy)"))
     }
 
+    func testSummaryUsesTomorrowLabel() {
+        let events = [
+            event(title: "Dentist", dayOffset: 1, hour: 14),
+        ]
+
+        let summary = CalendarSummaryFormatter.assembleSummary(
+            events: events,
+            referenceDate: referenceDate(),
+            calendar: calendar
+        )
+
+        XCTAssertTrue(summary.contains("Tomorrow: Dentist"))
+    }
+
     func testSummaryIncludesTodayLine() {
         let events = [
             event(title: "A", dayOffset: 0, hour: 10),
