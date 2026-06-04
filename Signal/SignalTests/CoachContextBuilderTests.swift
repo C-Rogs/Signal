@@ -10,8 +10,8 @@ final class CoachContextBuilderTests: XCTestCase {
             derivedMetricsSummary: String(repeating: "ACWR 1.1 (Optimal). Volume chest 12 sets. ", count: 12),
             ragSummaries: (1 ... 4).map { "2026-05-\($0 + 10): HRV 65 ms, sleep 7.2 h, 14 working sets." },
             recentWorkouts: [
-                "Jun 1 — Push: Bench 100kg×5; OHP 60kg×8",
-                "May 30 — Pull: Row 90kg×6; Pulldown 70kg×10",
+                "Jun 1, Push: Bench 100kg×5; OHP 60kg×8",
+                "May 30, Pull: Row 90kg×6; Pulldown 70kg×10",
             ]
         )
         context.prepareForModelInput(query: "Should I add sets for chest this week?")
@@ -26,7 +26,7 @@ final class CoachContextBuilderTests: XCTestCase {
             activeInsights: ["• Keep protein up."],
             derivedMetricsSummary: "ACWR: 0.95 (Optimal).",
             ragSummaries: longRAG,
-            recentWorkouts: ["Jun 1 — Legs: Squat 140kg×5"],
+            recentWorkouts: ["Jun 1, Legs: Squat 140kg×5"],
             calendarSummary: "Tomorrow: Team sync 10:00 AM."
         )
         let userBefore = context.userSummary

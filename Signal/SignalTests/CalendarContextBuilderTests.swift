@@ -75,6 +75,15 @@ final class CalendarContextBuilderTests: XCTestCase {
         XCTAssertEqual(filtered.map(\.title), ["Standup"])
     }
 
+    func testEventFilterSortsAllDayBeforeTimedEvents() {
+        let window = CalendarLookahead.window(referenceDate: referenceDate(), calendar: calendar)
+        let timed = event(title: "Timed", dayOffset: 0, hour: 9)
+        let allDay = event(title: "Holiday", dayOffset: 0, hour: 0, isAllDay: true)
+
+        let filtered = CalendarEventFilter.events(in: window, from: [timed, allDay])
+        XCTAssertEqual(filtered.map(\.title), ["Holiday", "Timed"])
+    }
+
     func testEventFilterSortsByStartDate() {
         let window = CalendarLookahead.window(referenceDate: referenceDate(), calendar: calendar)
         let later = event(title: "Later", dayOffset: 1, hour: 14)

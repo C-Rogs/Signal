@@ -59,7 +59,12 @@ enum CalendarEventFilter {
     ) -> [CalendarEventSnapshot] {
         all
             .filter { $0.endDate > window.start && $0.startDate < window.end }
-            .sorted { $0.startDate < $1.startDate }
+            .sorted { lhs, rhs in
+                if lhs.isAllDay != rhs.isAllDay {
+                    return lhs.isAllDay && !rhs.isAllDay
+                }
+                return lhs.startDate < rhs.startDate
+            }
     }
 
     static func events(

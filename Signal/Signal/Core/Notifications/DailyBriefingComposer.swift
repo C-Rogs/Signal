@@ -22,10 +22,10 @@ enum DailyBriefingComposer {
 
         if let flags, flags.aggregateSeverity >= .caution {
             parts.append(flags.headline)
-        } else if let insight {
-            parts.append(insight.bodyText)
         } else if let flags {
             parts.append(flags.detail)
+        } else if let insight {
+            parts.append(insight.bodyText)
         }
 
         let body = parts.joined(separator: " ")

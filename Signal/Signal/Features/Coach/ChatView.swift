@@ -167,6 +167,7 @@ struct ChatView: View {
     }
 
     private func submitDraft() {
+        guard canSend else { return }
         let text = draftText
         draftText = ""
         isInputFocused = false

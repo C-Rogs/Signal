@@ -125,9 +125,9 @@ actor CoachContextBuilder {
             let dateLabel = formatter.string(from: session.date)
             let exerciseLines = topExercises(for: session, limit: 3)
             if exerciseLines.isEmpty {
-                return "\(dateLabel) — \(session.title): (no logged sets)"
+                return "\(dateLabel), \(session.title): (no logged sets)"
             }
-            return "\(dateLabel) — \(session.title): \(exerciseLines.joined(separator: "; "))"
+            return "\(dateLabel), \(session.title): \(exerciseLines.joined(separator: "; "))"
         }
     }
 
