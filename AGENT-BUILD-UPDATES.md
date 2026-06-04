@@ -73,6 +73,12 @@ Also add `Signal/Data/Watch/LiveWorkoutTelemetry.swift` to watch target OR keep 
 - Fix: run `./scripts/generate-watch-app-icons.sh` to regenerate all required watch icon sizes + `Contents.json`.
 - Verify after build: `SignalWatch Watch App.app/Assets.car` must exist inside the embedded watch bundle.
 
+### Xcode Run does not install watch icons (2026-06-04)
+
+- **Wrong:** Run **SignalWatch Watch App** scheme to the watch. That skips the iPhone embed path and often leaves an old or icon-less bundle on device.
+- **Right:** Run **Signal** scheme to your **iPhone**, then `./scripts/install-watch-app.sh` (uninstalls old watch app, installs embedded bundle with `Assets.car`).
+- Script now fails fast if `Assets.car` is missing and auto-detects `TARGET_BUILD_DIR` from your Xcode build settings.
+
 ### Out of scope (V4 M1)
 
 - CueEngine live HR (V4 M2)
@@ -87,3 +93,60 @@ Also add `Signal/Data/Watch/LiveWorkoutTelemetry.swift` to watch target OR keep 
 | iOS | `LiveWorkoutTelemetry.swift`, `LiveWorkoutWatchBridge.swift`, `TrainWorkoutHealthKitConfiguration.swift`, `WatchConnectivityService.swift`, `WorkoutLiveSummary*.swift`, `ActiveWorkoutView.swift`, `TrainHomeView.swift`, `SignalApp.swift` |
 | Watch | `WatchAppDelegate.swift`, `WatchLiveWorkoutSessionManager.swift`, `WatchHealthKitAuthorization.swift`, `LiveWorkoutTelemetry.swift`, `ContentView.swift`, `WatchConnectivityReceiver.swift`, `SignalWatchApp.swift` |
 | Tests | `LiveWorkoutTelemetryTests.swift` |
+
+---
+
+## 2026-06-04 — Daily briefing accuracy (wrist temp + sleep timing)
+
+### Problem (user report)
+
+- Morning briefing claimed elevated sleeping wrist temperature after a night **without** the watch (stale or mis-attributed HealthKit sample).
+- User asked whether Bedtime alarm / Sleep Focus ending could trigger the briefing. **No:** briefing is a local `UNCalendarNotificationTrigger` at Settings → Daily briefing time (default 7:00). Signal does **not** use Apple Sleep Score; recovery uses `sleepHours` from HealthKit sleep analysis.
+
+### Root cause (agent)
+
+1. **Frozen notification body** — `refreshSchedule` composed title/body once and scheduled `repeats: true`, so the same text fired every day until the app rescheduled.
+2. **Stale morning data** — If the notification fired before HealthKit delta sync, content reflected the last reschedule (often prior evening), not post-wake metrics.
+3. **Wrist temp false positive** — `ReadinessFlagEvaluator` flagged elevated wrist temp when `wristTemperatureDeltaC >= 0.5` with **no** requirement for overnight `sleepHours` on that wake day.
+
+### Shipped
+
+| Change | Detail |
+|--------|--------|
+| One-shot scheduling | `DailyBriefingScheduler.nextBriefingFireDate(from:briefingHour:briefingMinute:calendar:)`; `UNCalendarNotificationTrigger(..., repeats: false)` for the next fire only. |
+| Reference day | Briefing content uses `startOfDay(for: fireDate)` so copy targets the wake day of the scheduled notification. |
+| Shared compose | `DailyBriefingScheduler.composeBriefingContent(in:referenceDay:calendar:)` used by `refreshSchedule`. |
+| Post-delivery reschedule | `DailyBriefingNotificationDelegate` (`UNUserNotificationCenterDelegate`) reschedules after present/tap; wired in `SignalApp` init. |
+| Post-sync reschedule | `HealthKitManager` calls `refreshSchedule` after every successful `processDelta` (in addition to reflection path). |
+| Wrist temp gate | `isWristTemperatureElevated` requires `sleepHours >= 1.0` on reference day before evaluating delta. |
+
+### Tests (agent)
+
+- `xcodebuild test` on simulator `id=20DDD35B-812A-49BE-9DCF-0685401ACC15`:
+  - `SignalTests/DailyBriefingSchedulerTests` (3) — passed
+  - `SignalTests/ReadinessFlagEvaluatorTests` (7, incl. `wristTemperatureFlagSuppressedWithoutSleep`) — passed
+
+### Human Xcode (if not compiling)
+
+Add to **Signal** iOS target if missing from project:
+
+- `Signal/Core/Notifications/DailyBriefingNotificationDelegate.swift`
+- `SignalTests/DailyBriefingSchedulerTests.swift`
+
+(Agent did not edit `.pbxproj`; local test run succeeded, so targets may already include these files.)
+
+### Gate B (human, device)
+
+1. Night **without** watch: after morning unlock + HK sync, briefing body should **not** mention elevated sleeping wrist temperature when today has no `sleepHours`.
+2. Set briefing to ~2 min ahead; lock phone overnight; after wake, open Signal or wait for background sync; pending notification body should match dashboard recovery for **today**.
+3. Confirm briefing is **not** tied to Sleep Focus / alarm (only to Settings time + reschedule paths above).
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Notifications | `DailyBriefingScheduler.swift`, `DailyBriefingNotificationDelegate.swift` (new) |
+| App | `SignalApp.swift` |
+| HealthKit | `HealthKitManager.swift` |
+| Recovery | `ReadinessFlags.swift` |
+| Tests | `DailyBriefingSchedulerTests.swift` (new), `ReadinessFlagEvaluatorTests.swift` |
