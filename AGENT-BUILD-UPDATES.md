@@ -55,7 +55,7 @@ Also add `Signal/Data/Watch/LiveWorkoutTelemetry.swift` to watch target OR keep 
 1. **No watch workout UI** — `ContentView` only rendered recovery `WatchPayload`; HK session could run with no visible change.
 2. **sessionStart did not start HK** if `handle(_:)` from `startWatchApp` did not run first; only stored `sessionKey`.
 3. **No watch HealthKit authorization** before `HKWorkoutSession` start.
-4. **App icon:** `AppIcon1024.png` was missing; fixed by copying iOS `AppIcon.png` (1024×1024) into **SignalWatch Watch App** and **SignalWatch Widget Extension** appiconsets.
+4. **App icon:** A single `watchos` + `universal` 1024 slot was **invalid** (actool: "unassigned child", no `Assets.car` in the built `.app`). Fixed with a full watch **AppIcon** set (appLauncher, notificationCenter, quickLook, companionSettings, watch-marketing) via `scripts/generate-watch-app-icons.sh` from iOS `AppIcon.png`.
 
 ### Follow-up fix (same day)
 
@@ -66,6 +66,12 @@ Also add `Signal/Data/Watch/LiveWorkoutTelemetry.swift` to watch target OR keep 
 - Watch `didReceiveUserInfo` routes telemetry before recovery complication payload.
 
 **Re-test after fix:** delete watch app → `./scripts/install-watch-app.sh` → grant Health on watch when prompted → start Train on iPhone.
+
+### Watch home screen icon fix (2026-06-04)
+
+- Root cause: `AppIcon.appiconset/Contents.json` used `platform: watchos` + `idiom: universal` only. Xcode actool treated the image as **unassigned** and shipped **no** `Assets.car`, so the home screen showed a blank placeholder.
+- Fix: run `./scripts/generate-watch-app-icons.sh` to regenerate all required watch icon sizes + `Contents.json`.
+- Verify after build: `SignalWatch Watch App.app/Assets.car` must exist inside the embedded watch bundle.
 
 ### Out of scope (V4 M1)
 
