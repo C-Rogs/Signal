@@ -6,7 +6,7 @@ private enum CoachContextLimits {
     static let maxDerivedMetricsSummaryChars = 800
     static let maxRAGSummariesTotalChars = 4000
     static let maxRecentWorkoutsTotalChars = 1200
-    static let maxCalendarSummaryChars = 600
+    static let maxCalendarSummaryChars = 1200
     static let assembledPromptMaxChars = 7200
     static let maxInputChars = 8000
 }

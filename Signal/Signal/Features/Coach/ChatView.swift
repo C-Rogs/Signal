@@ -7,6 +7,7 @@ struct ChatView: View {
     @State private var viewModel: ChatViewModel
     @State private var draftText = ""
     @State private var thinkingPulse = false
+    @FocusState private var isInputFocused: Bool
 
     private static let suggestions = [
         "How did I recover this week?",
@@ -39,6 +40,9 @@ struct ChatView: View {
         }
         .onAppear {
             viewModel.prewarm()
+            Task {
+                _ = await CalendarEventStore.shared.requestAccessIfNeeded()
+            }
         }
     }
 
@@ -94,6 +98,7 @@ struct ChatView: View {
                     thinkingPulse = false
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
         }
     }
 
@@ -134,6 +139,7 @@ struct ChatView: View {
             TextField("Ask Signal...", text: $draftText, axis: .vertical)
                 .lineLimit(1 ... 4)
                 .textFieldStyle(.plain)
+                .focused($isInputFocused)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(Color("Surface"))
@@ -161,6 +167,7 @@ struct ChatView: View {
     private func submitDraft() {
         let text = draftText
         draftText = ""
+        isInputFocused = false
         viewModel.sendMessage(text)
     }
 

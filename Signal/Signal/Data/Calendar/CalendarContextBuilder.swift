@@ -142,36 +142,37 @@ enum CalendarSummaryFormatter {
         referenceDate: Date,
         calendar: Calendar
     ) -> String {
-        let beforeCutoff = CalendarEventFilter.timedMeetingsBeforeCutoff(
-            on: dayStart,
-            calendar: calendar,
-            from: dayEvents
-        )
         let busy = CalendarBusyDayPolicy.isBusyDay(
             eventsOnDay: dayEvents,
             calendar: calendar,
             dayStart: dayStart
         )
-
-        let core: String
-        if calendar.isDate(dayStart, inSameDayAs: referenceDate) {
-            if beforeCutoff > 0 {
-                core = "Today: \(dayEvents.count) events, \(beforeCutoff) before 5pm"
-            } else {
-                core = "Today: \(dayEvents.count) events"
-            }
-        } else {
-            let weekday = weekdayName(for: dayStart, calendar: calendar)
-            if beforeCutoff >= CalendarBusyDayPolicy.meetingsBeforeCutoffThreshold {
-                core = "\(weekday): \(beforeCutoff) meetings before 5pm"
-            } else if beforeCutoff > 0 {
-                core = "\(weekday): \(beforeCutoff) meetings before 5pm"
-            } else {
-                core = "\(weekday): \(dayEvents.count) events"
-            }
-        }
-
+        let label = calendar.isDate(dayStart, inSameDayAs: referenceDate)
+            ? "Today"
+            : weekdayName(for: dayStart, calendar: calendar)
+        let listings = dayEvents
+            .map { formatEventListing($0, calendar: calendar) }
+            .joined(separator: ", ")
+        let core = "\(label): \(listings)"
         return busy ? "\(core) (busy)" : core
+    }
+
+    private static func formatEventListing(_ event: CalendarEventSnapshot, calendar: Calendar) -> String {
+        let title = event.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = title.isEmpty ? "Untitled" : title
+        guard !event.isAllDay else { return "\(name) (all day)" }
+        return "\(name) \(formatTime(event.startDate, calendar: calendar))"
+    }
+
+    private static func formatTime(_ date: Date, calendar: Calendar) -> String {
+        var englishCalendar = calendar
+        englishCalendar.locale = Locale(identifier: "en_US_POSIX")
+        let formatter = DateFormatter()
+        formatter.calendar = englishCalendar
+        formatter.locale = englishCalendar.locale
+        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        return formatter.string(from: date)
     }
 
     private static func weekdayName(for date: Date, calendar: Calendar) -> String {

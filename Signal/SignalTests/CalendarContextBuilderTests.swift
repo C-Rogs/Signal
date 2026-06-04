@@ -149,7 +149,9 @@ final class CalendarContextBuilderTests: XCTestCase {
             calendar: calendar
         )
 
-        XCTAssertTrue(summary.contains("Thursday: 3 meetings before 5pm"))
+        XCTAssertTrue(summary.contains("Thursday: A"))
+        XCTAssertTrue(summary.contains("B"))
+        XCTAssertTrue(summary.contains("C"))
         XCTAssertTrue(summary.contains("(busy)"))
     }
 
@@ -165,7 +167,8 @@ final class CalendarContextBuilderTests: XCTestCase {
             calendar: calendar
         )
 
-        XCTAssertTrue(summary.contains("Today: 2 events"))
+        XCTAssertTrue(summary.contains("Today: A"))
+        XCTAssertTrue(summary.contains("B"))
     }
 
     func testSummaryWhenNoEventsInWindow() {
@@ -207,6 +210,21 @@ final class CalendarContextBuilderTests: XCTestCase {
         )
     }
 
+    func testSummaryIncludesEventTitlesAndTimes() {
+        let events = [
+            event(title: "Team sync", dayOffset: 1, hour: 10, minute: 30),
+        ]
+
+        let summary = CalendarSummaryFormatter.assembleSummary(
+            events: events,
+            referenceDate: referenceDate(),
+            calendar: calendar
+        )
+
+        XCTAssertTrue(summary.contains("Team sync"))
+        XCTAssertFalse(summary.contains("1 events"))
+    }
+
     func testCoachContextIncludesScheduleSectionWhenCalendarPresent() {
         let context = CoachContext(
             userSummary: "You, goal: Hypertrophy, 4 days/week, target RIR 2.",
@@ -214,11 +232,12 @@ final class CalendarContextBuilderTests: XCTestCase {
             derivedMetricsSummary: "ACWR: 1.0 (Optimal).",
             ragSummaries: [],
             recentWorkouts: [],
-            calendarSummary: "Today: 2 events. Thursday: 3 meetings before 5pm (busy)."
+            calendarSummary: "Today: Standup 10:00, Review 15:00. Thursday: A 9:00, B 11:00, C 14:00 (busy)."
         )
 
         let prompt = context.assembledPrompt(query: "Should I train hard tomorrow?")
         XCTAssertTrue(prompt.contains("## Schedule"))
-        XCTAssertTrue(prompt.contains("3 meetings before 5pm"))
+        XCTAssertTrue(prompt.contains("Standup"))
+        XCTAssertTrue(prompt.contains("C 14:00"))
     }
 }
