@@ -55,7 +55,7 @@ Also add `Signal/Data/Watch/LiveWorkoutTelemetry.swift` to watch target OR keep 
 1. **No watch workout UI** — `ContentView` only rendered recovery `WatchPayload`; HK session could run with no visible change.
 2. **sessionStart did not start HK** if `handle(_:)` from `startWatchApp` did not run first; only stored `sessionKey`.
 3. **No watch HealthKit authorization** before `HKWorkoutSession` start.
-4. **App icon:** `Assets.xcassets/AppIcon.appiconset/Contents.json` references `AppIcon1024.png` but the PNG is **not in the repo**. Human must drop a 1024×1024 icon into that appiconset.
+4. **App icon:** `AppIcon1024.png` was missing; fixed by copying iOS `AppIcon.png` (1024×1024) into **SignalWatch Watch App** and **SignalWatch Widget Extension** appiconsets.
 
 ### Follow-up fix (same day)
 
