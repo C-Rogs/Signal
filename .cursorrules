@@ -8,7 +8,8 @@
 ## Build and verify (use MCP, not raw xcodebuild)
 - Prefer XcodeBuildMCP tools over Bash xcodebuild. MCP returns structured JSON; parse it to locate and fix errors.
 - XcodeBuildMCP must show connected (green) in Cursor Settings → MCP. Project config: `.cursor/mcp.json` server name `XcodeBuildMCP`.
-- **Simulator (build + unit tests):** one pinned destination only: `id=20DDD35B-812A-49BE-9DCF-0685401ACC15` (iPhone 16 Pro). Use `build_sim` for compile and `test_sim` for tests on the same sim. Do not use name-based destinations; duplicates cause failures. Wrapper: `scripts/build-and-test.sh`.
+- **Simulator (build + unit tests):** one pinned destination only: `id=20DDD35B-812A-49BE-9DCF-0685401ACC15` (iPhone 16 Pro). Use `build_sim` for compile and `test_sim` for tests on the same sim. Do not use name-based destinations; duplicates cause failures. Wrapper: `scripts/build-and-test.sh`. Signal embeds the watch app, so this iPhone sim build already compiles watch target code.
+- **watchOS sim (compile + watch unit tests):** pinned `id=93C9FE74-661C-43E7-BCEE-644772C166F4` (Apple Watch Series 11 46mm, watchOS 26.5). MCP profile `watch`, scheme `SignalWatch Watch App`. Wrapper: `scripts/build-watch-sim.sh`. WCSession pairing and HealthKit live workout still require physical iPhone + Watch; do not use watch sim for those gates.
 - **Physical device (real app):** Cameron's iPhone 16 Pro `id=00008140-001E34E10A01801C` via `build_device`, then `install_app`, then `launch_app`. Device must be unlocked and the Developer Disk Image mounted. Use for HealthKit real data, background mid-session, Train UX, paired Watch, and Foundation Models. Do not substitute the simulator for those gates.
 - Use the Apple Xcode MCP documentation search to read current API docs before coding fast-moving frameworks.
 
@@ -44,3 +45,7 @@
 - Build only the current milestone. Do not implement future milestones or refactor prior stable code unless named.
 - If a build fails after 2 attempts, STOP and output the full error. Do not run the same command more than twice.
 - After a milestone passes its accept criteria, output "MILESTONE COMPLETE: <name>, READY TO COMMIT" and wait.
+
+## Agent build handover (architect reads this)
+- Before ending a builder session or declaring milestone complete, append a dated summary to `AGENT-BUILD-UPDATES.md` (newest at bottom): Shipped, Gate A (agent), Gate B (human), Human Xcode, Out of scope, Files touched. See `.cursor/rules/agent-build-handover.mdc`.
+- Architect agents: read the latest entry in `AGENT-BUILD-UPDATES.md` at session start for recent builder truth.

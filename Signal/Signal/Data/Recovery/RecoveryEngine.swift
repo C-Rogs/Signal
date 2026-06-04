@@ -51,20 +51,25 @@ actor RecoveryEngine {
 
     func computeScore(in context: ModelContext) async -> RecoveryScore {
         await MainActor.run {
-            let metrics = Self.fetchMetricSnapshots(in: context)
-            var calendar = Calendar(identifier: .gregorian)
-            calendar.timeZone = .current
-            let referenceDay = calendar.startOfDay(for: Date())
-            let score = RecoveryScoreCalculator.compute(
-                metrics: metrics,
-                referenceDay: referenceDay,
-                calendar: calendar
-            )
-            Log.recovery.info(
-                "recovery score=\(score.value, format: .fixed(precision: 0), privacy: .public) classification=\(score.hrvClassification.rawValue, privacy: .public) confidence=\(score.confidence.rawValue, privacy: .public)"
-            )
-            return score
+            Self.todayRecoveryScore(in: context)
         }
+    }
+
+    @MainActor
+    static func todayRecoveryScore(in context: ModelContext) -> RecoveryScore {
+        let metrics = fetchMetricSnapshots(in: context)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let referenceDay = calendar.startOfDay(for: Date())
+        let score = RecoveryScoreCalculator.compute(
+            metrics: metrics,
+            referenceDay: referenceDay,
+            calendar: calendar
+        )
+        Log.recovery.info(
+            "recovery score=\(score.value, format: .fixed(precision: 0), privacy: .public) classification=\(score.hrvClassification.rawValue, privacy: .public) confidence=\(score.confidence.rawValue, privacy: .public)"
+        )
+        return score
     }
 
     nonisolated static func rollingMeans(

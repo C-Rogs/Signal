@@ -10,9 +10,19 @@ enum WatchHealthKitAuthorization {
         category: "watch"
     )
 
+    static var isConfiguredForHealthKit: Bool {
+        guard HKHealthStore.isHealthDataAvailable() else { return false }
+        let bundle = Bundle.main
+        let share = bundle.object(forInfoDictionaryKey: "NSHealthShareUsageDescription") as? String
+        let update = bundle.object(forInfoDictionaryKey: "NSHealthUpdateUsageDescription") as? String
+        return !(share?.isEmpty ?? true) && !(update?.isEmpty ?? true)
+    }
+
     static func requestWorkoutAccessIfNeeded() async -> Bool {
-        guard HKHealthStore.isHealthDataAvailable() else {
-            logger.info("watch HealthKit unavailable")
+        guard isConfiguredForHealthKit else {
+            logger.error(
+                "watch HealthKit skipped: add NSHealthShareUsageDescription and NSHealthUpdateUsageDescription to the watch target Info (see WatchApp-Info.plist)"
+            )
             return false
         }
 

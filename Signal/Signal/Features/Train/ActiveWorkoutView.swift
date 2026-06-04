@@ -1,4 +1,5 @@
 import Combine
+import os
 import SwiftData
 import SwiftUI
 
@@ -20,6 +21,9 @@ struct ActiveWorkoutView: View {
     @State private var showAddExercise = false
     @State private var errorMessage: String?
     @State private var tick = Date()
+    @State private var dynamicRestState = DynamicRestState()
+    @State private var dynamicRestNotice: String?
+    @State private var sessionRecoveryScore: RecoveryScore?
 
     private var store: LiveWorkoutStore {
         LiveWorkoutStore(context: modelContext)
@@ -40,6 +44,7 @@ struct ActiveWorkoutView: View {
                     FloatingRestTimerBar(
                         exerciseTitle: activeRest.exercise.exerciseTitle,
                         remainingSeconds: activeRest.remaining,
+                        autoregulationNotice: dynamicRestNotice,
                         onSkip: { stopRest(for: activeRest.exercise) },
                         onSubtract15: { adjustRest(for: activeRest.exercise, by: -15) },
                         onAdd15: { adjustRest(for: activeRest.exercise, by: 15) }
@@ -62,13 +67,40 @@ struct ActiveWorkoutView: View {
             .sheet(isPresented: $showAddExercise) { addExerciseSheet }
             .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { date in
                 tick = date
+                applyDynamicRestExtension(at: date)
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .background else { return }
                 try? modelContext.save()
             }
-            .onAppear { coordinator.isViewingActiveWorkout = true }
+            .onAppear {
+                coordinator.isViewingActiveWorkout = true
+                reloadSessionRecoveryScore()
+            }
             .onDisappear { coordinator.isViewingActiveWorkout = false }
+    }
+
+    private var lowRecoveryChipTitle: String? {
+        guard let sessionRecoveryScore else { return nil }
+        return LiveLoadCueEvaluator.sessionRecoveryChipTitle(for: sessionRecoveryScore)
+    }
+
+    private func reloadSessionRecoveryScore() {
+        sessionRecoveryScore = RecoveryEngine.todayRecoveryScore(in: modelContext)
+    }
+
+    private var defaultSessionRecoveryScore: RecoveryScore {
+        RecoveryScore(
+            value: 50,
+            hrvClassification: .insufficientData,
+            hrvAnalysis: nil,
+            rhrDelta: nil,
+            sleepDelta: nil,
+            confidence: .low,
+            breakdown: RecoveryScoreBreakdown(hrvTerm: 0, rhrTerm: 0, sleepTerm: 0, total: 50),
+            todayHRV: nil,
+            todayRestingHR: nil
+        )
     }
 
     private var liveSummary: WorkoutLiveSummary {
@@ -91,9 +123,13 @@ struct ActiveWorkoutView: View {
                 }
 
                 Section {
-                    WorkoutLiveSummaryBar(summary: liveSummary, formatter: formatter)
-                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                        .listRowBackground(Color("Surface"))
+                    WorkoutLiveSummaryBar(
+                        summary: liveSummary,
+                        formatter: formatter,
+                        recoveryChipTitle: lowRecoveryChipTitle
+                    )
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowBackground(Color("Surface"))
                 }
 
                 ForEach(orderedExercises, id: \.persistentModelID) { exercise in
@@ -103,6 +139,7 @@ struct ActiveWorkoutView: View {
                         mode: ExerciseLoggingMode.from(catalogEntry: exercise.catalogEntry),
                         formatter: formatter,
                         lastHint: lastHint(for: exercise),
+                        recoveryScore: sessionRecoveryScore ?? defaultSessionRecoveryScore,
                         store: store,
                         modelContext: modelContext,
                         onSupersetScroll: { id in
@@ -113,6 +150,7 @@ struct ActiveWorkoutView: View {
                         onNeedsRefresh: {
                             coordinator.refresh()
                             tick = Date()
+                            reloadSessionRecoveryScore()
                         }
                     )
                     .id(exercise.persistentModelID)
@@ -213,6 +251,45 @@ struct ActiveWorkoutView: View {
         try? store.adjustRestTimer(for: exercise, by: seconds)
         coordinator.refresh()
         tick = Date()
+    }
+
+    private func applyDynamicRestExtension(at now: Date) {
+        guard let activeRest = activeRestTimer,
+              let restEndsAt = activeRest.exercise.restTimerEndsAt
+        else {
+            if dynamicRestNotice != nil {
+                dynamicRestNotice = nil
+            }
+            if dynamicRestState.trackedExerciseID != nil {
+                dynamicRestState = DynamicRestState()
+            }
+            return
+        }
+
+        let exerciseID = String(describing: activeRest.exercise.persistentModelID)
+        let input = DynamicRestTimerEvaluator.Input(
+            exerciseID: exerciseID,
+            heartRateBPM: watchBridge.latestHeartRateBPM,
+            heartRateSampledAt: watchBridge.lastHeartRateAt,
+            now: now,
+            restEndsAt: restEndsAt,
+            state: dynamicRestState
+        )
+        guard let decision = DynamicRestTimerEvaluator.evaluate(input) else { return }
+
+        dynamicRestState = decision.newState
+        dynamicRestNotice = decision.notice
+        do {
+            try store.adjustRestTimer(for: activeRest.exercise, by: decision.extensionSeconds)
+            coordinator.refresh()
+            Log.workout.info(
+                "dynamic rest extended seconds=\(decision.extensionSeconds, privacy: .public) bpm=\(watchBridge.latestHeartRateBPM ?? 0, privacy: .public) extensions=\(decision.newState.extensionCount, privacy: .public)"
+            )
+        } catch {
+            Log.workout.error(
+                "dynamic rest extend failed: \(String(describing: error), privacy: .public)"
+            )
+        }
     }
 
     private func lastHint(for exercise: WorkoutExercise) -> String? {

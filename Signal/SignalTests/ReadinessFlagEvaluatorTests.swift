@@ -17,14 +17,15 @@ struct ReadinessFlagEvaluatorTests {
         date: Date,
         hrv: Double?,
         rhr: Double? = nil,
-        wristTemp: Double? = nil
+        wristTemp: Double? = nil,
+        sleepHours: Double? = 7
     ) -> DailyMetricSnapshot {
         DailyMetricSnapshot(
             date: date,
             hrvSDNN: hrv,
             restingHR: rhr,
             activeEnergy: nil,
-            sleepHours: 7,
+            sleepHours: sleepHours,
             bodyMassKg: nil,
             stepCount: nil,
             appleExerciseMinutes: nil,
@@ -101,6 +102,29 @@ struct ReadinessFlagEvaluatorTests {
             )
         )
         #expect(assessment?.signals.contains(where: { $0.kind == .wristTemperatureElevated }) == true)
+    }
+
+    @Test func wristTemperatureFlagSuppressedWithoutSleep() {
+        let end = calendar.startOfDay(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let metrics = (-14...0).map { offset in
+            snapshot(
+                date: day(offset: offset, from: end),
+                hrv: 50,
+                rhr: 60,
+                wristTemp: offset == 0 ? 0.6 : 0.1,
+                sleepHours: offset == 0 ? nil : 7
+            )
+        }
+        let score = RecoveryScoreCalculator.compute(metrics: metrics, referenceDay: end, calendar: calendar)
+        let assessment = ReadinessFlagEvaluator.evaluate(
+            ReadinessFlagInput(
+                metrics: metrics,
+                recoveryScore: score,
+                referenceDay: end,
+                calendar: calendar
+            )
+        )
+        #expect(assessment?.signals.contains(where: { $0.kind == .wristTemperatureElevated }) != true)
     }
 
     @Test func returnsNilWhenNoSignalsFire() {

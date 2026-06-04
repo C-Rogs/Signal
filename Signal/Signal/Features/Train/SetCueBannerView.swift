@@ -6,6 +6,7 @@ struct SetCueBannerView: View {
     var body: some View {
         Text(message)
             .font(.caption)
+            .multilineTextAlignment(.leading)
             .foregroundStyle(Color("Primary"))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.leading, 34)

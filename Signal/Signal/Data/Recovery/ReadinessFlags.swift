@@ -48,6 +48,7 @@ struct ReadinessFlagInput: Sendable, Equatable {
 enum ReadinessFlagEvaluator {
     static let restingHRElevatedDeltaBpm = 3.0
     static let wristTemperatureElevatedDeltaC = 0.5
+    static let minimumSleepHoursForWristTemperatureFlag = 1.0
 
     static func evaluate(_ input: ReadinessFlagInput) -> ReadinessFlagsAssessment? {
         var signals: [ReadinessSignal] = []
@@ -116,6 +117,8 @@ enum ReadinessFlagEvaluator {
     ) -> Bool {
         let end = input.calendar.startOfDay(for: input.referenceDay)
         guard let today = metrics.first(where: { input.calendar.isDate($0.date, inSameDayAs: end) }),
+              let sleepHours = today.sleepHours,
+              sleepHours >= minimumSleepHoursForWristTemperatureFlag,
               let delta = today.wristTemperatureDeltaC
         else { return false }
         return delta >= wristTemperatureElevatedDeltaC

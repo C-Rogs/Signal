@@ -20,6 +20,15 @@ sessionDefaultsProfiles:
     simulatorName: iPhone 16 Pro
     simulatorPlatform: iOS Simulator
 
+  watch:
+    projectPath: "./Signal/Signal.xcodeproj"
+    scheme: SignalWatch Watch App
+    configuration: Debug
+    bundleId: com.cameronro.Signal.watchkitapp
+    simulatorId: 93C9FE74-661C-43E7-BCEE-644772C166F4
+    simulatorName: Apple Watch Series 11 (46mm)
+    simulatorPlatform: watchOS Simulator
+
   device:
     projectPath: "./Signal/Signal.xcodeproj"
     scheme: Signal

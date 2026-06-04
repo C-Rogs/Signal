@@ -1,3 +1,4 @@
+import os
 import SwiftData
 import SwiftUI
 
@@ -7,12 +8,14 @@ struct WorkoutExerciseSectionView: View {
     let mode: ExerciseLoggingMode
     let formatter: DisplayUnitFormatter
     let lastHint: String?
+    let recoveryScore: RecoveryScore
     let store: LiveWorkoutStore
     let modelContext: ModelContext
     let onSupersetScroll: (PersistentIdentifier) -> Void
     let onNeedsRefresh: () -> Void
 
     @Environment(TrainPreferences.self) private var trainPreferences
+    @Environment(LiveWorkoutWatchBridge.self) private var watchBridge
     @State private var showReplacePicker = false
     @State private var dismissedWarmupSuggestion = false
     @State private var showRemoveConfirm = false
@@ -191,13 +194,24 @@ struct WorkoutExerciseSectionView: View {
         try? store.toggleSetComplete(set, exercise: exercise, completed: completed)
         onNeedsRefresh()
         if completed {
-            if let message = SetCueEvaluator.cue(
+            let tierMessage = SetCueEvaluator.cue(
                 for: set,
                 exercise: exercise,
                 session: session,
                 mode: mode,
                 in: modelContext
+            )
+            let loadNudge = loadNudgeAfterSet(set)
+            if let message = LiveSetCueComposer.compose(
+                tierMessage: tierMessage,
+                loadNudge: loadNudge,
+                heartRateBPM: watchBridge.latestHeartRateBPM,
+                heartRateSampledAt: watchBridge.lastHeartRateAt,
+                now: Date()
             ) {
+                if let loadNudge {
+                    Log.workout.info("load autoregulation nudge=\(loadNudge, privacy: .public)")
+                }
                 showCue(message, for: set)
             }
             if let partner = supersetPartner {
@@ -233,6 +247,28 @@ struct WorkoutExerciseSectionView: View {
         cueDismissTask?.cancel()
         cueDismissTask = nil
         activeCues.removeAll()
+    }
+
+    private func loadNudgeAfterSet(_ set: SetEntry) -> String? {
+        guard mode == .strength else { return nil }
+        let snapshot = SetCueSnapshot(set: set)
+        guard !snapshot.isWarmup else { return nil }
+        let targetRIR = ProfileGoalRepository.targetRIR(in: modelContext)
+        let lastTemplate = try? LastSessionAutofill.previousSet(
+            catalogEntry: exercise.catalogEntry,
+            exerciseTitle: exercise.exerciseTitle,
+            setIndex: set.setIndex,
+            mode: mode,
+            in: modelContext
+        )
+        let lastSessionSet = lastTemplate.map(SetCueSnapshot.init(template:))
+        let input = LiveLoadCueInput(
+            recoveryScore: recoveryScore,
+            completedSet: snapshot,
+            targetRIR: targetRIR,
+            targetReps: CueEngine.targetReps(lastSessionSet: lastSessionSet)
+        )
+        return LiveLoadCueEvaluator.nudge(for: input)
     }
 
     private var workingSetsDivider: some View {

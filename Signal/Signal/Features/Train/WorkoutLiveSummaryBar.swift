@@ -3,8 +3,28 @@ import SwiftUI
 struct WorkoutLiveSummaryBar: View {
     let summary: WorkoutLiveSummary
     let formatter: DisplayUnitFormatter
+    var recoveryChipTitle: String?
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let recoveryChipTitle {
+                Text(recoveryChipTitle)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color("Warning"))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color("Warning").opacity(0.15))
+                    .clipShape(Capsule())
+                    .accessibilityIdentifier("lowRecoveryChip")
+            }
+            statsRow
+        }
+        .padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(summaryAccessibilityLabel)
+    }
+
+    private var statsRow: some View {
         HStack(spacing: 0) {
             statColumn(
                 title: "Duration",
@@ -32,9 +52,6 @@ struct WorkoutLiveSummaryBar: View {
                 )
             }
         }
-        .padding(.vertical, 12)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(summaryAccessibilityLabel)
     }
 
     private var formattedVolume: String {
@@ -45,11 +62,15 @@ struct WorkoutLiveSummaryBar: View {
     }
 
     private var summaryAccessibilityLabel: String {
-        var parts = [
+        var parts: [String] = []
+        if let recoveryChipTitle {
+            parts.append(recoveryChipTitle)
+        }
+        parts.append(contentsOf: [
             "Duration \(WorkoutLiveSummary.formatDuration(seconds: summary.durationSeconds))",
             "volume \(formattedVolume)",
             "\(summary.completedSetCount) sets completed",
-        ]
+        ])
         if let heartRateBPM = summary.heartRateBPM {
             parts.append("heart rate \(heartRateBPM)")
         }

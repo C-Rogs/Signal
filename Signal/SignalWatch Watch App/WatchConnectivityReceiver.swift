@@ -13,11 +13,6 @@ final class WatchConnectivityReceiver: NSObject {
         category: "watch"
     )
 
-    override init() {
-        super.init()
-        activate()
-    }
-
     func activate() {
         guard WCSession.isSupported() else {
             logger.info("WCSession not supported on watch")
@@ -28,8 +23,20 @@ final class WatchConnectivityReceiver: NSObject {
             session.delegate = self
             session.activate()
             logger.info("WCSession activation requested on watch")
+        } else if session.delegate === self, session.activationState != .activated {
+            session.activate()
         }
-        applyCachedContext(session.receivedApplicationContext)
+        hydratePayloadFromCaches(session: session)
+    }
+
+    private func hydratePayloadFromCaches(session: WCSession) {
+        if !session.receivedApplicationContext.isEmpty {
+            applyCachedContext(session.receivedApplicationContext)
+        }
+        if payload == nil, let context = WatchPayloadCache.readContext() {
+            applyCachedContext(context)
+            logger.info("watch loaded recovery from app group cache")
+        }
     }
 
     private func applyCachedContext(_ applicationContext: [String: Any]) {

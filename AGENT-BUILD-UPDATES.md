@@ -73,6 +73,29 @@ Also add `Signal/Data/Watch/LiveWorkoutTelemetry.swift` to watch target OR keep 
 - Fix: run `./scripts/generate-watch-app-icons.sh` to regenerate all required watch icon sizes + `Contents.json`.
 - Verify after build: `SignalWatch Watch App.app/Assets.car` must exist inside the embedded watch bundle.
 
+### Watch app crash on launch + complication "—" (2026-06-04)
+
+**Symptoms:** After install, complication shows **—** (waiting). Opening the watch app closes immediately, even during an iPhone Train workout.
+
+**Root cause:**
+
+1. **Launch crash:** `ContentView` called `prepareOnLaunch()` → `requestAuthorization` without `NSHealthShareUsageDescription` / `NSHealthUpdateUsageDescription` on the watch target (fatal). Watch entitlements also lacked `com.apple.developer.healthkit`.
+2. **Complication dash:** `RecoveryWidgetSnapshot.waiting` when no payload in App Group / WCSession context (expected until iPhone pushes recovery).
+
+**Code fix (agent):**
+
+- Removed launch-time HealthKit authorization.
+- `WatchHealthKitAuthorization.isConfiguredForHealthKit` gates all HK calls.
+- `WatchConnectivityReceiver` hydrates from WCSession context **and** `WatchPayloadCache` app group.
+- Added `SignalWatch Watch App/WatchApp-Info.plist` (health strings + `workout-processing`).
+- Added HealthKit entitlement to `SignalWatch Watch App.entitlements`.
+
+**Human Xcode (required once):**
+
+1. **SignalWatch Watch App** target → **Build Settings** → set **Info.plist File** to `SignalWatch Watch App/WatchApp-Info.plist` (or paste the three keys from that file into the target **Info** tab).
+2. **Signing & Capabilities** → add **HealthKit** and **Background Modes** → **Workout processing** (must match entitlements + provisioning).
+3. Clean build **Signal** to iPhone → `./scripts/install-watch-app.sh` → open watch app → grant Health when prompted.
+
 ### Xcode Run does not install watch icons (2026-06-04)
 
 - **Wrong:** Run **SignalWatch Watch App** scheme to the watch. That skips the iPhone embed path and often leaves an old or icon-less bundle on device.
@@ -150,3 +173,95 @@ Add to **Signal** iOS target if missing from project:
 | HealthKit | `HealthKitManager.swift` |
 | Recovery | `ReadinessFlags.swift` |
 | Tests | `DailyBriefingSchedulerTests.swift` (new), `ReadinessFlagEvaluatorTests.swift` |
+
+---
+
+## 2026-06-04 — V4 M2 Live HR cues + dynamic rest (simulator-safe)
+
+### Shipped
+
+- **Policy module:** `LiveWorkoutAutoregulation.swift` with elevated HR threshold (150 BPM), fresh sample window (45 s), rest extension (+30 s, max 2 per rest, 20 s throttle, skip when ≤8 s left).
+- **Set-complete HR cue:** After a working set, `LiveHRCueEvaluator` appends `Heart rate still {bpm}. Take the full rest.` when watch HR is fresh and ≥150; composes with existing tier cue on a second line.
+- **Dynamic rest:** `ActiveWorkoutView` evaluates HR each second during an active rest; extends timer and shows `+30s, HR still {bpm}` on `FloatingRestTimerBar` (accessibility id `dynamicRestNotice`).
+- **Handoff:** `HANDOFF-V4M2.md` for builder/architect continuity.
+
+### Gate A (agent)
+
+- XcodeBuildMCP `test_sim` (simulator profile): `SignalTests/LiveWorkoutAutoregulationTests` (9) + `SignalTests/CueEngineTests` (26) passed (35 total in run).
+- iOS folder sync compiles new Swift without pbxproj edits.
+
+### Gate B (human, paired iPhone + Watch)
+
+Run at home. Each test names the **revisit** milestone if it fails.
+
+| ID | Test | Pass criteria | If fail, revisit |
+|----|------|---------------|------------------|
+| **D1** | Watch install | `./scripts/install-watch-app.sh` succeeds; embedded bundle contains `Assets.car`; watch home icon visible | V4 M1 watch packaging |
+| **D2** | Live HR stream | Start Train on iPhone; within 30 s summary bar shows BPM; Console `category:workout` logs `live HR bpm=` | **V4 M1** telemetry |
+| **D3** | Watch workout UI | Watch shows **Train** + BPM during session (not recovery-only screen) | **V4 M1** watch UI / WCSession start |
+| **D4** | HR set cue | Complete a hard working set while BPM ≥150 on summary bar; set banner includes `Heart rate still` line | **V4 M2** cues (this milestone) |
+| **D5** | HR cue without watch | Complete a set with no watch paired; only tier cue (no `Heart rate still` line) | **V4 M2** (expected pass offline) |
+| **D6** | Dynamic rest extend | Auto-rest after set; keep moving; timer adds ~30 s twice max; amber `+30s, HR still` notice | **V4 M2** dynamic rest |
+| **D7** | Dynamic rest idle HR | Sit still until BPM below 150 before rest ends; no further auto-extensions | **V4 M2** policy |
+| **D8** | Finish workout | Finish on iPhone; no crash; single HK workout on phone; watch session ends | **V4 M1** save path |
+
+**Briefing (uncommitted local):** if wrist-temp copy wrong after night without watch, run briefing Gate B from the 2026-06-04 daily briefing section (not V4).
+
+### Human Xcode
+
+- None for iOS (folder sync). Watch target unchanged from V4 M1.
+
+### Out of scope
+
+- Load/RPE autoregulation (prescription changes)
+- Google Calendar (later V4)
+- Simulator injection of fake HR (no watch in office)
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Workout logic | `LiveWorkoutAutoregulation.swift` (new) |
+| Train UI | `ActiveWorkoutView.swift`, `WorkoutExerciseSectionView.swift`, `FloatingRestTimerBar.swift`, `SetCueBannerView.swift` |
+| Tests | `LiveWorkoutAutoregulationTests.swift` (new) |
+| Handoff | `HANDOFF-V4M2.md` (new) |
+
+---
+
+## 2026-06-04 — V4 M3 In-session load autoregulation (readiness + RPE)
+
+### Shipped
+
+- **Load policy:** `LiveLoadAutoregulation.swift` with recovery bands (≥70 / 40 to 69 / <40), RPE tiers aligned with CueEngine, and suggest-only load lines (hold, +2.5 kg, grind stay).
+- **Composed banner:** `LiveSetCueComposer` stacks tier → HR → load (max 3 lines) in `LiveWorkoutAutoregulation.swift`.
+- **Train UI:** `WorkoutExerciseSectionView` emits load nudge after set complete; `ActiveWorkoutView` + `WorkoutLiveSummaryBar` show **Low recovery day** chip when score < 40.
+- **Recovery snapshot:** `RecoveryEngine.todayRecoveryScore(in:)` for synchronous workout session use.
+- **Handoff:** `HANDOFF-V4M3.md` with Gate B D9–D12.
+
+### Gate A (agent)
+
+- XcodeBuildMCP `test_sim`: `LiveLoadAutoregulationTests` (9) + `LiveWorkoutAutoregulationTests` (9) + `CueEngineTests` (26) passed (44 total).
+
+### Gate B (human, paired iPhone + Watch)
+
+See `HANDOFF-V4M3.md` (D9–D12). D1–D8 unchanged from V4 M2.
+
+### Human Xcode
+
+- None for iOS (folder sync).
+
+### Out of scope
+
+- Google Calendar / EventKit (V4 M4)
+- Auto-changing set weight without user tap
+- Athlytic exertion score (V3 backlog)
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Workout logic | `LiveLoadAutoregulation.swift` (new), `LiveWorkoutAutoregulation.swift` |
+| Recovery | `RecoveryEngine.swift` |
+| Train UI | `ActiveWorkoutView.swift`, `WorkoutExerciseSectionView.swift`, `WorkoutLiveSummaryBar.swift` |
+| Tests | `LiveLoadAutoregulationTests.swift` (new), `LiveWorkoutAutoregulationTests.swift` |
+| Handoff | `HANDOFF-V4M3.md` (new) |

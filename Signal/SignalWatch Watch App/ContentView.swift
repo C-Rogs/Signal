@@ -21,9 +21,6 @@ struct ContentView: View {
             guard score != nil else { return }
             WatchComplicationRefresh.reloadTimelineOnly()
         }
-        .task {
-            await workoutManager.prepareOnLaunch()
-        }
     }
 
     private var activeWorkoutContent: some View {

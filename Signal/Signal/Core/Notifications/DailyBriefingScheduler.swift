@@ -10,9 +10,9 @@ enum SignalNotificationCategory {
 @MainActor
 final class DailyBriefingScheduler {
     static let shared = DailyBriefingScheduler()
+    static let requestIdentifier = "signal.dailyBriefing"
 
     private let center = UNUserNotificationCenter.current()
-    private let requestIdentifier = "signal.dailyBriefing"
 
     private init() {}
 
@@ -25,6 +25,54 @@ final class DailyBriefingScheduler {
         )
         UNUserNotificationCenter.current().setNotificationCategories([category])
         Log.notifications.info("registered daily_briefing notification category")
+    }
+
+    nonisolated static func nextBriefingFireDate(
+        from now: Date,
+        briefingHour: Int,
+        briefingMinute: Int,
+        calendar: Calendar
+    ) -> Date {
+        var dayComponents = calendar.dateComponents([.year, .month, .day], from: now)
+        dayComponents.hour = briefingHour
+        dayComponents.minute = briefingMinute
+        dayComponents.second = 0
+        dayComponents.calendar = calendar
+        guard let todayFire = calendar.date(from: dayComponents) else {
+            return now
+        }
+        if todayFire > now {
+            return todayFire
+        }
+        return calendar.date(byAdding: .day, value: 1, to: todayFire) ?? todayFire
+    }
+
+    static func composeBriefingContent(
+        in context: ModelContext,
+        referenceDay: Date,
+        calendar: Calendar = .current
+    ) -> DailyBriefingContent {
+        let referenceStart = calendar.startOfDay(for: referenceDay)
+        let metrics = fetchMetricSnapshots(in: context)
+        let score = RecoveryScoreCalculator.compute(
+            metrics: metrics,
+            referenceDay: referenceStart,
+            calendar: calendar
+        )
+        let flags = ReadinessFlagEvaluator.evaluate(
+            ReadinessFlagInput(
+                metrics: metrics,
+                recoveryScore: score,
+                referenceDay: referenceStart,
+                calendar: calendar
+            )
+        )
+        let insightLine = fetchPriorityInsightLine(in: context)
+        return DailyBriefingComposer.compose(
+            recoveryScore: score,
+            insight: insightLine,
+            flags: flags
+        )
     }
 
     func requestAuthorizationIfNeeded() async -> Bool {
@@ -48,9 +96,9 @@ final class DailyBriefingScheduler {
         }
     }
 
-    func refreshSchedule(in context: ModelContext) async {
+    func refreshSchedule(in context: ModelContext, now: Date = Date()) async {
         let preferences = NotificationPreferences.shared
-        await center.removePendingNotificationRequests(withIdentifiers: [requestIdentifier])
+        await center.removePendingNotificationRequests(withIdentifiers: [Self.requestIdentifier])
 
         guard preferences.dailyBriefingEnabled else {
             Log.notifications.info("daily briefing disabled; cleared pending request")
@@ -62,33 +110,25 @@ final class DailyBriefingScheduler {
             return
         }
 
-        let referenceDay = Calendar.current.startOfDay(for: Date())
         let calendar = Calendar.current
-        let metrics = fetchMetricSnapshots(in: context)
-        let score = RecoveryScoreCalculator.compute(
-            metrics: metrics,
+        let fireDate = Self.nextBriefingFireDate(
+            from: now,
+            briefingHour: preferences.briefingHour,
+            briefingMinute: preferences.briefingMinute,
+            calendar: calendar
+        )
+        let referenceDay = calendar.startOfDay(for: fireDate)
+        let content = Self.composeBriefingContent(
+            in: context,
             referenceDay: referenceDay,
             calendar: calendar
         )
-        let flags = ReadinessFlagEvaluator.evaluate(
-            ReadinessFlagInput(
-                metrics: metrics,
-                recoveryScore: score,
-                referenceDay: referenceDay,
-                calendar: calendar
-            )
-        )
-        let insightLine = fetchPriorityInsightLine(in: context)
-        let content = DailyBriefingComposer.compose(
-            recoveryScore: score,
-            insight: insightLine,
-            flags: flags
-        )
 
-        var dateComponents = preferences.briefingDateComponents
-        dateComponents.calendar = Calendar.current
-
-        let trigger = UNCalendarNotificationTrigger(dateMatching: dateComponents, repeats: true)
+        let triggerComponents = calendar.dateComponents(
+            [.year, .month, .day, .hour, .minute],
+            from: fireDate
+        )
+        let trigger = UNCalendarNotificationTrigger(dateMatching: triggerComponents, repeats: false)
         let notificationContent = UNMutableNotificationContent()
         notificationContent.title = content.title
         notificationContent.body = content.body
@@ -96,7 +136,7 @@ final class DailyBriefingScheduler {
         notificationContent.sound = .default
 
         let request = UNNotificationRequest(
-            identifier: requestIdentifier,
+            identifier: Self.requestIdentifier,
             content: notificationContent,
             trigger: trigger
         )
@@ -104,7 +144,7 @@ final class DailyBriefingScheduler {
         do {
             try await center.add(request)
             Log.notifications.info(
-                "scheduled daily briefing hour=\(preferences.briefingHour, privacy: .public) minute=\(preferences.briefingMinute, privacy: .public)"
+                "scheduled daily briefing fire=\(fireDate, privacy: .public) hour=\(preferences.briefingHour, privacy: .public) minute=\(preferences.briefingMinute, privacy: .public)"
             )
         } catch {
             Log.notifications.error(
@@ -113,7 +153,7 @@ final class DailyBriefingScheduler {
         }
     }
 
-    private func fetchMetricSnapshots(in context: ModelContext) -> [DailyMetricSnapshot] {
+    private static func fetchMetricSnapshots(in context: ModelContext) -> [DailyMetricSnapshot] {
         let descriptor = FetchDescriptor<DailyMetric>(
             sortBy: [SortDescriptor(\.date, order: .forward)]
         )
@@ -121,7 +161,7 @@ final class DailyBriefingScheduler {
         return rows.map { DailyMetricSnapshot(metric: $0) }
     }
 
-    private func fetchPriorityInsightLine(in context: ModelContext) -> DailyBriefingInsightLine? {
+    private static func fetchPriorityInsightLine(in context: ModelContext) -> DailyBriefingInsightLine? {
         let descriptor = FetchDescriptor<Insight>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )

@@ -29,10 +29,6 @@ final class WatchLiveWorkoutSessionManager: NSObject {
         super.init()
     }
 
-    func prepareOnLaunch() async {
-        _ = await WatchHealthKitAuthorization.requestWorkoutAccessIfNeeded()
-    }
-
     func handleRemoteStart(configuration: HKWorkoutConfiguration, sessionKey: String?) async {
         if let sessionKey {
             self.sessionKey = sessionKey
@@ -60,6 +56,11 @@ final class WatchLiveWorkoutSessionManager: NSObject {
     }
 
     private func start(configuration: HKWorkoutConfiguration) async {
+        guard WatchHealthKitAuthorization.isConfiguredForHealthKit else {
+            statusMessage = "Health access not set up on watch"
+            logger.error("watch workout session skipped missing HealthKit Info.plist keys or capability")
+            return
+        }
         guard HKHealthStore.isHealthDataAvailable() else {
             statusMessage = "Health data unavailable"
             logger.info("watch workout session skipped HealthKit unavailable")

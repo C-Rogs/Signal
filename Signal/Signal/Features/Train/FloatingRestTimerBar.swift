@@ -3,12 +3,21 @@ import SwiftUI
 struct FloatingRestTimerBar: View {
     let exerciseTitle: String
     let remainingSeconds: Int
+    var autoregulationNotice: String?
     let onSkip: () -> Void
     let onSubtract15: () -> Void
     let onAdd15: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
+            if let autoregulationNotice {
+                Text(autoregulationNotice)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color("Warning"))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("dynamicRestNotice")
+            }
+            HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Rest")
                     .font(.caption2.weight(.semibold))
@@ -26,6 +35,7 @@ struct FloatingRestTimerBar: View {
             restControl("Skip", action: onSkip)
             restControl("-15s", action: onSubtract15)
             restControl("+15s", action: onAdd15)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

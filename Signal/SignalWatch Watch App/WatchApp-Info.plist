@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Signal reads your heart rate during Train workouts on Apple Watch.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Signal runs a workout session on your watch while you train so heart rate can stream to your iPhone.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>workout-processing</string>
+	</array>
+</dict>
+</plist>

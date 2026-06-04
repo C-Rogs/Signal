@@ -208,6 +208,7 @@ final class HealthKitManager {
                 userInfo: userInfo
             )
             await DerivedMetricsService.shared.invalidateCache()
+            await DailyBriefingScheduler.shared.refreshSchedule(in: ModelContext(modelContainer))
             Log.sync.info(
                 "sync finished trigger=\(trigger, privacy: .public) noOp=\(outcome.noOp, privacy: .public) elapsedSec=\(Date().timeIntervalSince(started), format: .fixed(precision: 2), privacy: .public)"
             )
