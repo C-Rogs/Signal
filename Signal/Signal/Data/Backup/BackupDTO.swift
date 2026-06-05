@@ -84,6 +84,8 @@ struct BackupSetEntry: Codable, Sendable, Equatable {
     var distanceKm: Double?
     var durationSeconds: Int?
     var rpe: Double?
+    var prescriptionNote: String?
+    var restDurationSeconds: Int?
     var isCompleted: Bool
     var hasBeenEdited: Bool
     var startedAt: Date?

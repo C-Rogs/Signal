@@ -12,6 +12,30 @@ struct SetFieldCommit: Sendable {
     var rpe: Double?
 }
 
+struct ParsedPlanStartRequest {
+    let title: String
+    let exercises: [ParsedPlanExercise]
+
+    struct ParsedPlanExercise {
+        let exerciseTitle: String
+        let catalogEntry: ExerciseCatalog?
+        let sets: [ParsedWorkoutSet]
+        let restDurationSeconds: Int?
+
+        init(
+            exerciseTitle: String,
+            catalogEntry: ExerciseCatalog?,
+            sets: [ParsedWorkoutSet],
+            restDurationSeconds: Int? = nil
+        ) {
+            self.exerciseTitle = exerciseTitle
+            self.catalogEntry = catalogEntry
+            self.sets = sets
+            self.restDurationSeconds = restDurationSeconds
+        }
+    }
+}
+
 @MainActor
 final class LiveWorkoutStore {
     private let context: ModelContext
@@ -67,7 +91,7 @@ final class LiveWorkoutStore {
         for (index, slot) in slots.enumerated() {
             let catalog = slot.catalogEntry
             let title = catalog?.canonicalName ?? slot.exerciseTitleFallback ?? "Exercise"
-            try addExercise(
+            _ = try addExercise(
                 to: session,
                 catalogEntry: catalog,
                 exerciseTitle: title,
@@ -78,17 +102,66 @@ final class LiveWorkoutStore {
         return session
     }
 
+    @discardableResult
+    func start(fromParsedPlan request: ParsedPlanStartRequest) throws -> WorkoutSession {
+        if let existing = try activeSession() {
+            return existing
+        }
+        let session = WorkoutSession(
+            title: request.title,
+            startTime: .now,
+            endTime: nil,
+            date: Calendar.current.startOfDay(for: .now),
+            source: WorkoutSessionSource.live
+        )
+        context.insert(session)
+
+        for (index, exercise) in request.exercises.enumerated() {
+            let presetSets = exercise.sets.enumerated().map { offset, set in
+                SetAutofillTemplate(
+                    setIndex: offset,
+                    setType: set.isWarmup
+                        ? WorkoutSetType.warmup.storageValue
+                        : WorkoutSetType.normal.storageValue,
+                    weightKg: set.weightKg,
+                    reps: set.reps,
+                    distanceKm: nil,
+                    durationSeconds: nil,
+                    rpe: set.rpe,
+                    prescriptionNote: set.prescriptionNote,
+                    restDurationSeconds: set.restDurationSeconds
+                )
+            }
+            _ = try addExercise(
+                to: session,
+                catalogEntry: exercise.catalogEntry,
+                exerciseTitle: exercise.exerciseTitle,
+                order: index,
+                presetSets: presetSets,
+                restDurationSeconds: exercise.restDurationSeconds
+            )
+        }
+        try save("startParsedPlan")
+        Log.workout.info(
+            "started workout from parsed plan exercises=\(request.exercises.count, privacy: .public) title=\(request.title, privacy: .public)"
+        )
+        return session
+    }
+
     func addExercise(
         to session: WorkoutSession,
         catalogEntry: ExerciseCatalog?,
         exerciseTitle: String,
-        order: Int? = nil
+        order: Int? = nil,
+        presetSets: [SetAutofillTemplate]? = nil,
+        restDurationSeconds: Int? = nil
     ) throws -> WorkoutExercise {
         let nextOrder = order ?? (session.exercises.map(\.order).max() ?? -1) + 1
         let exercise = WorkoutExercise(
             exerciseTitle: exerciseTitle,
             order: nextOrder,
-            catalogEntry: catalogEntry
+            catalogEntry: catalogEntry,
+            restDurationSeconds: restDurationSeconds ?? 90
         )
         if let catalogEntry {
             let catalog = try context.fetch(FetchDescriptor<ExerciseCatalog>())
@@ -99,12 +172,17 @@ final class LiveWorkoutStore {
         session.exercises.append(exercise)
 
         let mode = ExerciseLoggingMode.from(catalogEntry: catalogEntry)
-        let templates = try LastSessionAutofill.templates(
-            catalogEntry: catalogEntry,
-            exerciseTitle: exerciseTitle,
-            mode: mode,
-            in: context
-        )
+        let templates: [SetAutofillTemplate]
+        if let presetSets, !presetSets.isEmpty {
+            templates = presetSets
+        } else {
+            templates = try LastSessionAutofill.templates(
+                catalogEntry: catalogEntry,
+                exerciseTitle: exerciseTitle,
+                mode: mode,
+                in: context
+            )
+        }
         for template in templates {
             let set = SetEntry(
                 setIndex: template.setIndex,
@@ -114,6 +192,8 @@ final class LiveWorkoutStore {
                 distanceKm: template.distanceKm,
                 durationSeconds: template.durationSeconds,
                 rpe: template.rpe,
+                prescriptionNote: template.prescriptionNote,
+                restDurationSeconds: template.restDurationSeconds,
                 isCompleted: false,
                 hasBeenEdited: false
             )
@@ -127,14 +207,66 @@ final class LiveWorkoutStore {
     func replaceExercise(
         _ exercise: WorkoutExercise,
         catalogEntry: ExerciseCatalog,
-        exerciseTitle: String
+        exerciseTitle: String,
+        recoveryScore: RecoveryScore? = nil,
+        personalReadiness: PersonalReadinessProfile? = nil,
+        deloadActive: Bool = false
+    ) throws {
+        let plan = try ExerciseSwapLoadPrescription.build(
+            source: exercise,
+            substitute: catalogEntry,
+            recoveryScore: recoveryScore,
+            personalReadiness: personalReadiness,
+            deloadActive: deloadActive,
+            in: context
+        )
+        try swapExercise(
+            exercise,
+            catalogEntry: catalogEntry,
+            exerciseTitle: exerciseTitle,
+            plan: plan
+        )
+    }
+
+    func swapExercise(
+        _ exercise: WorkoutExercise,
+        catalogEntry: ExerciseCatalog,
+        exerciseTitle: String,
+        plan: SwapSetPlan
     ) throws {
         exercise.catalogEntry = catalogEntry
         exercise.exerciseTitle = exerciseTitle
         let catalog = try context.fetch(FetchDescriptor<ExerciseCatalog>())
         let index = ExerciseCatalogMatcher.buildAliasIndex(catalog: catalog)
         CatalogLinkService.linkExercise(exercise, catalog: catalog, aliasIndex: index)
-        try save("replaceExercise")
+
+        let uncompleted = exercise.sets.filter { !$0.isCompleted }
+        for set in uncompleted {
+            exercise.sets.removeAll { $0.persistentModelID == set.persistentModelID }
+            context.delete(set)
+        }
+
+        let baseIndex = (exercise.sets.map(\.setIndex).max() ?? -1) + 1
+        for (offset, template) in plan.sets.enumerated() {
+            let set = SetEntry(
+                setIndex: baseIndex + offset,
+                setType: template.setType,
+                weightKg: template.weightKg,
+                reps: template.reps,
+                distanceKm: template.distanceKm,
+                durationSeconds: template.durationSeconds,
+                rpe: nil,
+                isCompleted: false,
+                hasBeenEdited: false
+            )
+            set.exercise = exercise
+            exercise.sets.append(set)
+        }
+        reindexSets(in: exercise)
+        try save("swapExercise")
+        Log.workout.info(
+            "swapped exercise to=\(exerciseTitle, privacy: .public) sets=\(plan.sets.count, privacy: .public)"
+        )
     }
 
     func reorderExercises(in session: WorkoutSession, fromOffsets: IndexSet, toOffset: Int) throws {
@@ -275,7 +407,8 @@ final class LiveWorkoutStore {
             set.completedAt = now
             startNextSetAfterCompleting(set, in: exercise, at: now)
             if exercise.autoStartRestOnSetComplete {
-                exercise.restTimerEndsAt = now.addingTimeInterval(TimeInterval(exercise.restDurationSeconds))
+                let restSeconds = set.restDurationSeconds ?? exercise.restDurationSeconds
+                exercise.restTimerEndsAt = now.addingTimeInterval(TimeInterval(restSeconds))
             }
         } else {
             set.completedAt = nil

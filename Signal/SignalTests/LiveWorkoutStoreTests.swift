@@ -209,6 +209,103 @@ final class LiveWorkoutStoreTests: XCTestCase {
         XCTAssertNil(restoredFirst?.completedAt)
     }
 
+    func testStartFromParsedPlanPrefillsSetsWithoutAutofill() throws {
+        let priorSession = WorkoutSession(
+            title: "Prior",
+            startTime: .now,
+            endTime: .now,
+            date: Calendar.current.startOfDay(for: .now),
+            source: WorkoutSessionSource.live
+        )
+        context.insert(priorSession)
+        let priorExercise = WorkoutExercise(exerciseTitle: "Wide-Grip Lat Pulldown", order: 0)
+        priorExercise.session = priorSession
+        priorSession.exercises.append(priorExercise)
+        let priorSet = SetEntry(
+            setIndex: 0,
+            setType: WorkoutSetType.normal.storageValue,
+            weightKg: 999,
+            reps: 99
+        )
+        priorSet.exercise = priorExercise
+        priorExercise.sets.append(priorSet)
+        try context.save()
+
+        let request = ParsedPlanStartRequest(
+            title: "Imported Pump",
+            exercises: [
+                ParsedPlanStartRequest.ParsedPlanExercise(
+                    exerciseTitle: "Wide-Grip Lat Pulldown (Upper Lat Flush)",
+                    catalogEntry: nil,
+                    sets: [
+                        ParsedWorkoutSet(
+                            setIndex: 1,
+                            weightKg: 45,
+                            reps: 12,
+                            rpe: nil,
+                            isWarmup: true,
+                            prescriptionNote: nil
+                        ),
+                        ParsedWorkoutSet(
+                            setIndex: 2,
+                            weightKg: 54,
+                            reps: 10,
+                            rpe: 7,
+                            isWarmup: false,
+                            prescriptionNote: "Stop 2 reps short"
+                        ),
+                    ]
+                ),
+            ]
+        )
+
+        let session = try store.start(fromParsedPlan: request)
+        let exercise = try XCTUnwrap(session.exercises.first)
+        let sets = exercise.sets.sorted { $0.setIndex < $1.setIndex }
+        XCTAssertEqual(sets.count, 2)
+        XCTAssertEqual(WorkoutSetType(storageValue: sets[0].setType), .warmup)
+        XCTAssertEqual(sets[0].weightKg, 45)
+        XCTAssertEqual(sets[1].weightKg, 54)
+        XCTAssertEqual(sets[1].rpe, 7)
+        XCTAssertEqual(sets[1].prescriptionNote, "Stop 2 reps short")
+        XCTAssertNotEqual(sets[1].weightKg, 999)
+    }
+
+    func testStartFromParsedPlanAppliesRestDuration() throws {
+        let request = ParsedPlanStartRequest(
+            title: "Rest Import",
+            exercises: [
+                ParsedPlanStartRequest.ParsedPlanExercise(
+                    exerciseTitle: "Squat",
+                    catalogEntry: nil,
+                    sets: [
+                        ParsedWorkoutSet(
+                            setIndex: 1,
+                            weightKg: 100,
+                            reps: 5,
+                            rpe: nil,
+                            isWarmup: false,
+                            prescriptionNote: nil,
+                            restDurationSeconds: 60
+                        ),
+                    ],
+                    restDurationSeconds: 120
+                ),
+            ]
+        )
+
+        let session = try store.start(fromParsedPlan: request)
+        let exercise = try XCTUnwrap(session.exercises.first)
+        XCTAssertEqual(exercise.restDurationSeconds, 120)
+        let set = try XCTUnwrap(exercise.sets.first)
+        XCTAssertEqual(set.restDurationSeconds, 60)
+
+        try store.toggleSetComplete(set, exercise: exercise, completed: true)
+        let endsAt = try XCTUnwrap(exercise.restTimerEndsAt)
+        let expected = Date.now.addingTimeInterval(60)
+        XCTAssertEqual(endsAt.timeIntervalSince1970, expected.timeIntervalSince1970, accuracy: 2)
+    }
+
     func testCardioSetFields() throws {
         let session = try store.startEmpty()
         let catalog = ExerciseCatalog(

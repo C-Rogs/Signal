@@ -9,6 +9,30 @@ struct SetAutofillTemplate: Sendable, Equatable {
     let distanceKm: Double?
     let durationSeconds: Int?
     let rpe: Double?
+    let prescriptionNote: String?
+    let restDurationSeconds: Int?
+
+    init(
+        setIndex: Int,
+        setType: String,
+        weightKg: Double?,
+        reps: Int?,
+        distanceKm: Double?,
+        durationSeconds: Int?,
+        rpe: Double?,
+        prescriptionNote: String? = nil,
+        restDurationSeconds: Int? = nil
+    ) {
+        self.setIndex = setIndex
+        self.setType = setType
+        self.weightKg = weightKg
+        self.reps = reps
+        self.distanceKm = distanceKm
+        self.durationSeconds = durationSeconds
+        self.rpe = rpe
+        self.prescriptionNote = prescriptionNote
+        self.restDurationSeconds = restDurationSeconds
+    }
 }
 
 @MainActor

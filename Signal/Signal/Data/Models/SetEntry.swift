@@ -11,6 +11,8 @@ final class SetEntry {
     var distanceKm: Double?
     var durationSeconds: Int?
     var rpe: Double?
+    var prescriptionNote: String?
+    var restDurationSeconds: Int?
     var isCompleted: Bool = false
     var hasBeenEdited: Bool = false
     var startedAt: Date?
@@ -27,6 +29,8 @@ final class SetEntry {
         distanceKm: Double? = nil,
         durationSeconds: Int? = nil,
         rpe: Double? = nil,
+        prescriptionNote: String? = nil,
+        restDurationSeconds: Int? = nil,
         isCompleted: Bool = false,
         hasBeenEdited: Bool = false,
         startedAt: Date? = nil,
@@ -40,6 +44,8 @@ final class SetEntry {
         self.distanceKm = distanceKm
         self.durationSeconds = durationSeconds
         self.rpe = rpe
+        self.prescriptionNote = prescriptionNote
+        self.restDurationSeconds = restDurationSeconds
         self.isCompleted = isCompleted
         self.hasBeenEdited = hasBeenEdited
         self.startedAt = startedAt

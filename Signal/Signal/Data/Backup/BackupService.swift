@@ -181,6 +181,8 @@ actor BackupService {
                     distanceKm: setPayload.distanceKm,
                     durationSeconds: setPayload.durationSeconds,
                     rpe: setPayload.rpe,
+                    prescriptionNote: setPayload.prescriptionNote,
+                    restDurationSeconds: setPayload.restDurationSeconds,
                     isCompleted: setPayload.isCompleted,
                     hasBeenEdited: setPayload.hasBeenEdited,
                     startedAt: setPayload.startedAt,
@@ -329,6 +331,8 @@ private extension BackupSetEntry {
         distanceKm = set.distanceKm
         durationSeconds = set.durationSeconds
         rpe = set.rpe
+        prescriptionNote = set.prescriptionNote
+        restDurationSeconds = set.restDurationSeconds
         isCompleted = set.isCompleted
         hasBeenEdited = set.hasBeenEdited
         startedAt = set.startedAt
