@@ -1,4 +1,3 @@
-import Combine
 import os
 import SwiftData
 import SwiftUI
@@ -20,13 +19,14 @@ struct ActiveWorkoutView: View {
     @State private var showFinishEmptyConfirm = false
     @State private var showAddExercise = false
     @State private var errorMessage: String?
-    @State private var tick = Date()
-    @State private var dynamicRestState = DynamicRestState()
-    @State private var dynamicRestNotice: String?
     @State private var sessionRecoveryScore: RecoveryScore?
     @State private var sessionPersonalReadiness: PersonalReadinessProfile?
     @State private var deloadChipTitle: String?
-    @State private var workoutSurfaceID = UUID()
+    @State private var hintCache = ExerciseSessionHintCache()
+    @State private var volumeKg = 0.0
+    @State private var completedSetCount = 0
+    @State private var restTimerCoordinator = ActiveWorkoutRestTimerCoordinator()
+    @State private var exerciseDetailRoute: ExerciseDetailRoute?
 
     private var store: LiveWorkoutStore {
         LiveWorkoutStore(context: modelContext)
@@ -43,16 +43,14 @@ struct ActiveWorkoutView: View {
     var body: some View {
         workoutList
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if let activeRest = activeRestTimer {
-                    FloatingRestTimerBar(
-                        exerciseTitle: activeRest.exercise.exerciseTitle,
-                        remainingSeconds: activeRest.remaining,
-                        autoregulationNotice: dynamicRestNotice,
-                        onSkip: { stopRest(for: activeRest.exercise) },
-                        onSubtract15: { adjustRest(for: activeRest.exercise, by: -15) },
-                        onAdd15: { adjustRest(for: activeRest.exercise, by: 15) }
-                    )
-                }
+                ActiveWorkoutRestTimerLayer(
+                    coordinator: restTimerCoordinator,
+                    exercises: orderedExercises,
+                    scenePhase: scenePhase,
+                    watchBridge: watchBridge,
+                    store: store,
+                    onCoordinatorRefresh: { coordinator.refresh() }
+                )
             }
             .background(screenBackground.ignoresSafeArea())
             .navigationTitle(session.title)
@@ -68,11 +66,15 @@ struct ActiveWorkoutView: View {
                 onFinish: finishWorkout
             ))
             .sheet(isPresented: $showAddExercise) { addExerciseSheet }
-            .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { date in
-                tick = date
-                applyDynamicRestExtension(at: date)
+            .sheet(item: $exerciseDetailRoute) { route in
+                NavigationStack {
+                    ExerciseDetailView(route: route)
+                }
             }
             .onChange(of: scenePhase) { _, phase in
+                TrainWorkoutDiagnostics.record(
+                    "activeWorkout scenePhase=\(phase) exercises=\(orderedExercises.count) sets=\(completedSetCount)"
+                )
                 Log.ui.info(
                     "active workout scenePhase=\(String(describing: phase), privacy: .public) exercises=\(orderedExercises.count, privacy: .public)"
                 )
@@ -81,16 +83,17 @@ struct ActiveWorkoutView: View {
                 }
                 if phase == .active {
                     reloadSessionRecoveryScore()
-                    workoutSurfaceID = UUID()
-                }
-                if TrainScenePhaseKeyboardPolicy.shouldReleaseSetFieldFocus(for: phase) {
-                    TrainKeyboard.dismiss()
+                    refreshVolumeStats()
                 }
             }
             .onAppear {
-                coordinator.isViewingActiveWorkout = true
                 reloadSessionRecoveryScore()
+                refreshWorkoutHints()
+                refreshVolumeStats()
                 watchBridge.prepareLiveSession(for: session, modelContext: modelContext)
+                TrainWorkoutDiagnostics.record(
+                    "activeWorkout appear exercises=\(orderedExercises.count) session=\(session.persistentModelID)"
+                )
                 Log.ui.info(
                     "active workout appeared exercises=\(orderedExercises.count, privacy: .public) sessionID=\(String(describing: session.persistentModelID), privacy: .public)"
                 )
@@ -99,7 +102,7 @@ struct ActiveWorkoutView: View {
                 }
             }
             .onDisappear {
-                coordinator.isViewingActiveWorkout = false
+                TrainWorkoutDiagnostics.record("activeWorkout disappear exercises=\(orderedExercises.count)")
                 Log.ui.info("active workout disappeared")
             }
     }
@@ -123,7 +126,7 @@ struct ActiveWorkoutView: View {
             : nil
         let context = RecoveryBandContext(score: bundle.score, profile: bundle.profile)
         let chip = LiveLoadCueEvaluator.sessionRecoveryChipTitle(for: context) ?? "none"
-        Log.workout.info(
+        Log.workout.debug(
             "workout session recovery score=\(bundle.score.value, format: .fixed(precision: 0), privacy: .public) chip=\(chip, privacy: .public)"
         )
     }
@@ -142,18 +145,10 @@ struct ActiveWorkoutView: View {
         )
     }
 
-    private var liveSummary: WorkoutLiveSummary {
-        _ = tick
-        return WorkoutLiveSummary.compute(
-            for: session,
-            heartRateBPM: watchBridge.latestHeartRateBPM
-        )
-    }
-
     private var workoutList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 16) {
+                VStack(spacing: 16) {
                     if let errorMessage {
                         Text(errorMessage)
                             .foregroundStyle(.red)
@@ -162,16 +157,17 @@ struct ActiveWorkoutView: View {
                     }
 
                     WorkoutLiveSummaryBar(
-                        summary: liveSummary,
+                        sessionStartTime: session.startTime,
+                        volumeKg: volumeKg,
+                        completedSetCount: completedSetCount,
                         formatter: formatter,
+                        watchBridge: watchBridge,
                         recoveryChipTitle: lowRecoveryChipTitle,
-                        deloadChipTitle: deloadChipTitle,
-                        heartRateUI: watchBridge.heartRateUIState(now: tick)
+                        deloadChipTitle: deloadChipTitle
                     )
-                    .padding(.vertical, 8)
+                    .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color("Surface"))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .trainSurfaceCard()
 
                     ForEach(orderedExercises, id: \.persistentModelID) { exercise in
                         WorkoutExerciseSectionView(
@@ -179,7 +175,8 @@ struct ActiveWorkoutView: View {
                             session: session,
                             mode: ExerciseLoggingMode.from(catalogEntry: exercise.catalogEntry),
                             formatter: formatter,
-                            lastHint: lastHint(for: exercise),
+                            lastHint: hintCache.lastHint(for: exercise),
+                            hintCache: hintCache,
                             recoveryScore: sessionRecoveryScore ?? defaultSessionRecoveryScore,
                             personalReadiness: sessionPersonalReadiness,
                             store: store,
@@ -191,8 +188,13 @@ struct ActiveWorkoutView: View {
                             },
                             onNeedsRefresh: {
                                 coordinator.refresh()
-                                tick = Date()
-                                reloadSessionRecoveryScore()
+                                refreshWorkoutHints()
+                                refreshVolumeStats()
+                            },
+                            onRestTimerStarted: restTimerCoordinator.acknowledgeRestTimerStarted,
+                            onOpenExerciseDetail: { route in
+                                TrainWorkoutDiagnostics.record("openExerciseDetail title=\(route.exerciseTitle)")
+                                exerciseDetailRoute = route
                             }
                         )
                         .id(exercise.persistentModelID)
@@ -201,16 +203,22 @@ struct ActiveWorkoutView: View {
                     Button {
                         showAddExercise = true
                     } label: {
-                        Label("Add exercise", systemImage: "plus")
+                        Label("Add Exercise", systemImage: "plus")
+                            .font(.body.weight(.medium))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
                     }
+                    .buttonStyle(.bordered)
+                    .tint(Color("Primary"))
                     .accessibilityIdentifier("addExerciseButton")
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, TrainChrome.horizontalPadding)
                 .padding(.vertical, 8)
+                .padding(.bottom, restTimerCoordinator.showsRestBar ? 4 : 8)
+                .frame(maxWidth: .infinity, alignment: .top)
             }
-            .id(workoutSurfaceID)
             .scrollDismissesKeyboard(.interactively)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onAppear {
                 if let target = coordinator.consumeScrollTarget() {
                     proxy.scrollTo(target, anchor: .top)
@@ -244,6 +252,7 @@ struct ActiveWorkoutView: View {
                     attemptFinishWorkout()
                 }
             }
+            .fontWeight(.semibold)
             .accessibilityIdentifier("finishWorkoutButton")
         }
     }
@@ -256,90 +265,22 @@ struct ActiveWorkoutView: View {
                 exerciseTitle: catalog.canonicalName
             )
             coordinator.refresh()
+            refreshWorkoutHints()
         }
     }
 
     private var screenBackground: Color {
-        colorScheme == .dark ? .black : Color("Background")
+        TrainChrome.screenBackground(colorScheme: colorScheme)
     }
 
-    private var activeRestTimer: (exercise: WorkoutExercise, remaining: Int)? {
-        _ = tick
-        let now = Date()
-        var best: (WorkoutExercise, Date)?
-        for exercise in orderedExercises {
-            guard let endsAt = exercise.restTimerEndsAt, endsAt > now else { continue }
-            if let current = best {
-                if endsAt > current.1 {
-                    best = (exercise, endsAt)
-                }
-            } else {
-                best = (exercise, endsAt)
-            }
-        }
-        guard let best else { return nil }
-        return (best.0, max(0, Int(best.1.timeIntervalSince(now))))
+    private func refreshWorkoutHints() {
+        hintCache.warm(exercises: orderedExercises, formatter: formatter, in: modelContext)
     }
 
-    private func stopRest(for exercise: WorkoutExercise) {
-        try? store.stopRestTimer(for: exercise)
-        coordinator.refresh()
-        tick = Date()
-    }
-
-    private func adjustRest(for exercise: WorkoutExercise, by seconds: Int) {
-        try? store.adjustRestTimer(for: exercise, by: seconds)
-        coordinator.refresh()
-        tick = Date()
-    }
-
-    private func applyDynamicRestExtension(at now: Date) {
-        guard let activeRest = activeRestTimer,
-              let restEndsAt = activeRest.exercise.restTimerEndsAt
-        else {
-            if dynamicRestNotice != nil {
-                dynamicRestNotice = nil
-            }
-            if dynamicRestState.trackedExerciseID != nil {
-                dynamicRestState = DynamicRestState()
-            }
-            return
-        }
-
-        let exerciseID = String(describing: activeRest.exercise.persistentModelID)
-        let input = DynamicRestTimerEvaluator.Input(
-            exerciseID: exerciseID,
-            heartRateBPM: watchBridge.latestHeartRateBPM,
-            heartRateSampledAt: watchBridge.lastHeartRateAt,
-            now: now,
-            restEndsAt: restEndsAt,
-            state: dynamicRestState
-        )
-        guard let decision = DynamicRestTimerEvaluator.evaluate(input) else { return }
-
-        dynamicRestState = decision.newState
-        dynamicRestNotice = decision.notice
-        do {
-            try store.adjustRestTimer(for: activeRest.exercise, by: decision.extensionSeconds)
-            coordinator.refresh()
-            Log.workout.info(
-                "dynamic rest extended seconds=\(decision.extensionSeconds, privacy: .public) bpm=\(watchBridge.latestHeartRateBPM ?? 0, privacy: .public) extensions=\(decision.newState.extensionCount, privacy: .public)"
-            )
-        } catch {
-            Log.workout.error(
-                "dynamic rest extend failed: \(String(describing: error), privacy: .public)"
-            )
-        }
-    }
-
-    private func lastHint(for exercise: WorkoutExercise) -> String? {
-        try? LastSessionAutofill.lastSessionHint(
-            catalogEntry: exercise.catalogEntry,
-            exerciseTitle: exercise.exerciseTitle,
-            mode: ExerciseLoggingMode.from(catalogEntry: exercise.catalogEntry),
-            in: modelContext,
-            formatter: formatter
-        )
+    private func refreshVolumeStats() {
+        let stats = WorkoutLiveSummary.volumeStats(for: session)
+        volumeKg = stats.volumeKg
+        completedSetCount = stats.completedSetCount
     }
 
     private func attemptFinishWorkout() {
@@ -353,12 +294,14 @@ struct ActiveWorkoutView: View {
     }
 
     private func finishWorkout() {
+        restTimerCoordinator.markUserSkippedFeedback()
+        TrainFeedback.shared.play(.workoutFinish)
         watchBridge.endWatchWorkout()
         do {
             try store.finishSession(session)
             ExerciseProgressStore.recordFinishedSession(session, in: modelContext)
+            hintCache.invalidate()
             coordinator.presentWellness(for: session)
-            coordinator.isViewingActiveWorkout = false
             coordinator.refresh()
             coordinator.resetTrainNavigation()
             dismiss()
@@ -368,9 +311,11 @@ struct ActiveWorkoutView: View {
     }
 
     private func discardWorkout() {
+        restTimerCoordinator.markUserSkippedFeedback()
         watchBridge.endWatchWorkout()
         do {
             try store.discardSession(session)
+            hintCache.invalidate()
             coordinator.resetTrainNavigation()
             coordinator.refresh()
             dismiss()

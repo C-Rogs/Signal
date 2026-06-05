@@ -175,6 +175,34 @@ final class CoachContextBuilderTests: XCTestCase {
     }
 
     @MainActor
+    func testNutritionQueryShowsProteinStatusEvenOnTarget() async throws {
+        let container = try SignalModelContainer.make(inMemoryOnly: true)
+        let modelContext = ModelContext(container)
+        let profile = UserProfile()
+        profile.bodyweightKg = 80
+        modelContext.insert(profile)
+        let calendar = SchedulingCalendar.make()
+        let today = calendar.startOfDay(for: Date())
+        modelContext.insert(DailyNutrition(date: today, proteinG: 170, source: "test"))
+        try modelContext.save()
+
+        EmbeddingBackend.useDeterministicTestEmbedding = true
+        defer { EmbeddingBackend.useDeterministicTestEmbedding = false }
+        await DerivedMetricsService.shared.invalidateCache()
+
+        let built = try await CoachContextBuilder().buildContext(
+            for: "Did I hit my protein target today?",
+            modelContainer: container
+        )
+        XCTAssertTrue(built.derivedMetricsSummary.contains("Protein:"))
+        XCTAssertTrue(
+            built.derivedMetricsSummary.contains("on track")
+                || built.derivedMetricsSummary.contains("below target")
+        )
+        XCTAssertFalse(built.derivedMetricsSummary.contains("ACWR"))
+    }
+
+    @MainActor
     func testActiveInsightsCappedAtThree() async throws {
         let container = try SignalModelContainer.make(inMemoryOnly: true)
         let modelContext = ModelContext(container)

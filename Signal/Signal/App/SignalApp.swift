@@ -12,6 +12,7 @@ struct SignalApp: App {
     @State private var trainPreferences = TrainPreferences.shared
     @State private var notificationPreferences = NotificationPreferences.shared
     @State private var recoveryPreferences = RecoveryPreferences.shared
+    @State private var coachPreferences = CoachPreferences.shared
     @State private var liveWorkoutCoordinator = LiveWorkoutCoordinator()
     private let liveWorkoutWatchBridge = LiveWorkoutWatchBridge.shared
 
@@ -47,6 +48,7 @@ struct SignalApp: App {
                 .environment(trainPreferences)
                 .environment(notificationPreferences)
                 .environment(recoveryPreferences)
+                .environment(coachPreferences)
                 .environment(liveWorkoutCoordinator)
                 .environment(liveWorkoutWatchBridge)
         }

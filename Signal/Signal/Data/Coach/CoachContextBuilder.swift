@@ -4,19 +4,39 @@ import os
 
 actor CoachContextBuilder {
     func buildContext(for query: String, modelContainer: ModelContainer) async throws -> CoachContext {
-        let route = CoachQueryRouter.classify(query)
+        let flags = CoachFeatureFlags.current()
+        let classification = CoachQueryRouter.classifyDetailed(query)
+        let effectiveClassification = Self.effectiveClassification(classification, flags: flags)
         let referenceDate = Date()
         let calendar = SchedulingCalendar.make()
-        let metricsSnapshot = await DerivedMetricsService.shared.snapshot(modelContainer: modelContainer)
+
+        async let metricsSnapshotTask = DerivedMetricsService.shared.snapshot(modelContainer: modelContainer)
+        let metricsSnapshot = await metricsSnapshotTask
         let proteinBelowTarget = Self.isProteinBelowTarget(snapshot: metricsSnapshot)
-        let scope = CoachContextScope.make(
-            route: route,
-            query: query,
-            proteinBelowTarget: proteinBelowTarget
-        )
+        let scope = flags.smartContextEnabled
+            ? CoachContextScope.make(
+                classification: effectiveClassification,
+                query: query,
+                proteinBelowTarget: proteinBelowTarget
+            )
+            : CoachContextScope.legacy(query: query)
 
         let ragSummaries: [String]
-        if scope.ragK > 0 {
+        let calendarSummary: String
+
+        switch (scope.ragK > 0, scope.includeCalendar) {
+        case (true, true):
+            async let ragTask = HealthVectorRetriever.retrieve(
+                query: query,
+                k: scope.ragK,
+                modelContainer: modelContainer,
+                referenceDate: referenceDate,
+                calendar: calendar
+            )
+            async let calendarTask = CalendarContextBuilder().buildSummary(referenceDate: referenceDate)
+            ragSummaries = try await ragTask
+            calendarSummary = await calendarTask ?? ""
+        case (true, false):
             ragSummaries = try await HealthVectorRetriever.retrieve(
                 query: query,
                 k: scope.ragK,
@@ -24,27 +44,30 @@ actor CoachContextBuilder {
                 referenceDate: referenceDate,
                 calendar: calendar
             )
-        } else {
+            calendarSummary = ""
+        case (false, true):
             ragSummaries = []
-        }
-
-        let calendarSummary: String
-        if scope.includeCalendar {
             calendarSummary = await CalendarContextBuilder().buildSummary(referenceDate: referenceDate) ?? ""
-        } else {
+        case (false, false):
+            ragSummaries = []
             calendarSummary = ""
         }
 
         return await MainActor.run {
             let userSummary = Self.buildUserSummary(modelContainer: modelContainer)
             let activeInsights = scope.includeActiveInsights
-                ? Self.fetchActiveInsights(modelContainer: modelContainer)
+                ? Self.fetchActiveInsights(
+                    modelContainer: modelContainer,
+                    route: scope.route,
+                    filterByRoute: flags.smartContextEnabled && scope.filtersInsightsByRoute
+                )
                 : []
             let derivedMetricsSummary = Self.formatDerivedMetrics(
                 snapshot: metricsSnapshot,
                 referenceDate: referenceDate,
                 calendar: calendar,
-                include: scope.metricsParts
+                include: scope.metricsParts,
+                proteinPresentation: scope.proteinPresentation
             )
             let personalReadinessSummary = scope.includePersonalReadiness
                 ? Self.formatPersonalReadiness(modelContainer: modelContainer)
@@ -54,6 +77,7 @@ actor CoachContextBuilder {
                 : []
 
             var context = CoachContext(
+                route: effectiveClassification.route,
                 userSummary: userSummary,
                 activeInsights: activeInsights,
                 derivedMetricsSummary: derivedMetricsSummary,
@@ -62,13 +86,31 @@ actor CoachContextBuilder {
                 recentWorkouts: recentWorkouts,
                 calendarSummary: calendarSummary
             )
-            context.prepareForModelInput(query: query, route: route)
+            context.prepareForModelInput(query: query, route: effectiveClassification.route)
             let sectionNames = context.activeSectionNames().joined(separator: ",")
+            let compoundSuffix = classification.isCompound && flags.compoundQueriesEnabled
+                ? ",compound=\(classification.runnerUpRoute?.rawValue ?? "none")"
+                : ""
             Log.coach.info(
-                "coach intent=\(route.rawValue, privacy: .public) contextSections=\(sectionNames, privacy: .public) promptChars=\(context.assembledPrompt(query: query).count, privacy: .public)"
+                "coach intent=\(effectiveClassification.route.rawValue, privacy: .public) score=\(classification.topScore, privacy: .public) smartContext=\(flags.smartContextEnabled, privacy: .public) deepReasoning=\(flags.deepReasoningEnabled, privacy: .public)\(compoundSuffix, privacy: .public) contextSections=\(sectionNames, privacy: .public) promptChars=\(context.assembledPrompt(query: query).count, privacy: .public)"
             )
             return context
         }
+    }
+
+    nonisolated private static func effectiveClassification(
+        _ classification: CoachClassification,
+        flags: CoachFeatureFlags
+    ) -> CoachClassification {
+        guard flags.compoundQueriesEnabled else {
+            return CoachClassification(
+                route: classification.route,
+                topScore: classification.topScore,
+                runnerUpRoute: nil,
+                runnerUpScore: 0
+            )
+        }
+        return classification
     }
 
     nonisolated private static func isProteinBelowTarget(snapshot: DerivedMetricsSnapshot) -> Bool {
@@ -88,13 +130,19 @@ actor CoachContextBuilder {
     }
 
     @MainActor
-    private static func fetchActiveInsights(modelContainer: ModelContainer) -> [String] {
+    private static func fetchActiveInsights(
+        modelContainer: ModelContainer,
+        route: CoachQueryRoute,
+        filterByRoute: Bool
+    ) -> [String] {
+        let allowedTypes = filterByRoute ? CoachQueryRouter.insightTypes(for: route) : nil
         let context = ModelContext(modelContainer)
         let now = Date()
         let rows = (try? context.fetch(FetchDescriptor<Insight>())) ?? []
         let active = rows.filter { insight in
             guard !insight.isActioned else { return false }
             guard insight.severity == .alert || insight.severity == .warning else { return false }
+            if let allowedTypes, !allowedTypes.contains(insight.type) { return false }
             if let expires = insight.expiresAt {
                 return expires > now
             }
@@ -116,7 +164,8 @@ actor CoachContextBuilder {
         snapshot: DerivedMetricsSnapshot,
         referenceDate: Date,
         calendar: Calendar,
-        include: DerivedMetricsParts = [.acwr, .volume, .protein, .exertion, .strainDebt, .syncFreshness]
+        include: DerivedMetricsParts = [.acwr, .volume, .protein, .exertion, .strainDebt, .syncFreshness],
+        proteinPresentation: ProteinPresentation = .deficitOnly
     ) -> String {
         var lines: [String] = []
 
@@ -158,17 +207,8 @@ actor CoachContextBuilder {
             }
         }
 
-        if include.contains(.protein),
-           let protein = snapshot.proteinTarget,
-           let actual = protein.actualGrams,
-           actual < protein.targetMinGrams
-        {
-            let minG = Int(protein.targetMinGrams.rounded())
-            let maxG = Int(protein.targetMaxGrams.rounded())
-            let actualRounded = Int(actual.rounded())
-            lines.append(
-                "Protein: \(actualRounded)g today (below target \(minG)-\(maxG)g at \(Int(protein.bodyweightKg))kg)."
-            )
+        if include.contains(.protein) {
+            appendProteinLine(to: &lines, snapshot: snapshot, presentation: proteinPresentation)
         }
 
         if include.contains(.exertion),
@@ -189,6 +229,37 @@ actor CoachContextBuilder {
         }
 
         return lines.joined(separator: " ")
+    }
+
+    @MainActor
+    private static func appendProteinLine(
+        to lines: inout [String],
+        snapshot: DerivedMetricsSnapshot,
+        presentation: ProteinPresentation
+    ) {
+        guard let protein = snapshot.proteinTarget else { return }
+        let minG = Int(protein.targetMinGrams.rounded())
+        let maxG = Int(protein.targetMaxGrams.rounded())
+        let bodyweight = Int(protein.bodyweightKg)
+
+        switch presentation {
+        case .deficitOnly:
+            guard let actual = protein.actualGrams, actual < protein.targetMinGrams else { return }
+            let actualRounded = Int(actual.rounded())
+            lines.append(
+                "Protein: \(actualRounded)g today (below target \(minG)-\(maxG)g at \(bodyweight)kg)."
+            )
+        case .fullStatus:
+            if let actual = protein.actualGrams {
+                let actualRounded = Int(actual.rounded())
+                let status = actual >= protein.targetMinGrams ? "on track" : "below target"
+                lines.append(
+                    "Protein: \(actualRounded)g today (\(status), target \(minG)-\(maxG)g at \(bodyweight)kg)."
+                )
+            } else {
+                lines.append("Protein: no log today (target \(minG)-\(maxG)g at \(bodyweight)kg).")
+            }
+        }
     }
 
     @MainActor

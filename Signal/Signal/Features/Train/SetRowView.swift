@@ -75,10 +75,10 @@ struct SetRowView: View {
             rpePill
             completeButton
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 2)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 4)
         .background(rowBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .opacity(set.hasBeenEdited || set.isCompleted ? 1 : 0.92)
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
             Button(role: .destructive, action: onDelete) {
@@ -109,6 +109,7 @@ struct SetRowView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if TrainScenePhaseKeyboardPolicy.shouldReleaseSetFieldFocus(for: phase) {
+                TrainWorkoutDiagnostics.record("setRow releaseFocus set=\(set.setIndex) phase=\(phase)")
                 commitFields()
                 focusedField = nil
             }
@@ -135,15 +136,16 @@ struct SetRowView: View {
                         Button(type.label) {
                             setType = type
                             commitFields()
+                            TrainFeedback.shared.play(.selection)
                         }
                     }
                 } label: {
                     Text("W")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(Color.orange)
-                        .frame(width: 26, height: 26)
+                        .frame(width: 32, height: 32)
                         .background(Color.orange.opacity(0.15))
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .accessibilityLabel("Warmup set, change type")
             } else {
@@ -152,18 +154,19 @@ struct SetRowView: View {
                         Button(type.label) {
                             setType = type
                             commitFields()
+                            TrainFeedback.shared.play(.selection)
                         }
                     }
                 } label: {
                     Text("\(set.setIndex + 1)")
-                        .font(.caption.monospacedDigit().weight(.semibold))
-                        .frame(width: 26, height: 26)
+                        .font(.body.monospacedDigit().weight(.semibold))
+                        .frame(width: 32, height: 32)
                         .foregroundStyle(Color("TextPrimary"))
                 }
                 .accessibilityLabel("Set \(set.setIndex + 1), type \(setType.label)")
             }
         }
-        .frame(width: 26)
+        .frame(width: 32)
     }
 
     @ViewBuilder
@@ -196,16 +199,16 @@ struct SetRowView: View {
         TextField("0", text: $weightText)
             .keyboardType(.decimalPad)
             .multilineTextAlignment(.trailing)
-            .font(.subheadline.monospacedDigit())
-            .frame(width: 48)
+            .font(.body.monospacedDigit().weight(.medium))
+            .frame(width: 52)
             .focused($focusedField, equals: .weight)
             .accessibilityIdentifier("setWeight-\(set.setIndex)")
             .onSubmit { commitFields() }
         TextField("0", text: $repsText)
             .keyboardType(.numberPad)
             .multilineTextAlignment(.trailing)
-            .font(.subheadline.monospacedDigit())
-            .frame(width: 36)
+            .font(.body.monospacedDigit().weight(.medium))
+            .frame(width: 40)
             .focused($focusedField, equals: .reps)
             .accessibilityIdentifier("setReps-\(set.setIndex)")
             .onSubmit { commitFields() }
@@ -248,14 +251,13 @@ struct SetRowView: View {
                         .foregroundStyle(Color("TextSecondary"))
                 }
             }
-            .frame(minWidth: 40)
+            .frame(minWidth: 44, minHeight: 32)
             .padding(.horizontal, 8)
-            .padding(.vertical, 6)
             .background(pillBackground)
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
-        .frame(width: 44)
+        .frame(width: 48, height: 44)
         .accessibilityIdentifier("setRPE-\(set.setIndex)")
         .accessibilityLabel(loggedRPE.map { "RPE \(WorkoutRPEScale.compactLabel(for: $0)), tap to edit" } ?? "Log RPE")
     }
@@ -275,15 +277,18 @@ struct SetRowView: View {
     private var completeButton: some View {
         Button {
             commitFields()
+            TrainFeedback.shared.play(.primaryTap)
             onToggleComplete(!set.isCompleted)
         } label: {
             Image(systemName: set.isCompleted ? "checkmark.circle.fill" : "circle")
-                .font(.title3)
+                .font(.title2)
                 .foregroundStyle(set.isCompleted ? Color("Positive") : Color("TextSecondary"))
         }
         .buttonStyle(.plain)
-        .frame(width: 26)
+        .frame(width: 44, height: 44)
+        .contentShape(Rectangle())
         .accessibilityIdentifier("setComplete-\(set.setIndex)")
+        .accessibilityLabel(set.isCompleted ? "Set complete, tap to uncomplete" : "Mark set complete")
     }
 
     private var rowBackground: Color {

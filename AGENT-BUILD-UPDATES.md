@@ -1425,3 +1425,282 @@ No new files. Existing Swift only.
 | Chat UI | `ChatView.swift` |
 | Tests | `CoachMessageFormattingTests.swift` |
 | Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-05 — P0 active workout blank screen (app switcher follow-up)
+
+### Shipped
+
+- **Root cause:** Opening app switcher is `scenePhase == .inactive`, not `.background`. Prior fix still ran keyboard/focus teardown + `tabViewBottomAccessory` relayout on inactive, blanking `NavigationStack` workout body while session stayed alive.
+- **Keyboard policy:** Release set `@FocusState` only on `.background` (not `.inactive`). Removed `TrainKeyboard.dismiss()` from `ActiveWorkoutView`.
+- **`isViewingActiveWorkout`:** Derived from Train `path` (active workout route), not `ActiveWorkoutView.onDisappear`.
+- **`MainTabView`:** Freeze `tabViewBottomAccessory` while `scenePhase != .active`.
+- **`ActiveWorkoutView`:** Pause 1s timer unless `.active`; removed ScrollView `.id` refresh; `VStack` not `LazyVStack`.
+- **`ActiveWorkoutContainerView`:** Sync `onAppear` resolve (no `.task` re-entry).
+
+### Gate A (agent)
+
+- `build_sim` (pinned iPhone 16 Pro sim): pass.
+- `test_sim` `TrainScenePhaseKeyboardPolicyTests`: 2 passed.
+
+### Gate B (human)
+
+1. Active workout → open app switcher (stay on Signal card) → return: list visible.
+2. Switcher → background another app → return: list visible.
+3. Minimize + banner + switcher: same pass.
+
+**Gate B result (2026-06-05):** Cameron device pass after `build_run_device`. App switcher + background cycles no longer blank active workout.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Keyboard | `TrainKeyboard.swift` |
+| Active workout | `ActiveWorkoutView.swift`, `ActiveWorkoutContainerView.swift` |
+| Tabs / nav | `MainTabView.swift`, `TrainHomeView.swift` |
+| Tests | `TrainScenePhaseKeyboardPolicyTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-05 — Coach M1 hardening (router + context v2)
+
+### Shipped
+
+- Phrase-first overrides for UAT-shaped queries (recovery, protein, ACWR, calendar, deload).
+- Word-boundary keyword matching; removed weak schedule-only temporal tokens (`today`, `tomorrow`).
+- `CoachClassification` with scores + compound query detection (70% runner-up threshold).
+- Compound scope merge (e.g. recovery + meetings → readiness context plus calendar).
+- Route stored on `CoachContext`; classify once in builder, reused at inference.
+- Nutrition route shows full protein status (on track / below / no log), not deficit-only.
+- Route-filtered active insights by `InsightType`.
+- Parallel RAG + calendar fetch when both needed.
+
+### Gate A (agent)
+
+- `build_device` pass on Cameron iPhone 16 Pro (~9–11s, no sim).
+
+### Gate B (human, device)
+
+1. Run Coach UAT smoke on device after install.
+2. Spot-check Gate B queries from M1 spec.
+3. Watch logs for `coach intent=... score=... compound=...`.
+
+### Out of scope
+
+- Sim test run (per human request).
+- Two-pass FM planning.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Router | `CoachQueryRouter.swift` |
+| Context | `CoachContextBuilder.swift`, `CoachContext.swift` |
+| Coach | `FoundationModelsCoach.swift` |
+| Tests | `CoachQueryRouterTests.swift`, `CoachContextBuilderTests.swift` |
+| Log | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-05 — Coach settings toggles (M1 features)
+
+### Shipped
+
+- **Settings → Coach** section with three toggles (all default ON):
+  - **Smart context routing:** intent-scoped context, insight filtering, intent addendum. OFF = legacy full context (RAG k=4, all metrics).
+  - **Deep reasoning:** planning instruction in system prompt. OFF = skip for lower latency.
+  - **Compound queries:** merge runner-up route context. OFF = primary route only. Disabled when smart context is off.
+- `CoachFeatureFlags` reads UserDefaults from coach actor path (no MainActor hop).
+- Logs include `smartContext=` and `deepReasoning=` on context build and stream start.
+
+### Gate A (agent)
+
+- `build_device` pass on Cameron iPhone 16 Pro (~12s).
+
+### Gate B (human, device)
+
+1. Profile → Settings → Coach: toggle each feature, ask a question, confirm behavior/latency.
+2. With smart context OFF, protein question may include ACWR again (expected legacy).
+3. With deep reasoning OFF, check first-token latency improves.
+
+### Human Xcode
+
+Confirm in **Signal**:
+
+- `Core/Coach/CoachFeatureFlags.swift` (new)
+- `Core/Coach/CoachPreferences.swift` (new)
+
+Confirm in **SignalTests**:
+
+- `CoachPreferencesTests.swift` (new)
+
+### Out of scope
+
+- Sim test run.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Preferences | `CoachFeatureFlags.swift`, `CoachPreferences.swift` (new) |
+| Coach pipeline | `CoachContextBuilder.swift`, `CoachSystemPrompt.swift`, `FoundationModelsCoach.swift`, `CoachQueryRouter.swift` |
+| Settings | `SettingsView.swift`, `SignalApp.swift` |
+| Tests | `CoachPreferencesTests.swift` (new) |
+| Log | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-05 — Train UI polish pass
+
+### Shipped
+
+- Shared Train chrome: `TrainChrome`, `TrainSectionHeader`, `TrainStatCard`, `TrainStatusChip` (Surface cards, OLED black backgrounds, consistent typography).
+- **Train home:** ScrollView layout; filled Start + bordered Import; chip-based deload/busy; card routines/recent with empty CTAs.
+- **Active workout:** Surface exercise cards; larger set numerics; 44pt complete/RPE/menu targets; summary chips unified.
+- **Import:** Inline parse errors; card preview rows with match badges; bottom Start CTA.
+- **Exercise detail / history:** `TrainStatCard`, monospaced history loads, scannable set rows with HR caption.
+- **Sheets:** Log RPE, Exercise picker, Swap sheet aligned to Train chrome.
+- **P0 preserved:** No keyboard dismiss on `.inactive`, no ScrollView `.id` refresh, `VStack` in active workout body, path-based `isViewingActiveWorkout`.
+
+### Gate A (agent)
+
+- `build_sim` (pinned iPhone 16 Pro sim `20DDD35B-812A-49BE-9DCF-0685401ACC15`): pass (~15s).
+- `test_sim` `TrainScenePhaseKeyboardPolicyTests` + `GeminiWorkoutPasteParserTests`: 27 passed, 0 failed.
+
+### Gate B (human, device)
+
+1. Train home: start workout and import obvious in under 2s glance.
+2. Active workout: log a set, rest timer visible, no blank on app switcher (regression).
+3. Import preview: matched vs unmatched obvious; start workout works.
+4. Exercise detail: tabs readable; back navigation OK from history and active workout.
+5. OLED dark: true black backgrounds, no gray flash on push.
+
+### Human Xcode
+
+Add to **Signal** target if not auto-synced:
+
+- `Features/Train/TrainChrome.swift`
+- `Features/Train/TrainSectionHeader.swift`
+- `Features/Train/TrainStatCard.swift`
+- `Features/Train/TrainStatusChip.swift`
+
+### Out of scope
+
+- Navigation architecture, M2 routine templates, Dashboard/Coach/Profile, watch, new dependencies.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Shared chrome | `TrainChrome.swift`, `TrainSectionHeader.swift`, `TrainStatCard.swift`, `TrainStatusChip.swift` (new) |
+| Home | `TrainHomeView.swift` |
+| Active workout | `ActiveWorkoutView.swift`, `ActiveWorkoutContainerView.swift`, `WorkoutExerciseSectionView.swift`, `SetRowView.swift`, `SetTableHeaderView.swift`, `WorkoutLiveSummaryBar.swift`, `FloatingRestTimerBar.swift` |
+| Import | `GeminiWorkoutImportView.swift`, `GeminiWorkoutImportPreviewView.swift` |
+| Detail / history | `ExerciseDetailView.swift`, `WorkoutHistoryDetailView.swift` |
+| Sheets | `LogSetRPEView.swift`, `ExercisePickerView.swift`, `WorkoutSwapSheet.swift` |
+| Handover | `HANDOFF-TRAIN-UI-POLISH.md`, `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-05 — Train M3 haptics + rest timer bell
+
+### Shipped
+
+- Central `TrainFeedback` facade gating UIKit haptics and boxing bell on `TrainPreferences`.
+- Duolingo-style haptics on set complete, PR celebration, rest start/end, 3-2-1 countdown, workout finish, primary taps, set-type selection, and dynamic rest extension warning.
+- Boxing bell (`RestBell.caf`) plays when rest timer expires naturally (not on skip/finish).
+- Settings toggles: **Workout haptics** and **Rest timer bell** (default ON).
+- `RestTimerFeedbackEvaluator` detects rest start, countdown, expiry, and skip suppression.
+
+### Gate A (agent)
+
+- `build_sim` / `xcodebuild build` (pinned iPhone 16 Pro sim): **pass** (`BUILD SUCCEEDED`).
+- `test_sim` `TrainPreferencesTests` + `RestTimerFeedbackEvaluatorTests`: **8 passed**, 0 failed.
+- `./scripts/build-and-test.sh`: build pass; full sim test run hit simulator launch denial (`FBSOpenApplicationServiceErrorDomain`). Re-run tests via MCP or after `xcrun simctl shutdown booted` if needed.
+
+### Gate B (human, physical iPhone 16 Pro)
+
+1. Settings → Train: confirm **Workout haptics** and **Rest timer bell** toggles, both default ON.
+2. Start workout → complete a working set: success haptic.
+3. Log a PR-tier set (weight/reps beat last session): stronger celebration haptic.
+4. Auto or manual rest start: light haptic.
+5. Let rest count down: taps at 3, 2, 1 seconds.
+6. Rest hits 0: success haptic + boxing bell.
+7. Toggle bell OFF: haptic at end, no sound.
+8. Toggle haptics OFF, bell ON: bell still plays.
+9. Skip rest: primary tap only, no bell.
+10. Finish workout: success haptic.
+
+Console filter: `category:workout`.
+
+### Human Xcode
+
+Project uses synchronized root groups; verify these are in the **Signal** target (Copy Bundle Resources for audio):
+
+- `Core/Train/TrainFeedback.swift`
+- `Core/Train/TrainHapticEngine.swift`
+- `Core/Train/RestBellPlayer.swift`
+- `Core/Train/RestTimerFeedbackEvaluator.swift`
+- `Resources/RestBell.caf`
+
+### Out of scope
+
+- watchOS haptics, Dashboard/Coach haptics, Core Haptics AHAP patterns, `.pbxproj` edits.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Core feedback | `TrainFeedback.swift`, `TrainHapticEngine.swift`, `RestBellPlayer.swift`, `RestTimerFeedbackEvaluator.swift` (new) |
+| Prefs | `TrainPreferences.swift` |
+| Settings | `SettingsView.swift` |
+| Train UI | `ActiveWorkoutView.swift`, `WorkoutExerciseSectionView.swift`, `SetRowView.swift` |
+| Cues | `CueEngine.swift` (`SetCueEvaluator.tier`) |
+| Asset | `Resources/RestBell.caf` (new) |
+| Tests | `TrainPreferencesTests.swift`, `RestTimerFeedbackEvaluatorTests.swift` (new) |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-05 — P1 performance and battery pass
+
+### Shipped
+
+- `ExerciseSessionHintCache` eliminates per-tick SwiftData `findLastExercise` scans during active workouts.
+- `ActiveWorkoutRestTimerCoordinator` + layer isolate 1 Hz timer from exercise list invalidation.
+- `WorkoutLiveSummaryBar` uses `TimelineView` for duration/HR staleness; volume/sets refresh on data change only.
+- `reloadSessionRecoveryScore` removed from `onNeedsRefresh` hot path.
+- `HealthKitManager` claims `isSyncing` before async work to prevent parallel sync races.
+- Hot-path HR/rest/cue logs demoted to `.debug`.
+- `retryPendingOutboundTelemetry` debounced (2s); `refreshDailyBriefingSchedule` throttled (15 min) on foreground.
+- Audit doc: `PERF-AUDIT-2026-06.md`.
+
+### Gate A (agent)
+
+- `build_sim` (pinned iPhone 16 Pro sim): **pass**.
+- `test_sim` `ExerciseSessionHintCacheTests` (3 tests): **pass** (proves zero refetch after warm).
+- Full `SignalTests` via shell: **interrupted** (simulator clone/service hub failure after long run). Re-run `./scripts/build-and-test.sh` after `xcrun simctl shutdown booted` if needed.
+
+### Gate B (human, physical iPhone 16 Pro)
+
+1. Scripted workout 15–90 min: log sets, 2–3 rest timers, switcher 5×, lock screen during rest.
+2. Settings → Battery → Signal: note energy impact vs pre-fix baseline (subjective OK).
+3. Foreground thrash 10× in 2 min: confirm no duplicate `sync started` in Console (`category:sync`).
+4. Watch paired live workout: confirm phone does not start `LiveWorkoutPhoneSessionManager` when source is watch.
+5. P0 regression: no blank workout after switcher; keyboard resumes on return.
+
+Agent ran `build_device` → `install_app_device` → `launch_app_device` on `00008140-001E34E10A01801C` (**pass**). Battery/scripted session validation remains human.
+
+### Human Xcode
+
+Verify new files in **Signal** + **SignalTests** targets if not auto-synced:
+
+- `Data/Workout/ExerciseSessionHintCache.swift`
+- `Features/Train/ActiveWorkoutRestTimerLayer.swift`
+- `SignalTests/ExerciseSessionHintCacheTests.swift`
+
+### Out of scope
+
+- WC HR transport change, watch HK fallback, MLX unload, Dashboard reload refactor, `TrainHomeView` query limit, `.pbxproj` edits.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Hint cache | `ExerciseSessionHintCache.swift`, `LastSessionAutofill.swift` |
+| Active workout | `ActiveWorkoutView.swift`, `ActiveWorkoutRestTimerLayer.swift`, `WorkoutExerciseSectionView.swift`, `WorkoutLiveSummaryBar.swift`, `WorkoutLiveSummary.swift` |
+| HK sync | `HealthKitManager.swift` |
+| Watch / logging | `LiveWorkoutWatchBridge.swift`, `LiveWorkoutPhoneSessionManager.swift`, `WatchLiveWorkoutSessionManager.swift` |
+| Foreground | `RootView.swift` |
+| Tests | `ExerciseSessionHintCacheTests.swift` |
+| Docs | `PERF-AUDIT-2026-06.md`, `AGENT-BUILD-UPDATES.md` |

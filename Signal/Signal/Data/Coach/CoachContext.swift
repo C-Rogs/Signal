@@ -15,6 +15,7 @@ private enum CoachContextLimits {
 struct CoachContext: Sendable, Equatable {
     static let assembledPromptMaxChars = CoachContextLimits.assembledPromptMaxChars
 
+    var route: CoachQueryRoute
     var userSummary: String
     var activeInsights: [String]
     var derivedMetricsSummary: String
@@ -24,6 +25,7 @@ struct CoachContext: Sendable, Equatable {
     var calendarSummary: String
 
     init(
+        route: CoachQueryRoute = .general,
         userSummary: String,
         activeInsights: [String],
         derivedMetricsSummary: String,
@@ -32,6 +34,7 @@ struct CoachContext: Sendable, Equatable {
         recentWorkouts: [String],
         calendarSummary: String = ""
     ) {
+        self.route = route
         self.userSummary = Self.clamped(userSummary, max: CoachContextLimits.maxUserSummaryChars)
         self.activeInsights = Self.clampedLines(activeInsights, maxTotal: CoachContextLimits.maxActiveInsightsTotalChars)
         self.derivedMetricsSummary = Self.clamped(derivedMetricsSummary, max: CoachContextLimits.maxDerivedMetricsSummaryChars)
@@ -122,9 +125,11 @@ struct CoachContext: Sendable, Equatable {
         ragSummaries.removeFirst(removeCount)
     }
 
-    mutating func prepareForModelInput(query: String, route: CoachQueryRoute? = nil) {
-        let resolvedRoute = route ?? CoachQueryRouter.classify(query)
-        let pinSchedule = resolvedRoute == .schedule
+    mutating func prepareForModelInput(query: String, route explicitRoute: CoachQueryRoute? = nil) {
+        if let explicitRoute {
+            route = explicitRoute
+        }
+        let pinSchedule = route == .schedule || !calendarSummary.isEmpty
         truncatingToFitBudget(
             maxChars: CoachContextLimits.assembledPromptMaxChars,
             sampleQuery: query,

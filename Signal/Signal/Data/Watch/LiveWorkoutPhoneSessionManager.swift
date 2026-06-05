@@ -151,7 +151,7 @@ final class LiveWorkoutPhoneSessionManager: NSObject {
         guard LiveWorkoutTelemetryThrottle.shouldSend(now: now, lastSent: lastUIUpdateAt) else { return }
         lastUIUpdateAt = now
         onHeartRateUpdate?(bpm, now)
-        logger.info("live HR bpm=\(bpm, privacy: .public) source=phone")
+        logger.debug("live HR bpm=\(bpm, privacy: .public) source=phone")
     }
 }
 

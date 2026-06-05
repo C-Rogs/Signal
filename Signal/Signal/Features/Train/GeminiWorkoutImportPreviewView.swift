@@ -35,44 +35,73 @@ struct GeminiWorkoutImportPreviewView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    TextField("Workout title", text: $workoutTitle)
-                }
-
-                if !plan.skippedLines.isEmpty {
-                    Section {
-                        Text("\(plan.skippedLines.count) line(s) could not be parsed and were skipped.")
-                            .font(.footnote)
-                            .foregroundStyle(Color("Warning"))
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Workout title")
+                            .font(.metadataCaption.weight(.semibold))
+                            .foregroundStyle(Color("TextSecondary"))
+                        TextField("Workout title", text: $workoutTitle)
+                            .font(.body)
+                            .padding(12)
+                            .trainSurfaceCard(cornerRadius: 12)
                     }
-                }
 
-                Section("Exercises") {
-                    ForEach(plan.exercises, id: \.exerciseTitle) { exercise in
-                        exerciseRow(exercise)
+                    if !plan.skippedLines.isEmpty {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(Color("Warning"))
+                            Text("\(plan.skippedLines.count) line(s) could not be parsed and were skipped.")
+                                .font(.metadataCaption)
+                                .foregroundStyle(Color("Warning"))
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .trainSurfaceCard(cornerRadius: 12)
                     }
-                }
 
-                if let errorMessage {
-                    Section {
+                    TrainSectionHeader(
+                        title: "Exercises",
+                        trailing: "\(plan.exercises.count)"
+                    )
+
+                    VStack(spacing: 10) {
+                        ForEach(plan.exercises, id: \.exerciseTitle) { exercise in
+                            exerciseCard(exercise)
+                        }
+                    }
+
+                    if let errorMessage {
                         Text(errorMessage)
-                            .font(.footnote)
+                            .font(.metadataCaption)
                             .foregroundStyle(.red)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .trainSurfaceCard(cornerRadius: 12)
                     }
+
+                    Button {
+                        startWorkout()
+                    } label: {
+                        Text("Start Workout")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color("Primary"))
+                    .disabled(workoutTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .padding(.top, 4)
                 }
+                .padding(TrainChrome.horizontalPadding)
+                .padding(.vertical, 8)
             }
-            .scrollContentBackground(.hidden)
             .background(screenBackground.ignoresSafeArea())
             .navigationTitle("Preview")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Back") { onCancel() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Start Workout") { startWorkout() }
-                        .disabled(workoutTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .sheet(isPresented: pickerPresented) {
@@ -92,50 +121,66 @@ struct GeminiWorkoutImportPreviewView: View {
     }
 
     @ViewBuilder
-    private func exerciseRow(_ exercise: ParsedExercise) -> some View {
+    private func exerciseCard(_ exercise: ParsedExercise) -> some View {
         let match = resolvedMatch(for: exercise.exerciseTitle)
         let catalogEntry = overrides[exercise.exerciseTitle] ?? match.entry
+        let matchFlag = overrides[exercise.exerciseTitle] != nil ? CatalogMatchFlag.matched : match.flag
 
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(exercise.exerciseTitle)
                         .font(.headline)
+                        .foregroundStyle(Color("TextPrimary"))
                     if let canonical = catalogEntry?.canonicalName,
                        canonical != exercise.exerciseTitle {
                         Text(canonical)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.metadataCaption)
+                            .foregroundStyle(Color("TextSecondary"))
                     }
                 }
                 Spacer(minLength: 8)
-                matchBadge(flag: overrides[exercise.exerciseTitle] != nil ? .matched : match.flag)
+                matchBadge(flag: matchFlag)
             }
 
             Text(setSummary(for: exercise))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.body.monospacedDigit())
+                .foregroundStyle(Color("TextPrimary"))
 
             if let restSummary = restSummary(for: exercise) {
                 Text(restSummary)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(.metadataCaption)
+                    .foregroundStyle(Color("TextSecondary"))
             }
 
             if let noteSummary = prescriptionNoteSummary(for: exercise) {
                 Text(noteSummary)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(.metadataCaption)
+                    .foregroundStyle(Color("TextSecondary"))
             }
 
             if overrides[exercise.exerciseTitle] != nil || match.flag == .unmatched {
-                Button("Change exercise") {
+                Button("Change Exercise") {
                     pickerExerciseTitle = exercise.exerciseTitle
                 }
-                .font(.caption.weight(.semibold))
+                .font(.body.weight(.medium))
+                .frame(minHeight: 44)
             }
         }
-        .padding(.vertical, 4)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .trainSurfaceCard(cornerRadius: 12)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(importAccessibilityLabel(exercise: exercise, flag: matchFlag))
+    }
+
+    private func importAccessibilityLabel(exercise: ParsedExercise, flag: CatalogMatchFlag) -> String {
+        let status: String = switch flag {
+        case .matched: "matched"
+        case .lowConfidence: "needs review"
+        case .unmatched: "unmatched"
+        }
+        return "\(exercise.exerciseTitle), \(status), \(setSummary(for: exercise))"
     }
 
     private func resolvedMatch(for exerciseTitle: String) -> CatalogMatchResult {
@@ -152,19 +197,13 @@ struct GeminiWorkoutImportPreviewView: View {
 
     @ViewBuilder
     private func matchBadge(flag: CatalogMatchFlag) -> some View {
-        let (label, color): (String, Color) = switch flag {
-        case .matched: ("Matched", .green)
-        case .lowConfidence: ("Review", Color("Warning"))
-        case .unmatched: ("Unmatched", .red)
+        let (label, style): (String, TrainStatusChipStyle) = switch flag {
+        case .matched: ("Matched", .positive)
+        case .lowConfidence: ("Review", .warning)
+        case .unmatched: ("Unmatched", .destructive)
         }
 
-        Text(label)
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.15))
-            .clipShape(Capsule())
+        TrainStatusChip(title: label, style: style)
     }
 
     private func setSummary(for exercise: ParsedExercise) -> String {
@@ -209,7 +248,7 @@ struct GeminiWorkoutImportPreviewView: View {
     }
 
     private var screenBackground: Color {
-        colorScheme == .dark ? .black : Color("Background")
+        TrainChrome.screenBackground(colorScheme: colorScheme)
     }
 
     private var pickerPresented: Binding<Bool> {

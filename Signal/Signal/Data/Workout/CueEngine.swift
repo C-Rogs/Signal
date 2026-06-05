@@ -309,6 +309,24 @@ extension SetCueSnapshot {
 
 enum SetCueEvaluator {
     @MainActor
+    static func tier(
+        for set: SetEntry,
+        exercise: WorkoutExercise,
+        session: WorkoutSession,
+        mode: ExerciseLoggingMode,
+        in context: ModelContext
+    ) -> CueTier {
+        let input = cueInput(
+            for: set,
+            exercise: exercise,
+            session: session,
+            mode: mode,
+            in: context
+        )
+        return CueEngine.tier(for: input)
+    }
+
+    @MainActor
     static func cue(
         for set: SetEntry,
         exercise: WorkoutExercise,
@@ -316,6 +334,35 @@ enum SetCueEvaluator {
         mode: ExerciseLoggingMode,
         in context: ModelContext
     ) -> String? {
+        let input = cueInput(
+            for: set,
+            exercise: exercise,
+            session: session,
+            mode: mode,
+            in: context
+        )
+        let tier = CueEngine.tier(for: input)
+        guard tier != .neutral else {
+            Log.workout.debug(
+                "set cue setIndex=\(set.setIndex, privacy: .public) tier=neutral (no banner)"
+            )
+            return nil
+        }
+        let message = CueEngine.message(for: tier, input: input)
+        Log.workout.debug(
+            "set cue setIndex=\(set.setIndex, privacy: .public) tier=\(tier.rawValue, privacy: .public) message=\(message, privacy: .public)"
+        )
+        return message
+    }
+
+    @MainActor
+    private static func cueInput(
+        for set: SetEntry,
+        exercise: WorkoutExercise,
+        session: WorkoutSession,
+        mode: ExerciseLoggingMode,
+        in context: ModelContext
+    ) -> ExerciseCueInput {
         let sorted = exercise.sets.sorted { $0.setIndex < $1.setIndex }
         let completedSets = sorted.filter(\.isCompleted).map(SetCueSnapshot.init(set:))
         let prior = sorted
@@ -331,7 +378,7 @@ enum SetCueEvaluator {
         )
         let lastSessionSet = lastTemplate.map(SetCueSnapshot.init(template:))
         let targetRIR = ProfileGoalRepository.targetRIR(in: context)
-        let input = ExerciseCueInput(
+        return ExerciseCueInput(
             sessionID: String(describing: session.persistentModelID),
             exerciseID: String(describing: exercise.persistentModelID),
             mode: mode,
@@ -342,17 +389,5 @@ enum SetCueEvaluator {
             targetReps: CueEngine.targetReps(lastSessionSet: lastSessionSet),
             targetRIR: targetRIR
         )
-        let tier = CueEngine.tier(for: input)
-        guard tier != .neutral else {
-            Log.workout.debug(
-                "set cue setIndex=\(set.setIndex, privacy: .public) tier=neutral (no banner)"
-            )
-            return nil
-        }
-        let message = CueEngine.message(for: tier, input: input)
-        Log.workout.debug(
-            "set cue setIndex=\(set.setIndex, privacy: .public) tier=\(tier.rawValue, privacy: .public) message=\(message, privacy: .public)"
-        )
-        return message
     }
 }

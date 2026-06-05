@@ -9,6 +9,7 @@ struct SettingsView: View {
     @Environment(TrainPreferences.self) private var trainPreferences
     @Environment(NotificationPreferences.self) private var notificationPreferences
     @Environment(RecoveryPreferences.self) private var recoveryPreferences
+    @Environment(CoachPreferences.self) private var coachPreferences
     @Bindable private var downloadState = EmbeddingDownloadState.shared
     @State private var backupViewModel: SettingsBackupViewModel?
 
@@ -55,12 +56,27 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle("Smart context routing", isOn: Bindable(coachPreferences).smartContextEnabled)
+                    Toggle("Deep reasoning", isOn: Bindable(coachPreferences).deepReasoningEnabled)
+                    Toggle("Compound queries", isOn: Bindable(coachPreferences).compoundQueriesEnabled)
+                        .disabled(!coachPreferences.smartContextEnabled)
+                } header: {
+                    Text("Coach")
+                } footer: {
+                    Text(
+                        "Smart context loads only relevant metrics per question (faster, tighter answers). Deep reasoning adds a planning step before answering. Turn either off if responses feel slow. Compound queries blend context when a question spans two topics (e.g. recovery and calendar)."
+                    )
+                }
+
+                Section {
                     Toggle("Suggest warmup sets", isOn: Bindable(trainPreferences).suggestWarmupSets)
+                    Toggle("Workout haptics", isOn: Bindable(trainPreferences).hapticsEnabled)
+                    Toggle("Rest timer bell", isOn: Bindable(trainPreferences).restBellEnabled)
                 } header: {
                     Text("Train")
                 } footer: {
                     Text(
-                        "During a workout, Signal can suggest ramp sets for early compound lifts. Ramp percentages follow your training goal from Profile."
+                        "During a workout, Signal can suggest ramp sets for early compound lifts. Ramp percentages follow your training goal from Profile. Workout haptics give tactile feedback on sets and rest. The rest timer bell plays when rest ends."
                     )
                 }
 
@@ -363,5 +379,6 @@ struct SettingsView: View {
     .environment(TrainPreferences.shared)
     .environment(NotificationPreferences.shared)
     .environment(RecoveryPreferences.shared)
+    .environment(CoachPreferences.shared)
     .modelContainer(try! SignalModelContainer.make(inMemoryOnly: true))
 }

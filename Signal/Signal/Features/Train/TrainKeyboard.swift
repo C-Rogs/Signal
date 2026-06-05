@@ -13,7 +13,8 @@ enum TrainKeyboard {
 }
 
 enum TrainScenePhaseKeyboardPolicy {
+    /// App switcher is `.inactive`; releasing focus there corrupts SwiftUI set rows. Wait for `.background`.
     static func shouldReleaseSetFieldFocus(for phase: ScenePhase) -> Bool {
-        phase == .inactive || phase == .background
+        phase == .background
     }
 }

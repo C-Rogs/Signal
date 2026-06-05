@@ -87,11 +87,7 @@ final class HealthKitManager {
     }
 
     func syncNow() {
-        guard !isSyncing, !isWorkoutWriteInFlight else { return }
-        syncTask?.cancel()
-        syncTask = Task {
-            await performSync(trigger: "manual", clearDirtyOnSuccess: true)
-        }
+        startSyncTask(trigger: "manual", clearDirtyOnSuccess: true, cancelExisting: true)
     }
 
     func syncOnForegroundIfReady() {
@@ -141,10 +137,17 @@ final class HealthKitManager {
     func syncDeferredIfDirty() {
         guard accessState == .ready else { return }
         guard HealthKitDirtyFlagStore.isDirty else { return }
+        startSyncTask(trigger: "deferred", clearDirtyOnSuccess: true, cancelExisting: false)
+    }
+
+    private func startSyncTask(trigger: String, clearDirtyOnSuccess: Bool, cancelExisting: Bool) {
         guard !isSyncing, !isWorkoutWriteInFlight else { return }
-        syncTask?.cancel()
+        if cancelExisting {
+            syncTask?.cancel()
+        }
+        isSyncing = true
         syncTask = Task {
-            await performSync(trigger: "deferred", clearDirtyOnSuccess: true)
+            await performSync(trigger: trigger, clearDirtyOnSuccess: clearDirtyOnSuccess)
         }
     }
 
@@ -173,7 +176,6 @@ final class HealthKitManager {
         guard accessState == .ready else { return }
         guard !isWorkoutWriteInFlight else { return }
 
-        isSyncing = true
         lastSyncErrorMessage = nil
         let started = Date()
         Log.sync.info("sync started trigger=\(trigger, privacy: .public)")

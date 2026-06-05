@@ -1,57 +1,63 @@
 import SwiftUI
 
 struct WorkoutLiveSummaryBar: View {
-    let summary: WorkoutLiveSummary
+    let sessionStartTime: Date
+    let volumeKg: Double
+    let completedSetCount: Int
     let formatter: DisplayUnitFormatter
+    let watchBridge: LiveWorkoutWatchBridge
     var recoveryChipTitle: String?
     var deloadChipTitle: String?
-    var heartRateUI: LiveWatchHeartRateUIState = LiveWatchHeartRateUIState(
-        showsHeartRateSlot: false,
-        bpm: nil,
-        isStale: false,
-        statusChipTitle: nil
-    )
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let recoveryChipTitle {
-                Text(recoveryChipTitle)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color("Warning"))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Color("Warning").opacity(0.15))
-                    .clipShape(Capsule())
-                    .accessibilityIdentifier("lowRecoveryChip")
+        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+            let now = timeline.date
+            let durationSeconds = max(0, Int(now.timeIntervalSince(sessionStartTime)))
+            let heartRateUI = watchBridge.heartRateUIState(now: now)
+
+            VStack(alignment: .leading, spacing: 10) {
+                if recoveryChipTitle != nil || deloadChipTitle != nil || heartRateUI.statusChipTitle != nil {
+                    HStack(spacing: 8) {
+                        if let recoveryChipTitle {
+                            TrainStatusChip(
+                                title: recoveryChipTitle,
+                                style: .warning,
+                                accessibilityIdentifier: "lowRecoveryChip"
+                            )
+                        }
+                        if let deloadChipTitle {
+                            TrainStatusChip(
+                                title: deloadChipTitle,
+                                style: .warning,
+                                accessibilityIdentifier: "deloadSuggestedChip"
+                            )
+                        }
+                    }
+                }
+                if let statusChipTitle = heartRateUI.statusChipTitle {
+                    TrainStatusChip(
+                        title: statusChipTitle,
+                        style: .secondary,
+                        accessibilityIdentifier: "watchHeartRateStatusChip"
+                    )
+                }
+                statsRow(durationSeconds: durationSeconds, heartRateUI: heartRateUI)
             }
-            if let deloadChipTitle {
-                Text(deloadChipTitle)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color("Warning"))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Color("Warning").opacity(0.15))
-                    .clipShape(Capsule())
-                    .accessibilityIdentifier("deloadSuggestedChip")
-            }
-            if let statusChipTitle = heartRateUI.statusChipTitle {
-                Text(statusChipTitle)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(Color("TextSecondary"))
-                    .accessibilityIdentifier("watchHeartRateStatusChip")
-            }
-            statsRow
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                summaryAccessibilityLabel(
+                    durationSeconds: durationSeconds,
+                    heartRateUI: heartRateUI
+                )
+            )
         }
-        .padding(.vertical, 12)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(summaryAccessibilityLabel)
     }
 
-    private var statsRow: some View {
+    private func statsRow(durationSeconds: Int, heartRateUI: LiveWatchHeartRateUIState) -> some View {
         HStack(spacing: 0) {
             statColumn(
                 title: "Duration",
-                value: WorkoutLiveSummary.formatDuration(seconds: summary.durationSeconds),
+                value: WorkoutLiveSummary.formatDuration(seconds: durationSeconds),
                 emphasize: true
             )
             statDivider
@@ -63,24 +69,27 @@ struct WorkoutLiveSummaryBar: View {
             statDivider
             statColumn(
                 title: "Sets",
-                value: "\(summary.completedSetCount)",
+                value: "\(completedSetCount)",
                 emphasize: false
             )
             if heartRateUI.showsHeartRateSlot {
                 statDivider
-                liveHeartRateColumn
+                liveHeartRateColumn(heartRateUI: heartRateUI)
             }
         }
     }
 
     private var formattedVolume: String {
-        if summary.volumeKg <= 0 {
+        if volumeKg <= 0 {
             return "—"
         }
-        return formatter.formatMassKg(summary.volumeKg)
+        return formatter.formatMassKg(volumeKg)
     }
 
-    private var summaryAccessibilityLabel: String {
+    private func summaryAccessibilityLabel(
+        durationSeconds: Int,
+        heartRateUI: LiveWatchHeartRateUIState
+    ) -> String {
         var parts: [String] = []
         if let recoveryChipTitle {
             parts.append(recoveryChipTitle)
@@ -92,9 +101,9 @@ struct WorkoutLiveSummaryBar: View {
             parts.append(statusChipTitle)
         }
         parts.append(contentsOf: [
-            "Duration \(WorkoutLiveSummary.formatDuration(seconds: summary.durationSeconds))",
+            "Duration \(WorkoutLiveSummary.formatDuration(seconds: durationSeconds))",
             "volume \(formattedVolume)",
-            "\(summary.completedSetCount) sets completed",
+            "\(completedSetCount) sets completed",
         ])
         if let bpm = heartRateUI.bpm {
             let freshness = heartRateUI.isStale ? "stale" : "live"
@@ -107,11 +116,11 @@ struct WorkoutLiveSummaryBar: View {
 
     private var statDivider: some View {
         Rectangle()
-            .fill(Color("TextSecondary").opacity(0.25))
-            .frame(width: 1, height: 36)
+            .fill(Color("TextSecondary").opacity(0.2))
+            .frame(width: 1, height: 40)
     }
 
-    private var liveHeartRateColumn: some View {
+    private func liveHeartRateColumn(heartRateUI: LiveWatchHeartRateUIState) -> some View {
         ZStack {
             LiveHeartRateDecor()
                 .frame(height: 40)
@@ -121,12 +130,12 @@ struct WorkoutLiveSummaryBar: View {
                         .font(.caption2)
                         .symbolRenderingMode(.hierarchical)
                     Text("BPM")
-                        .font(.caption)
+                        .font(.metadataCaption)
                 }
                 .foregroundStyle(Color("Primary"))
                 if let bpm = heartRateUI.bpm {
                     Text("\(bpm)")
-                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                        .font(.body.weight(.semibold).monospacedDigit())
                         .foregroundStyle(Color("TextPrimary"))
                         .opacity(heartRateUI.isStale ? 0.45 : 1)
                         .minimumScaleFactor(0.8)
@@ -138,7 +147,7 @@ struct WorkoutLiveSummaryBar: View {
                         .foregroundStyle(Color("Primary").opacity(0.45))
                         .symbolEffect(.pulse, options: .repeating)
                     Text("—")
-                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                        .font(.body.weight(.semibold).monospacedDigit())
                         .foregroundStyle(Color("TextSecondary"))
                         .accessibilityHidden(true)
                 }
@@ -151,10 +160,10 @@ struct WorkoutLiveSummaryBar: View {
     private func statColumn(title: String, value: String, emphasize: Bool) -> some View {
         VStack(spacing: 4) {
             Text(title)
-                .font(.caption)
+                .font(.metadataCaption)
                 .foregroundStyle(Color("TextSecondary"))
             Text(value)
-                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .font(.body.weight(.semibold).monospacedDigit())
                 .foregroundStyle(emphasize ? Color("Primary") : Color("TextPrimary"))
                 .minimumScaleFactor(0.8)
                 .lineLimit(1)

@@ -262,13 +262,19 @@ private struct ChatAssistantBubble: View {
     var body: some View {
         Group {
             if renderMarkdown {
-                Text(CoachMessageFormatting.attributedMarkdown(text))
-                    .foregroundStyle(Color("TextPrimary"))
-                    .textSelection(.enabled)
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(Array(CoachMessageFormatting.markdownBlocks(from: text).enumerated()), id: \.offset) { _, block in
+                        Text(CoachMessageFormatting.attributedMarkdown(block))
+                            .foregroundStyle(Color("TextPrimary"))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .textSelection(.enabled)
             } else {
                 Text(CoachMessageFormatting.plainStreamingText(text))
                     .font(.body)
                     .foregroundStyle(Color("TextPrimary"))
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(.horizontal, 14)

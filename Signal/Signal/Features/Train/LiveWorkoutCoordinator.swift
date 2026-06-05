@@ -3,9 +3,16 @@ import os
 import Observation
 import SwiftData
 
-struct ExerciseDetailRoute: Hashable {
+struct ExerciseDetailRoute: Hashable, Identifiable {
     var catalogID: PersistentIdentifier?
     var exerciseTitle: String
+
+    var id: String {
+        if let catalogID {
+            return "catalog-\(String(describing: catalogID))"
+        }
+        return "title-\(exerciseTitle)"
+    }
 
     static func from(exercise: WorkoutExercise) -> ExerciseDetailRoute {
         ExerciseDetailRoute(
@@ -20,6 +27,19 @@ enum TrainRoute: Hashable {
     case history(PersistentIdentifier)
     case editRoutine(PersistentIdentifier?)
     case exerciseDetail(ExerciseDetailRoute)
+
+    var diagnosticLabel: String {
+        switch self {
+        case .activeWorkout:
+            return "activeWorkout"
+        case .history:
+            return "history"
+        case .editRoutine:
+            return "editRoutine"
+        case .exerciseDetail(let route):
+            return "exerciseDetail(\(route.exerciseTitle))"
+        }
+    }
 }
 
 @MainActor

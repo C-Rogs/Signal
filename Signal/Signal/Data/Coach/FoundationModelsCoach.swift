@@ -36,8 +36,9 @@ actor FoundationModelsCoach: LLMCoach {
 
         responding = true
 
-        let route = CoachQueryRouter.classify(query)
         var workingContext = context
+        let route = workingContext.route
+        let flags = CoachFeatureFlags.current()
         workingContext.prepareForModelInput(query: query, route: route)
         let initialPrompt = workingContext.assembledPrompt(query: query)
         let sectionNames = workingContext.activeSectionNames().joined(separator: ",")
@@ -55,14 +56,15 @@ actor FoundationModelsCoach: LLMCoach {
                             modelContainer: container,
                             referenceDate: Date(),
                             query: query,
-                            route: route
+                            route: route,
+                            flags: flags
                         )
                         guard !session.isResponding else {
                             throw CoachError.busy
                         }
                         await MainActor.run {
                             Log.coach.info(
-                                "coach stream start intent=\(route.rawValue, privacy: .public) contextSections=\(sectionNames, privacy: .public) promptChars=\(prompt.count, privacy: .public)"
+                                "coach stream start intent=\(route.rawValue, privacy: .public) smartContext=\(flags.smartContextEnabled, privacy: .public) deepReasoning=\(flags.deepReasoningEnabled, privacy: .public) contextSections=\(sectionNames, privacy: .public) promptChars=\(prompt.count, privacy: .public)"
                             )
                         }
                         let stream = session.streamResponse(to: prompt)

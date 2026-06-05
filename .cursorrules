@@ -8,9 +8,10 @@
 ## Build and verify (use MCP, not raw xcodebuild)
 - Prefer XcodeBuildMCP tools over Bash xcodebuild. MCP returns structured JSON; parse it to locate and fix errors.
 - XcodeBuildMCP must show connected (green) in Cursor Settings → MCP. Project config: `.cursor/mcp.json` server name `XcodeBuildMCP`.
-- **Simulator (build + unit tests):** one pinned destination only: `id=20DDD35B-812A-49BE-9DCF-0685401ACC15` (iPhone 16 Pro). Use `build_sim` for compile and `test_sim` for tests on the same sim. Do not use name-based destinations; duplicates cause failures. Wrapper: `scripts/build-and-test.sh`. Signal embeds the watch app, so this iPhone sim build already compiles watch target code.
-- **watchOS sim (compile + watch unit tests):** pinned `id=93C9FE74-661C-43E7-BCEE-644772C166F4` (Apple Watch Series 11 46mm, watchOS 26.5). MCP profile `watch`, scheme `SignalWatch Watch App`. Wrapper: `scripts/build-watch-sim.sh`. WCSession pairing and HealthKit live workout still require physical iPhone + Watch; do not use watch sim for those gates.
-- **Physical device (real app):** Cameron's iPhone 16 Pro `id=00008140-001E34E10A01801C` via `build_device`, then `install_app`, then `launch_app`. Device must be unlocked and the Developer Disk Image mounted. Use for HealthKit real data, background mid-session, Train UX, paired Watch, and Foundation Models. Do not substitute the simulator for those gates.
+- **Device-first (default):** Always try physical iPhone via `build_device` → `install_app` → `launch_app` on Cameron's iPhone 16 Pro `id=00008140-001E34E10A01801C`. Run this yourself; do not ask the human to "verify on device" when MCP can build, install, and launch. Paired Watch: `./scripts/install-watch-app.sh` when the milestone touches watch code or live HR. Device must be unlocked and the Developer Disk Image mounted.
+- **Simulator (only when it speeds the cycle):** Do not run sim by default. Use `build_sim` only for a fast compile-fix loop when device is unavailable or sim is strictly faster for the current error. One pinned destination: `id=20DDD35B-812A-49BE-9DCF-0685401ACC15` (iPhone 16 Pro). Do not use name-based destinations. `test_sim` only when unit tests are required for the milestone and sim is the practical path (`scripts/build-and-test.sh`). Do not use sim as a substitute for device gates (HealthKit, Train UX, haptics, audio, background mid-session, paired Watch, Foundation Models).
+- **watchOS sim:** pinned `id=93C9FE74-661C-43E7-BCEE-644772C166F4` (Apple Watch Series 11 46mm, watchOS 26.5). Profile `watch`, scheme `SignalWatch Watch App`. Wrapper: `scripts/build-watch-sim.sh`. Only when watch compile errors need a fast loop; live WCSession/HR still needs physical devices.
+- **Agent-owned verification:** Read Swift sources, grep the repo, and read (never edit) `.pbxproj` to confirm new files are in the right target before escalating. If `build_device` fails with "undefined symbol" or missing type, fix target membership instructions only when the human must edit Xcode; otherwise diagnose from build output yourself.
 - Use the Apple Xcode MCP documentation search to read current API docs before coding fast-moving frameworks.
 
 ## Research-first for fast-moving APIs
@@ -19,7 +20,7 @@
 - If a documented symbol does not exist in the SDK, STOP and report. Never invent a substitute signature.
 
 ## Protected files (never edit)
-- Do not touch .pbxproj, .xcodeproj, .xcworkspace, .entitlements, .xib, .storyboard. Create Swift files and tell the human which target to add them to. The human owns capabilities, signing, and SPM dependency setup.
+- Do not touch .pbxproj, .xcodeproj, .xcworkspace, .entitlements, .xib, .storyboard. Create Swift files in the correct feature folder; verify target membership by reading `.pbxproj` and running `build_device`. Escalate to the human only when build proves a file is missing from a target or a new capability/signing/SPM dependency is required.
 
 ## Modern Swift only (do not regress to deprecated patterns)
 - @Observable, never ObservableObject/@Published.

@@ -83,6 +83,13 @@ struct TrainHomeView: View {
             path.removeAll()
         }
         .onChange(of: path) { _, newPath in
+            coordinator.isViewingActiveWorkout = newPath.contains { route in
+                if case .activeWorkout = route { return true }
+                return false
+            }
+            TrainWorkoutDiagnostics.record(
+                "trainPath count=\(newPath.count) viewingWorkout=\(coordinator.isViewingActiveWorkout) routes=\(newPath.map(\.diagnosticLabel).joined(separator: ","))"
+            )
             if newPath.isEmpty {
                 coordinator.refresh()
             }
@@ -106,120 +113,27 @@ struct TrainHomeView: View {
             screenBackground
                 .ignoresSafeArea()
 
-            List {
-                if let errorMessage {
-                    Section {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                            .font(.footnote)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    if let errorMessage {
+                        inlineNotice(errorMessage, color: .red)
                     }
-                }
 
-                if let healthKitWriteNote {
-                    Section {
-                        Text(healthKitWriteNote)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                    if let healthKitWriteNote {
+                        inlineNotice(healthKitWriteNote, color: Color("TextSecondary"))
                     }
-                }
 
-                Section {
-                    if showDeloadBanner {
-                        HStack(alignment: .top) {
-                            Text("Load is above your recent norm. Consider fewer working sets or capping RPE around 7.")
-                                .font(.footnote)
-                                .foregroundStyle(Color("Warning"))
-                            Spacer(minLength: 8)
-                            Button("Dismiss") {
-                                dismissedDeloadWeek = currentISOWeekKey()
-                                showDeloadBanner = false
-                            }
-                            .font(.footnote.weight(.semibold))
-                        }
-                        .accessibilityIdentifier("trainDeloadBanner")
-                    }
-                    if let busyDayChipTitle {
-                        Text(busyDayChipTitle)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color("Warning"))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(Color("Warning").opacity(0.15))
-                            .clipShape(Capsule())
-                            .accessibilityIdentifier("busyDayChip")
-                    }
-                    Button {
-                        startOrResumeWorkout()
-                    } label: {
-                        Label(
-                            inProgressSession == nil ? "Start Workout" : "Continue workout",
-                            systemImage: inProgressSession == nil ? "play.fill" : "arrow.forward.circle.fill"
-                        )
-                        .font(.headline)
-                    }
-                    .accessibilityIdentifier("startWorkoutButton")
+                    statusBanners
 
-                    Button {
-                        showImportWorkout = true
-                    } label: {
-                        Label("Import workout", systemImage: "doc.on.clipboard")
-                    }
-                    .accessibilityIdentifier("importWorkoutButton")
-                }
+                    primaryActions
 
-                Section("Routines") {
-                    if routines.isEmpty {
-                        ContentUnavailableView {
-                            Label("No routines", systemImage: "list.bullet.rectangle")
-                        } description: {
-                            Text("Create a routine or start an empty workout.")
-                        }
-                        .listRowBackground(Color.clear)
-                    } else {
-                        ForEach(routines, id: \.persistentModelID) { routine in
-                            Button {
-                                startRoutine(routine)
-                            } label: {
-                                HStack {
-                                    Text(routine.name)
-                                    Spacer()
-                                    Image(systemName: "play.circle")
-                                        .foregroundStyle(Color("Primary"))
-                                }
-                            }
-                            .contextMenu {
-                                Button("Edit") {
-                                    editingRoutine = routine
-                                }
-                                Button("Delete", role: .destructive) {
-                                    deleteRoutine(routine)
-                                }
-                            }
-                        }
-                    }
-                }
+                    routinesSection
 
-                Section("Recent") {
-                    if recentSessions.isEmpty {
-                        Text("No completed workouts yet")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(recentSessions, id: \.persistentModelID) { session in
-                            NavigationLink(value: TrainRoute.history(session.persistentModelID)) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(session.title)
-                                    if let end = session.endTime {
-                                        Text(end.formatted(date: .abbreviated, time: .shortened))
-                                            .font(.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    recentSection
                 }
+                .padding(.horizontal, TrainChrome.horizontalPadding)
+                .padding(.vertical, 8)
             }
-            .scrollContentBackground(.hidden)
         }
         .navigationTitle("Train")
         .navigationBarTitleDisplayMode(.large)
@@ -233,6 +147,186 @@ struct TrainHomeView: View {
                 .accessibilityIdentifier("newRoutineButton")
             }
         }
+    }
+
+    @ViewBuilder
+    private var statusBanners: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if showDeloadBanner {
+                HStack(alignment: .top, spacing: 12) {
+                    TrainStatusChip(
+                        title: "Deload suggested",
+                        style: .warning,
+                        accessibilityIdentifier: "trainDeloadBanner"
+                    )
+                    Text("Load is above your recent norm. Consider fewer working sets or capping RPE around 7.")
+                        .font(.metadataCaption)
+                        .foregroundStyle(Color("TextSecondary"))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button("Dismiss") {
+                        dismissedDeloadWeek = currentISOWeekKey()
+                        showDeloadBanner = false
+                    }
+                    .font(.metadataCaption.weight(.semibold))
+                    .foregroundStyle(Color("Primary"))
+                }
+                .padding(12)
+                .trainSurfaceCard()
+            }
+
+            if let busyDayChipTitle {
+                TrainStatusChip(
+                    title: busyDayChipTitle,
+                    style: .warning,
+                    accessibilityIdentifier: "busyDayChip"
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var primaryActions: some View {
+        VStack(spacing: 10) {
+            Button {
+                startOrResumeWorkout()
+            } label: {
+                Label(
+                    inProgressSession == nil ? "Start Workout" : "Continue Workout",
+                    systemImage: inProgressSession == nil ? "play.fill" : "arrow.forward.circle.fill"
+                )
+                .font(.headline)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color("Primary"))
+            .accessibilityIdentifier("startWorkoutButton")
+
+            Button {
+                showImportWorkout = true
+            } label: {
+                Label("Import Workout", systemImage: "doc.on.clipboard")
+                    .font(.body.weight(.medium))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.bordered)
+            .tint(Color("Primary"))
+            .accessibilityIdentifier("importWorkoutButton")
+        }
+    }
+
+    @ViewBuilder
+    private var routinesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            TrainSectionHeader(title: "Routines")
+
+            if routines.isEmpty {
+                ContentUnavailableView {
+                    Label("No routines", systemImage: "list.bullet.rectangle")
+                } description: {
+                    Text("Create a routine or start an empty workout.")
+                } actions: {
+                    Button("New routine") {
+                        showNewRoutine = true
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(Color("Primary"))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(routines, id: \.persistentModelID) { routine in
+                        routineRow(routine)
+                    }
+                }
+            }
+        }
+    }
+
+    private func routineRow(_ routine: Routine) -> some View {
+        Button {
+            startRoutine(routine)
+        } label: {
+            HStack(spacing: 12) {
+                Text(routine.name)
+                    .font(.body)
+                    .foregroundStyle(Color("TextPrimary"))
+                Spacer(minLength: 8)
+                Image(systemName: "play.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(Color("Primary"))
+            }
+            .padding(14)
+            .trainSurfaceCard(cornerRadius: 12)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("Edit") {
+                editingRoutine = routine
+            }
+            Button("Delete", role: .destructive) {
+                deleteRoutine(routine)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var recentSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            TrainSectionHeader(title: "Recent")
+
+            if recentSessions.isEmpty {
+                ContentUnavailableView {
+                    Label("No workouts yet", systemImage: "clock.arrow.circlepath")
+                } description: {
+                    Text("Completed workouts appear here.")
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(recentSessions, id: \.persistentModelID) { session in
+                        NavigationLink(value: TrainRoute.history(session.persistentModelID)) {
+                            recentRow(session)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private func recentRow(_ session: WorkoutSession) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(session.title)
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(Color("TextPrimary"))
+                if let end = session.endTime {
+                    Text(end.formatted(date: .abbreviated, time: .shortened))
+                        .font(.metadataCaption)
+                        .foregroundStyle(Color("TextSecondary"))
+                }
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color("TextSecondary"))
+        }
+        .padding(14)
+        .trainSurfaceCard(cornerRadius: 12)
+    }
+
+    private func inlineNotice(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.metadataCaption)
+            .foregroundStyle(color)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .trainSurfaceCard(cornerRadius: 12)
     }
 
     @ViewBuilder
@@ -261,7 +355,7 @@ struct TrainHomeView: View {
     }
 
     private var screenBackground: Color {
-        colorScheme == .dark ? .black : Color("Background")
+        TrainChrome.screenBackground(colorScheme: colorScheme)
     }
 
     private func collapseWorkoutNavigationIfNeeded() {

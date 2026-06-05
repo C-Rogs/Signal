@@ -76,9 +76,16 @@ final class LiveWorkoutWatchBridge {
         }
     }
 
+    private static var lastOutboundRetryAt: Date?
+
     func retryPendingOutboundTelemetry() {
         guard lockedHeartRateSource == .watch else { return }
         guard let packet = LiveWorkoutOutboundQueue.pending else { return }
+        let now = Date()
+        if let last = Self.lastOutboundRetryAt, now.timeIntervalSince(last) < 2 {
+            return
+        }
+        Self.lastOutboundRetryAt = now
         send(packet: packet, isRetry: true)
     }
 
@@ -150,7 +157,7 @@ final class LiveWorkoutWatchBridge {
             guard let bpm = LiveWorkoutTelemetryThrottle.coalescedBPM(from: samples) else { return }
             latestHeartRateBPM = bpm
             lastHeartRateAt = samples.last?.timestamp ?? packet.timestamp
-            logger.info(
+            logger.debug(
                 "live HR bpm=\(bpm, privacy: .public) samples=\(samples.count, privacy: .public) source=watch"
             )
         } catch {

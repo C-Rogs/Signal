@@ -34,34 +34,36 @@ struct ActiveWorkoutContainerView: View {
             }
         }
         .background(screenBackground.ignoresSafeArea())
-        .task(id: sessionID) {
-            await loadActiveSession()
+        .onAppear {
+            resolveSessionIfNeeded()
         }
     }
 
     private var screenBackground: Color {
-        colorScheme == .dark ? .black : Color("Background")
+        TrainChrome.screenBackground(colorScheme: colorScheme)
     }
 
-    @MainActor
-    private func loadActiveSession() async {
+    private func resolveSessionIfNeeded() {
         coordinator.configure(modelContext: modelContext)
         coordinator.refresh()
 
         if let resolved = resolveSession() {
             session = resolved
             loadFailed = false
+            TrainWorkoutDiagnostics.record("container resolved exercises=\(resolved.exercises.count)")
             Log.workout.info("active workout container resolved session")
             return
         }
 
         if session != nil {
+            TrainWorkoutDiagnostics.record("container reload missed session; keeping cached view")
             Log.workout.warning("active workout container reload missed session; keeping cached view")
             return
         }
 
         session = nil
         loadFailed = true
+        TrainWorkoutDiagnostics.record("container FAILED resolve sessionID=\(sessionID)")
         Log.workout.error("active workout container could not resolve session")
         coordinator.resetTrainNavigation()
         dismiss()

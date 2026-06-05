@@ -4,6 +4,7 @@ import SwiftUI
 struct WorkoutSwapSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(LiveWorkoutCoordinator.self) private var coordinator
     @Environment(UnitPreferences.self) private var unitPreferences
 
@@ -33,54 +34,63 @@ struct WorkoutSwapSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Text(exercise.exerciseTitle)
-                        .font(.headline)
-                } header: {
-                    Text("Current exercise")
-                }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    currentExerciseCard
 
-                Section {
-                    TextField("Bench is occupied…", text: $constraintText, axis: .vertical)
-                        .lineLimit(2...4)
-                } header: {
-                    Text("What is unavailable?")
-                }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("What is unavailable?")
+                            .font(.metadataCaption.weight(.semibold))
+                            .foregroundStyle(Color("TextSecondary"))
+                        TextField("Bench is occupied…", text: $constraintText, axis: .vertical)
+                            .lineLimit(2...4)
+                            .padding(12)
+                            .trainSurfaceCard(cornerRadius: 12)
+                    }
 
-                if isLoading {
-                    Section {
+                    if isLoading {
                         HStack {
                             Spacer()
                             ProgressView("Finding a swap…")
                             Spacer()
                         }
+                        .padding(.vertical, 16)
                     }
-                }
 
-                if let errorMessage {
-                    Section {
+                    if let errorMessage {
                         Text(errorMessage)
+                            .font(.body)
                             .foregroundStyle(Color("Warning"))
-                            .font(.subheadline)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .trainSurfaceCard(cornerRadius: 12)
                     }
-                }
 
-                if let suggestion, let plan {
-                    suggestionSection(suggestion: suggestion, plan: plan)
+                    if let suggestion, let plan {
+                        suggestionCard(suggestion: suggestion, plan: plan)
+                    }
+
+                    Button {
+                        Task { await runSuggest() }
+                    } label: {
+                        Text(suggestion == nil ? "Suggest Swap" : "Suggest Again")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color("Primary"))
+                    .disabled(isLoading)
                 }
+                .padding(TrainChrome.horizontalPadding)
+                .padding(.vertical, 8)
             }
+            .background(screenBackground.ignoresSafeArea())
             .navigationTitle("Swap with Signal")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Suggest") {
-                        Task { await runSuggest() }
-                    }
-                    .disabled(isLoading)
                 }
             }
             .sheet(isPresented: $showManualPicker) {
@@ -108,54 +118,82 @@ struct WorkoutSwapSheet: View {
         }
     }
 
+    private var screenBackground: Color {
+        TrainChrome.screenBackground(colorScheme: colorScheme)
+    }
+
+    private var currentExerciseCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Current exercise")
+                .font(.metadataCaption.weight(.semibold))
+                .foregroundStyle(Color("TextSecondary"))
+            Text(exercise.exerciseTitle)
+                .font(.headline)
+                .foregroundStyle(Color("TextPrimary"))
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .trainSurfaceCard(cornerRadius: 12)
+    }
+
     @ViewBuilder
-    private func suggestionSection(suggestion: WorkoutSwapSuggestion, plan: SwapSetPlan) -> some View {
-        Section {
+    private func suggestionCard(suggestion: WorkoutSwapSuggestion, plan: SwapSetPlan) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            TrainSectionHeader(title: "Suggestion")
+
             Text(suggestion.substitute.canonicalName)
                 .font(.headline)
+                .foregroundStyle(Color("TextPrimary"))
             Text(suggestion.rationale)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(.body)
+                .foregroundStyle(Color("TextSecondary"))
 
-            Text(plan.progressionIntent.chipLabel)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color("Primary"))
+            TrainStatusChip(title: plan.progressionIntent.chipLabel, style: .positive)
 
             if let note = plan.noHistoryNote {
-                Text(note)
-                    .font(.caption)
-                    .foregroundStyle(Color("Warning"))
+                TrainStatusChip(title: note, style: .warning)
             }
 
-            ForEach(Array(plan.sets.enumerated()), id: \.offset) { _, template in
-                setPreviewRow(template)
+            VStack(spacing: 6) {
+                ForEach(Array(plan.sets.enumerated()), id: \.offset) { _, template in
+                    setPreviewRow(template)
+                }
             }
-        } header: {
-            Text("Suggestion")
-        }
 
-        Section {
-            Button("Apply swap") {
+            Button {
                 requestApply(catalog: suggestion.substitute, plan: plan)
+            } label: {
+                Text("Apply Swap")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
             }
+            .buttonStyle(.borderedProminent)
+            .tint(Color("Primary"))
             .disabled(plan.sets.isEmpty)
 
-            Button("Pick manually") {
+            Button("Pick Manually") {
                 showManualPicker = true
             }
+            .font(.body.weight(.medium))
+            .frame(maxWidth: .infinity, minHeight: 44)
         }
+        .padding(14)
+        .trainSurfaceCard(cornerRadius: 12)
     }
 
     private func setPreviewRow(_ template: SwapSetTemplate) -> some View {
         let typeLabel = WorkoutSetType(storageValue: template.setType) == .warmup ? "Warmup" : "Working"
         return HStack {
             Text(typeLabel)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .font(.metadataCaption.weight(.semibold))
+                .foregroundStyle(Color("TextSecondary"))
             Spacer()
             Text(setPreviewDetail(template))
-                .font(.subheadline.monospacedDigit())
+                .font(.body.weight(.semibold).monospacedDigit())
+                .foregroundStyle(Color("TextPrimary"))
         }
+        .padding(.vertical, 4)
     }
 
     private func setPreviewDetail(_ template: SwapSetTemplate) -> String {

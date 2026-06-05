@@ -21,7 +21,7 @@ struct ExerciseDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 20) {
                 header
                 Picker("Section", selection: $viewModel.selectedTab) {
                     ForEach(ExerciseDetailViewModel.Tab.allCases) { tab in
@@ -32,7 +32,7 @@ struct ExerciseDetailView: View {
 
                 tabContent
             }
-            .padding(16)
+            .padding(TrainChrome.horizontalPadding)
         }
         .background(screenBackground.ignoresSafeArea())
         .navigationTitle(viewModel.displayTitle)
@@ -43,7 +43,7 @@ struct ExerciseDetailView: View {
     }
 
     private var screenBackground: Color {
-        colorScheme == .dark ? .black : Color("Background")
+        TrainChrome.screenBackground(colorScheme: colorScheme)
     }
 
     @ViewBuilder
@@ -62,9 +62,8 @@ struct ExerciseDetailView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color("Surface"))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(14)
+        .trainSurfaceCard()
     }
 
     @ViewBuilder
@@ -87,7 +86,7 @@ struct ExerciseDetailView: View {
                 message: "Log this exercise in a completed workout to see session history here."
             )
         } else {
-            VStack(spacing: 12) {
+            VStack(spacing: 10) {
                 ForEach(viewModel.historySessions) { session in
                     NavigationLink(value: TrainRoute.history(session.sessionID)) {
                         historySessionCard(session)
@@ -110,52 +109,48 @@ struct ExerciseDetailView: View {
                     .foregroundStyle(Color("TextSecondary"))
             }
             Text(session.date.formatted(date: .abbreviated, time: .shortened))
-                .font(.caption)
+                .font(.metadataCaption)
                 .foregroundStyle(Color("TextSecondary"))
             if session.setSummaries.isEmpty {
                 Text("No sets logged")
-                    .font(.subheadline)
+                    .font(.body)
                     .foregroundStyle(Color("TextSecondary"))
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(session.setSummaries.enumerated()), id: \.offset) { _, summary in
                         Text(summary)
-                            .font(.subheadline)
-                            .foregroundStyle(Color("TextSecondary"))
+                            .font(.body.monospacedDigit())
+                            .foregroundStyle(Color("TextPrimary"))
                     }
                 }
             }
         }
-        .padding(12)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color("Surface"))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .trainSurfaceCard(cornerRadius: 12)
     }
 
     @ViewBuilder
     private var progressTab: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Estimated 1RM")
-                .font(.headline)
-                .foregroundStyle(Color("TextPrimary"))
+            TrainSectionHeader(title: "Estimated 1RM")
             DashboardSparklineChart(
                 points: viewModel.e1rmChartPoints,
                 valueStyle: .e1RM
             )
-            .padding(12)
-            .background(Color("Surface"))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(14)
+            .trainSurfaceCard()
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                progressStatCard(
+                TrainStatCard(
                     title: "PR e1RM",
                     value: viewModel.prE1RMKg.map { formatter.formatMassKg($0) } ?? "—"
                 )
-                progressStatCard(
+                TrainStatCard(
                     title: "PR load",
                     value: prLoadLabel
                 )
-                progressStatCard(
+                TrainStatCard(
                     title: "Avg volume",
                     value: viewModel.averageWorkingSetVolumeKg.map {
                         "\(formatter.formatMassKg($0)) vol"
@@ -170,31 +165,16 @@ struct ExerciseDetailView: View {
         return "\(formatter.formatMassKg(pr.weightKg)) × \(pr.reps)"
     }
 
-    private func progressStatCard(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color("TextSecondary"))
-            Text(value)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(Color("TextPrimary"))
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color("Surface"))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
     @ViewBuilder
     private var howToTab: some View {
         if let steps = viewModel.instructions, !steps.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 10) {
                 ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
                     HStack(alignment: .top, spacing: 12) {
                         Text("\(index + 1)")
-                            .font(.subheadline.weight(.bold).monospacedDigit())
+                            .font(.body.weight(.bold).monospacedDigit())
                             .foregroundStyle(Color("Primary"))
-                            .frame(width: 24, height: 24)
+                            .frame(width: 28, height: 28)
                             .background(Color("Primary").opacity(0.15))
                             .clipShape(Circle())
                         Text(step)
@@ -202,10 +182,9 @@ struct ExerciseDetailView: View {
                             .foregroundStyle(Color("TextPrimary"))
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding(12)
+                    .padding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color("Surface"))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .trainSurfaceCard(cornerRadius: 12)
                 }
             }
         } else {

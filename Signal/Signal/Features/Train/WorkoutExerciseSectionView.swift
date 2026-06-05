@@ -8,12 +8,15 @@ struct WorkoutExerciseSectionView: View {
     let mode: ExerciseLoggingMode
     let formatter: DisplayUnitFormatter
     let lastHint: String?
+    let hintCache: ExerciseSessionHintCache
     let recoveryScore: RecoveryScore
     let personalReadiness: PersonalReadinessProfile?
     let store: LiveWorkoutStore
     let modelContext: ModelContext
     let onSupersetScroll: (PersistentIdentifier) -> Void
     let onNeedsRefresh: () -> Void
+    let onRestTimerStarted: (WorkoutExercise) -> Void
+    let onOpenExerciseDetail: (ExerciseDetailRoute) -> Void
 
     @Environment(TrainPreferences.self) private var trainPreferences
     @Environment(LiveWorkoutWatchBridge.self) private var watchBridge
@@ -54,7 +57,7 @@ struct WorkoutExerciseSectionView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 0) {
             exerciseHeader
 
             if let recommendation = warmupRecommendation {
@@ -77,8 +80,9 @@ struct WorkoutExerciseSectionView: View {
                 massColumnTitle: massColumnTitle,
                 distanceColumnTitle: distanceColumnTitle
             )
-            .padding(.horizontal, 12)
-            .padding(.top, 4)
+            .padding(.horizontal, 10)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
 
             if !warmupSets.isEmpty {
                 ForEach(warmupSets, id: \.persistentModelID) { set in
@@ -99,10 +103,12 @@ struct WorkoutExerciseSectionView: View {
                 onNeedsRefresh()
             } label: {
                 Label("Add Set", systemImage: "plus")
+                    .font(.body.weight(.medium))
             }
             .padding(.horizontal, 12)
-            .padding(.top, 4)
+            .padding(.vertical, 10)
         }
+        .trainSurfaceCard()
         .sheet(isPresented: $showReplacePicker) {
             ExercisePickerView { catalog in
                 try? store.replaceExercise(
@@ -159,7 +165,7 @@ struct WorkoutExerciseSectionView: View {
                 set: set,
                 mode: mode,
                 formatter: formatter,
-                previousHint: previousHint(for: set),
+                previousHint: hintCache.previousHint(for: exercise, setIndex: set.setIndex),
                 onFillPrevious: fillPreviousAction(for: set),
                 onActivate: {
                     dismissAllCues()
@@ -194,6 +200,24 @@ struct WorkoutExerciseSectionView: View {
         try? store.toggleSetComplete(set, exercise: exercise, completed: completed)
         onNeedsRefresh()
         if completed {
+            if WorkoutSetType(storageValue: set.setType) != .warmup {
+                let tier = SetCueEvaluator.tier(
+                    for: set,
+                    exercise: exercise,
+                    session: session,
+                    mode: mode,
+                    in: modelContext
+                )
+                switch tier {
+                case .smashed, .strongPR, .smallPR:
+                    TrainFeedback.shared.play(.prCelebration)
+                default:
+                    TrainFeedback.shared.play(.setComplete)
+                }
+            }
+            if exercise.autoStartRestOnSetComplete {
+                onRestTimerStarted(exercise)
+            }
             let tierMessage = SetCueEvaluator.cue(
                 for: set,
                 exercise: exercise,
@@ -213,21 +237,21 @@ struct WorkoutExerciseSectionView: View {
                 now: now
             ) {
                 if let loadNudge {
-                    Log.workout.info("load autoregulation nudge=\(loadNudge, privacy: .public)")
+                    Log.workout.debug("load autoregulation nudge=\(loadNudge, privacy: .public)")
                 }
                 if let hrNudge = LiveHRCueEvaluator.restNudgeAfterSet(
                     bpm: heartRateBPM,
                     sampledAt: heartRateSampledAt,
                     now: now
                 ) {
-                    Log.workout.info("live HR set cue nudge=\(hrNudge, privacy: .public)")
+                    Log.workout.debug("live HR set cue nudge=\(hrNudge, privacy: .public)")
                 }
                 showCue(message, for: set)
             } else if WorkoutSetType(storageValue: set.setType) != .warmup,
                       let heartRateBPM
             {
                 let ageSeconds = heartRateSampledAt.map { now.timeIntervalSince($0) }
-                Log.workout.info(
+                Log.workout.debug(
                     "live HR set cue suppressed bpm=\(heartRateBPM, privacy: .public) ageSeconds=\(ageSeconds ?? -1, privacy: .public)"
                 )
             }
@@ -317,7 +341,9 @@ struct WorkoutExerciseSectionView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
-                        NavigationLink(value: TrainRoute.exerciseDetail(.from(exercise: exercise))) {
+                        Button {
+                            onOpenExerciseDetail(.from(exercise: exercise))
+                        } label: {
                             Text(exercise.exerciseTitle)
                                 .font(.headline)
                                 .foregroundStyle(Color("TextPrimary"))
@@ -339,10 +365,12 @@ struct WorkoutExerciseSectionView: View {
                         }
                         Menu {
                             Button("Swap with Signal") { showSwapSheet = true }
-                            Button("Replace exercise") { showReplacePicker = true }
+                            Button("Replace Exercise") { showReplacePicker = true }
                             Button("Start rest timer") {
                                 try? store.startRestTimer(for: exercise)
                                 onNeedsRefresh()
+                                TrainFeedback.shared.play(.primaryTap)
+                                onRestTimerStarted(exercise)
                             }
                             if exercise.supersetId == nil {
                                 Button("Add to superset") { showSupersetPicker = true }
@@ -362,6 +390,10 @@ struct WorkoutExerciseSectionView: View {
                             }
                         } label: {
                             Image(systemName: "ellipsis.circle")
+                                .font(.title3)
+                                .foregroundStyle(Color("TextSecondary"))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
                         .accessibilityIdentifier("exerciseMenu-\(exercise.order)")
                     }
@@ -377,11 +409,11 @@ struct WorkoutExerciseSectionView: View {
 
             if let lastHint {
                 Text(lastHint)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.metadataCaption)
+                    .foregroundStyle(Color("TextSecondary"))
             }
         }
-        .padding(10)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(headerBackground)
         .textCase(nil)
@@ -396,36 +428,11 @@ struct WorkoutExerciseSectionView: View {
     }
 
     private var headerBackground: some View {
-        RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(completionColor.opacity(completionStatus == .complete ? 0.1 : 0.05))
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(
-                        completionColor.opacity(completionStatus == .notStarted ? 0.14 : 0.3),
-                        lineWidth: 1
-                    )
-            }
-    }
-
-    private func previousHint(for set: SetEntry) -> String? {
-        guard let template = try? LastSessionAutofill.previousSet(
-            catalogEntry: exercise.catalogEntry,
-            exerciseTitle: exercise.exerciseTitle,
-            setIndex: set.setIndex,
-            mode: mode,
-            in: modelContext
-        ) else { return nil }
-        return LastSessionAutofill.formatPreviousHint(template, mode: mode, formatter: formatter)
+        completionColor.opacity(completionStatus == .complete ? 0.08 : 0.04)
     }
 
     private func fillPreviousAction(for set: SetEntry) -> (() -> Void)? {
-        guard let template = try? LastSessionAutofill.previousSet(
-            catalogEntry: exercise.catalogEntry,
-            exerciseTitle: exercise.exerciseTitle,
-            setIndex: set.setIndex,
-            mode: mode,
-            in: modelContext
-        ) else { return nil }
+        guard let template = hintCache.template(for: exercise, setIndex: set.setIndex) else { return nil }
         return {
             try? store.commitSetFields(
                 set,

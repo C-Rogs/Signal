@@ -71,6 +71,7 @@ struct ExercisePickerView: View {
             }
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
     }
 
     @ViewBuilder
@@ -89,10 +90,11 @@ struct ExercisePickerView: View {
                                 )
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(row.name)
-                                        .foregroundStyle(.primary)
+                                        .font(.body)
+                                        .foregroundStyle(Color("TextPrimary"))
                                     Text(row.equipment.rawValue.capitalized)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .font(.metadataCaption)
+                                        .foregroundStyle(Color("TextSecondary"))
                                 }
                                 Spacer(minLength: 0)
                             }
@@ -134,16 +136,18 @@ struct ExercisePickerView: View {
             }
         }
         .padding(.vertical, 8)
-        .background(screenBackground.opacity(0.95))
+        .background(Color("Surface").opacity(0.98))
     }
 
     private func filterChip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.caption.weight(.medium))
+                .font(.metadataCaption.weight(.semibold))
+                .foregroundStyle(selected ? Color("Primary") : Color("TextSecondary"))
                 .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(selected ? Color("Primary").opacity(0.25) : Color.secondary.opacity(0.15))
+                .padding(.vertical, 8)
+                .frame(minHeight: 36)
+                .background(selected ? Color("Primary").opacity(0.18) : Color("TextSecondary").opacity(0.1))
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -161,7 +165,7 @@ struct ExercisePickerView: View {
     }
 
     private var screenBackground: Color {
-        colorScheme == .dark ? .black : Color("Background")
+        TrainChrome.screenBackground(colorScheme: colorScheme)
     }
 }
 

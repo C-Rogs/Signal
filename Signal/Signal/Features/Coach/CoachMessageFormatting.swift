@@ -3,6 +3,37 @@ import SwiftUI
 import UIKit
 
 enum CoachMessageFormatting {
+    nonisolated static func markdownBlocks(from text: String) -> [String] {
+        var blocks: [String] = []
+        var pending: [String] = []
+
+        func flushPending() {
+            let joined = pending.joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !joined.isEmpty {
+                blocks.append(joined)
+            }
+            pending = []
+        }
+
+        for line in text.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                flushPending()
+                continue
+            }
+            if isMarkdownHeading(trimmed) {
+                flushPending()
+                blocks.append(trimmed)
+                continue
+            }
+            pending.append(line)
+        }
+
+        flushPending()
+        return blocks
+    }
+
     nonisolated static func attributedMarkdown(_ text: String) -> AttributedString {
         var options = AttributedString.MarkdownParsingOptions()
         options.interpretedSyntax = .full
@@ -59,8 +90,10 @@ enum CoachMessageFormatting {
                             spacingBefore: level == 1 ? 0 : 10,
                             spacingAfter: 4
                         )
+                    case .paragraph:
+                        applyParagraphStyle(to: &container, spacingBefore: 0, spacingAfter: 8)
                     case .listItem:
-                        applyParagraphStyle(to: &container, spacingBefore: 2, spacingAfter: 2)
+                        applyParagraphStyle(to: &container, spacingBefore: 2, spacingAfter: 4)
                     case .codeBlock:
                         container.font = .system(.body, design: .monospaced)
                         container.backgroundColor = codeBackground
@@ -83,6 +116,18 @@ enum CoachMessageFormatting {
 
             attributed[run.range].mergeAttributes(container)
         }
+    }
+
+    private nonisolated static func isMarkdownHeading(_ line: String) -> Bool {
+        guard line.first == "#" else { return false }
+        var hashCount = 0
+        var index = line.startIndex
+        while index < line.endIndex, line[index] == "#", hashCount < 6 {
+            hashCount += 1
+            index = line.index(after: index)
+        }
+        guard hashCount > 0, index < line.endIndex, line[index] == " " else { return false }
+        return true
     }
 
     private nonisolated static func headingFont(level: Int) -> Font {

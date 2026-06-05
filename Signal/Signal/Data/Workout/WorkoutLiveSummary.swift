@@ -11,7 +11,17 @@ struct WorkoutLiveSummary: Sendable, Equatable {
         heartRateBPM: Int? = nil,
         now: Date = .now
     ) -> WorkoutLiveSummary {
+        let stats = volumeStats(for: session)
         let duration = max(0, Int(now.timeIntervalSince(session.startTime)))
+        return WorkoutLiveSummary(
+            durationSeconds: duration,
+            volumeKg: stats.volumeKg,
+            completedSetCount: stats.completedSetCount,
+            heartRateBPM: heartRateBPM
+        )
+    }
+
+    static func volumeStats(for session: WorkoutSession) -> (volumeKg: Double, completedSetCount: Int) {
         var volumeKg = 0.0
         var completedSets = 0
 
@@ -25,12 +35,7 @@ struct WorkoutLiveSummary: Sendable, Equatable {
             }
         }
 
-        return WorkoutLiveSummary(
-            durationSeconds: duration,
-            volumeKg: volumeKg,
-            completedSetCount: completedSets,
-            heartRateBPM: heartRateBPM
-        )
+        return (volumeKg, completedSets)
     }
 
     private static func isWarmup(_ set: SetEntry) -> Bool {

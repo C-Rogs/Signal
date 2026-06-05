@@ -14,28 +14,51 @@ struct GeminiWorkoutImportView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 16) {
                 Text("Paste a workout exported from Gemini or another planner. Signal will parse exercises and sets for preview before you start.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .font(.body)
+                    .foregroundStyle(Color("TextSecondary"))
+                    .fixedSize(horizontal: false, vertical: true)
 
                 TextEditor(text: $pasteText)
                     .font(.body.monospaced())
-                    .padding(8)
-                    .background(fieldBackground)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .padding(10)
                     .frame(minHeight: 220)
+                    .trainSurfaceCard(cornerRadius: 12)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(Color("TextSecondary").opacity(0.15), lineWidth: 1)
+                    }
                     .accessibilityIdentifier("geminiImportTextEditor")
 
                 if let parseError {
-                    Text(parseError)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(Color("Warning"))
+                        Text(parseError)
+                            .font(.metadataCaption)
+                            .foregroundStyle(Color("Warning"))
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .trainSurfaceCard(cornerRadius: 12)
                 }
 
                 Spacer(minLength: 0)
+
+                Button {
+                    openPreview()
+                } label: {
+                    Text("Preview Workout")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color("Primary"))
+                .disabled(pasteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            .padding()
+            .padding(TrainChrome.horizontalPadding)
             .background(screenBackground.ignoresSafeArea())
             .navigationTitle("Import Workout")
             .navigationBarTitleDisplayMode(.inline)
@@ -50,10 +73,7 @@ struct GeminiWorkoutImportView: View {
                             parseError = nil
                         }
                     }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Preview") { openPreview() }
-                        .disabled(pasteText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .fontWeight(.medium)
                 }
             }
             .sheet(isPresented: $showPreview) {
@@ -75,11 +95,7 @@ struct GeminiWorkoutImportView: View {
     }
 
     private var screenBackground: Color {
-        colorScheme == .dark ? .black : Color("Background")
-    }
-
-    private var fieldBackground: Color {
-        colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.04)
+        TrainChrome.screenBackground(colorScheme: colorScheme)
     }
 
     private func openPreview() {

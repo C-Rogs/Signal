@@ -12,6 +12,11 @@ struct LogSetRPEView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 VStack(spacing: 8) {
+                    Text(setSummary)
+                        .font(.metadataCaption)
+                        .foregroundStyle(Color("TextSecondary"))
+                        .multilineTextAlignment(.center)
+
                     Text(WorkoutRPEScale.compactLabel(for: selectedRPE))
                         .font(.system(size: 56, weight: .bold, design: .rounded))
                         .monospacedDigit()
@@ -53,7 +58,7 @@ struct LogSetRPEView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(sheetBackground.ignoresSafeArea())
-            .navigationTitle("Log Set RPE")
+            .navigationTitle("Log RPE")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -68,7 +73,7 @@ struct LogSetRPEView: View {
     }
 
     private var sheetBackground: Color {
-        colorScheme == .dark ? Color("Surface") : Color("Background")
+        TrainChrome.screenBackground(colorScheme: colorScheme)
     }
 
     private var rpePicker: some View {

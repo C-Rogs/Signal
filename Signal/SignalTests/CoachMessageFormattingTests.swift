@@ -46,6 +46,43 @@ final class CoachMessageFormattingTests: XCTestCase {
         XCTAssertTrue(CoachMessageFormatting.containsListItem(for: "Warm up", in: rendered))
     }
 
+    func testMarkdownBlocksSplitOnBlankLinesAndHeadings() {
+        let source = """
+        ### Recovery
+        Sleep was solid.
+
+        ### Training
+        - Squat: **140 kg**
+        - Volume: 12 sets
+        """
+        let blocks = CoachMessageFormatting.markdownBlocks(from: source)
+
+        XCTAssertEqual(blocks.count, 4)
+        XCTAssertTrue(blocks[0].hasPrefix("### Recovery"))
+        XCTAssertEqual(blocks[1], "Sleep was solid.")
+        XCTAssertTrue(blocks[2].hasPrefix("### Training"))
+        XCTAssertTrue(blocks[3].contains("- Squat:"))
+        XCTAssertTrue(blocks[3].contains("- Volume:"))
+    }
+
+    func testCoachSampleRendersDistinctBlocks() {
+        let source = """
+        ### Tomorrow
+        One event at 2pm.
+
+        ### Recovery
+        HRV is **62 ms**. Sleep **7.2 h**.
+        """
+        let blocks = CoachMessageFormatting.markdownBlocks(from: source)
+        XCTAssertGreaterThanOrEqual(blocks.count, 3)
+
+        let rendered = blocks.map { CoachMessageFormatting.attributedMarkdown($0) }
+        let combined = rendered.map { String($0.characters) }.joined(separator: "\n")
+        XCTAssertTrue(combined.contains("Tomorrow"))
+        XCTAssertTrue(combined.contains("One event at 2pm."))
+        XCTAssertTrue(combined.contains("Recovery"))
+    }
+
     func testInlineCodeUsesMonospace() {
         let source = "Use `RPE 8` on the top set."
         let rendered = CoachMessageFormatting.attributedMarkdown(source)

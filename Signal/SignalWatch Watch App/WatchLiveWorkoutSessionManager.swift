@@ -186,7 +186,7 @@ final class WatchLiveWorkoutSessionManager: NSObject {
         )
         send(packet: packet)
         lastSentAt = now
-        logger.info(
+        logger.debug(
             "live HR batch sent sessionKey=\(sessionKey, privacy: .public) samples=\(batch.count, privacy: .public)"
         )
     }
@@ -204,7 +204,7 @@ final class WatchLiveWorkoutSessionManager: NSObject {
                         "live HR send failed error=\(error.localizedDescription, privacy: .public)"
                     )
                 }
-                logger.info("live HR sent via messageData sessionKey=\(packet.sessionKey, privacy: .public)")
+                logger.debug("live HR sent via messageData sessionKey=\(packet.sessionKey, privacy: .public)")
             } else if packet.kind == .heartRateBatch {
                 wcSession.transferUserInfo([LiveWorkoutTelemetryUserInfoKey.payloadData: data])
                 logger.info(

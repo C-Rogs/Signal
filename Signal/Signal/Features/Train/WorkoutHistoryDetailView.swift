@@ -23,45 +23,27 @@ struct WorkoutHistoryDetailView: View {
     }
 
     var body: some View {
-        List {
-            if let end = session.endTime {
-                LabeledContent("Ended", value: end.formatted(date: .abbreviated, time: .shortened))
-            }
-            if let meanRPE = sessionMeanWorkingSetRPE {
-                LabeledContent(
-                    "Avg RPE",
-                    value: WorkoutHistoryDetailFormatting.meanRPELabel(for: meanRPE)
-                )
-            }
-            if exercises.isEmpty {
-                Section {
-                    Text("No exercises recorded")
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                ForEach(exercises, id: \.persistentModelID) { exercise in
-                    Section {
-                        let sets = exercise.sets.sorted { $0.setIndex < $1.setIndex }
-                        if sets.isEmpty {
-                            Text("No sets logged")
-                                .foregroundStyle(.secondary)
-                                .font(.subheadline)
-                        } else {
-                            ForEach(Array(sets.enumerated()), id: \.element.persistentModelID) { index, set in
-                                setSummary(set, exercise: exercise, nextSet: index + 1 < sets.count ? sets[index + 1] : nil)
-                            }
-                        }
-                    } header: {
-                        NavigationLink(value: TrainRoute.exerciseDetail(.from(exercise: exercise))) {
-                            Text(exercise.exerciseTitle)
-                                .font(.headline)
-                                .foregroundStyle(Color("TextPrimary"))
-                        }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                sessionSummaryCard
+
+                if exercises.isEmpty {
+                    ContentUnavailableView {
+                        Label("No exercises", systemImage: "figure.strengthtraining.traditional")
+                    } description: {
+                        Text("No exercises were recorded for this workout.")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                } else {
+                    ForEach(exercises, id: \.persistentModelID) { exercise in
+                        exerciseSection(exercise)
                     }
                 }
             }
+            .padding(TrainChrome.horizontalPadding)
+            .padding(.vertical, 8)
         }
-        .scrollContentBackground(.hidden)
         .background(screenBackground.ignoresSafeArea())
         .navigationTitle(session.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -72,7 +54,71 @@ struct WorkoutHistoryDetailView: View {
     }
 
     private var screenBackground: Color {
-        colorScheme == .dark ? .black : Color("Background")
+        TrainChrome.screenBackground(colorScheme: colorScheme)
+    }
+
+    @ViewBuilder
+    private var sessionSummaryCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let end = session.endTime {
+                summaryRow(label: "Ended", value: end.formatted(date: .abbreviated, time: .shortened))
+            }
+            if let meanRPE = sessionMeanWorkingSetRPE {
+                summaryRow(
+                    label: "Avg RPE",
+                    value: WorkoutHistoryDetailFormatting.meanRPELabel(for: meanRPE),
+                    emphasize: true
+                )
+            }
+        }
+        .padding(14)
+        .trainSurfaceCard(cornerRadius: 12)
+    }
+
+    private func summaryRow(label: String, value: String, emphasize: Bool = false) -> some View {
+        HStack {
+            Text(label)
+                .font(.metadataCaption)
+                .foregroundStyle(Color("TextSecondary"))
+            Spacer()
+            Text(value)
+                .font(emphasize ? .body.weight(.semibold).monospacedDigit() : .body.monospacedDigit())
+                .foregroundStyle(emphasize ? Color("Primary") : Color("TextPrimary"))
+        }
+    }
+
+    @ViewBuilder
+    private func exerciseSection(_ exercise: WorkoutExercise) -> some View {
+        let sets = exercise.sets.sorted { $0.setIndex < $1.setIndex }
+
+        VStack(alignment: .leading, spacing: 10) {
+            NavigationLink(value: TrainRoute.exerciseDetail(.from(exercise: exercise))) {
+                HStack {
+                    Text(exercise.exerciseTitle)
+                        .font(.headline)
+                        .foregroundStyle(Color("TextPrimary"))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color("TextSecondary"))
+                }
+            }
+            .buttonStyle(.plain)
+
+            if sets.isEmpty {
+                Text("No sets logged")
+                    .font(.body)
+                    .foregroundStyle(Color("TextSecondary"))
+            } else {
+                VStack(spacing: 6) {
+                    ForEach(Array(sets.enumerated()), id: \.element.persistentModelID) { index, set in
+                        setRow(set, exercise: exercise, nextSet: index + 1 < sets.count ? sets[index + 1] : nil)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .trainSurfaceCard(cornerRadius: 12)
     }
 
     @MainActor
@@ -102,7 +148,7 @@ struct WorkoutHistoryDetailView: View {
     }
 
     @ViewBuilder
-    private func setSummary(
+    private func setRow(
         _ set: SetEntry,
         exercise: WorkoutExercise,
         nextSet: SetEntry?
@@ -113,52 +159,50 @@ struct WorkoutHistoryDetailView: View {
         let restHR = nextSet.flatMap { restHeartRateByNextSetEntryID[$0.entryID] }
 
         VStack(alignment: .leading, spacing: 4) {
-            switch ExerciseLoggingMode.from(catalogEntry: exercise.catalogEntry) {
-            case .strength:
-                HStack {
-                    Text("Set \(set.setIndex + 1)")
-                    Spacer()
-                    Text(
-                        WorkoutHistoryDetailFormatting.strengthLoadLine(
-                            weightLabel: formatter.formatMassKg(set.weightKg),
-                            reps: set.reps,
-                            rpe: set.rpe,
-                            setType: setType
-                        )
-                    )
-                    .foregroundStyle(.secondary)
-                    if isWorkingSet, let workHR {
-                        Text(SetHeartRateDisplay.workingSetLabel(avgBPM: workHR.avgBPM))
-                            .font(.subheadline)
-                            .foregroundStyle(SetHeartRateDisplay.bpmColor(for: workHR.avgBPM))
-                    }
-                }
-            case .cardio:
-                HStack {
-                    Text("Set \(set.setIndex + 1)")
-                    Spacer()
-                    Text(
-                        WorkoutHistoryDetailFormatting.cardioLoadLine(
-                            distanceLabel: formatter.formatDistanceKm(set.distanceKm),
-                            durationLabel: formatDuration(set.durationSeconds),
-                            rpe: set.rpe,
-                            setType: setType
-                        )
-                    )
-                    .foregroundStyle(.secondary)
-                    if isWorkingSet, let workHR {
-                        Text(SetHeartRateDisplay.workingSetLabel(avgBPM: workHR.avgBPM))
-                            .font(.subheadline)
-                            .foregroundStyle(SetHeartRateDisplay.bpmColor(for: workHR.avgBPM))
-                    }
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Set \(set.setIndex + 1)")
+                    .font(.metadataCaption.weight(.semibold))
+                    .foregroundStyle(Color("TextSecondary"))
+                    .frame(width: 44, alignment: .leading)
+
+                Text(loadLine(for: set, exercise: exercise, setType: setType))
+                    .font(.body.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(Color("TextPrimary"))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+
+                if isWorkingSet, let workHR {
+                    Text(SetHeartRateDisplay.workingSetLabel(avgBPM: workHR.avgBPM))
+                        .font(.metadataCaption.monospacedDigit())
+                        .foregroundStyle(SetHeartRateDisplay.bpmColor(for: workHR.avgBPM))
                 }
             }
 
             if isWorkingSet, let restHR {
                 Text(SetHeartRateDisplay.restLabel(avgBPM: restHR.avgBPM))
-                    .font(.caption)
+                    .font(.metadataCaption)
                     .foregroundStyle(Color("TextSecondary"))
+                    .padding(.leading, 44)
             }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func loadLine(for set: SetEntry, exercise: WorkoutExercise, setType: WorkoutSetType) -> String {
+        switch ExerciseLoggingMode.from(catalogEntry: exercise.catalogEntry) {
+        case .strength:
+            WorkoutHistoryDetailFormatting.strengthLoadLine(
+                weightLabel: formatter.formatMassKg(set.weightKg),
+                reps: set.reps,
+                rpe: set.rpe,
+                setType: setType
+            )
+        case .cardio:
+            WorkoutHistoryDetailFormatting.cardioLoadLine(
+                distanceLabel: formatter.formatDistanceKm(set.distanceKm),
+                durationLabel: formatDuration(set.durationSeconds),
+                rpe: set.rpe,
+                setType: setType
+            )
         }
     }
 

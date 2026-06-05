@@ -1,6 +1,7 @@
 import os
 import SwiftData
 import SwiftUI
+import UIKit
 
 struct DiagnosticsView: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -8,6 +9,7 @@ struct DiagnosticsView: View {
     @Environment(HealthKitManager.self) private var healthKitManager
     @State private var viewModel: DiagnosticsViewModel?
     @State private var showsDataQualityFlags = false
+    @State private var workoutDiagnosticsCopied = false
 
     var body: some View {
         ZStack {
@@ -22,6 +24,7 @@ struct DiagnosticsView: View {
                         hrAttributionSection(viewModel: viewModel)
                         derivedMetricsSection(viewModel: viewModel)
                         syncSection(viewModel: viewModel)
+                        trainWorkoutDiagnosticsSection
                         importSummarySection
                         catalogMatchReportSection(viewModel: viewModel)
                         ragSmokeTestSection(viewModel: viewModel)
@@ -865,6 +868,47 @@ struct DiagnosticsView: View {
             Spacer()
             Text("\(count)")
                 .font(.system(.body, design: .monospaced))
+        }
+    }
+
+    @ViewBuilder
+    private var trainWorkoutDiagnosticsSection: some View {
+        elevatedCard {
+            Text("Train workout diagnostics")
+                .font(.cardLabel)
+                .foregroundStyle(Color("TextPrimary"))
+
+            Text("Last 100 lifecycle events from active workout (scenePhase, nav path, container).")
+                .font(.caption)
+                .foregroundStyle(Color("TextSecondary"))
+
+            Text(TrainWorkoutDiagnostics.exportText())
+                .font(.caption2.monospaced())
+                .foregroundStyle(Color("TextSecondary"))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(spacing: 12) {
+                Button("Copy report") {
+                    UIPasteboard.general.string = TrainWorkoutDiagnostics.exportText()
+                    workoutDiagnosticsCopied = true
+                    Log.ui.info("diagnostics train workout report copied")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color("Primary"))
+
+                Button("Clear", role: .destructive) {
+                    TrainWorkoutDiagnostics.clear()
+                    workoutDiagnosticsCopied = false
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if workoutDiagnosticsCopied {
+                Text("Copied to clipboard.")
+                    .font(.caption)
+                    .foregroundStyle(Color("Positive"))
+            }
         }
     }
 

@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Agent build handover log
 
-`AGENT-BUILD-UPDATES.md` at the repo root is the builder-to-architect handover. The architect agent reads it for what shipped, what gates passed, and what needs human Xcode or device work.
+`AGENT-BUILD-UPDATES.md` at the repo root is the builder-to-architect handover. The architect agent reads it for what shipped, what gates passed, and what still needs human Xcode (only when device build failed or signing/capabilities block).
 
 ## When to write
 
@@ -22,9 +22,9 @@ Before you end a builder session, declare **MILESTONE COMPLETE**, or hand work t
 | Section | Content |
 |---------|---------|
 | **Shipped** | Bullet list of user-visible or architectural outcomes |
-| **Gate A (agent)** | Build/test commands run and pass/fail/not-run with reason |
-| **Gate B (human)** | Numbered steps for device, paired watch, or FM gates the agent cannot close |
-| **Human Xcode** | New files, targets, capabilities, plist keys the human must add (never claim you edited pbxproj) |
+| **Gate A (agent)** | `build_device` + `install_app` + `launch_app` (and watch install script if applicable); unit tests if milestone requires them. Pass/fail/not-run with reason. Use `build_sim`/`test_sim` only when noted as faster for that session. |
+| **Gate B (human)** | Only steps the agent truly cannot run: signing blocked, device locked/offline, subjective gym feel (haptics/audio), or FM/HealthKit data the sim cannot fake. If device MCP succeeded, say "agent verified" and list any human-only spot checks. |
+| **Human Xcode** | Only when `build_device` failed due to target membership, capabilities, or signing. Empty section if agent build passed. Never claim you edited pbxproj. |
 | **Out of scope** | What you deliberately did not touch |
 | **Files touched** | Table: Area \| Files |
 

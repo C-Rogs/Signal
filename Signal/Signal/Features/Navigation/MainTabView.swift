@@ -20,6 +20,10 @@ struct MainTabView: View {
         coordinator.activeSession != nil && !coordinator.isViewingActiveWorkout
     }
 
+    private var tabBottomAccessoryEnabled: Bool {
+        showsWorkoutBanner && scenePhase == .active
+    }
+
     var body: some View {
         tabShell
             .onChange(of: coordinator.pendingTrainRoute) { _, route in
@@ -31,6 +35,9 @@ struct MainTabView: View {
                 coordinator.configure(modelContext: modelContext)
             }
             .onChange(of: scenePhase) { _, phase in
+                TrainWorkoutDiagnostics.record(
+                    "mainTab scenePhase=\(phase) viewingWorkout=\(coordinator.isViewingActiveWorkout) banner=\(showsWorkoutBanner) accessory=\(tabBottomAccessoryEnabled)"
+                )
                 if phase == .active {
                     coordinator.configure(modelContext: modelContext)
                     coordinator.refresh()
@@ -69,10 +76,10 @@ struct MainTabView: View {
     private var tabShell: some View {
         let tabs = tabViewCore
         if #available(iOS 26.1, *) {
-            tabs.tabViewBottomAccessory(isEnabled: showsWorkoutBanner) {
+            tabs.tabViewBottomAccessory(isEnabled: tabBottomAccessoryEnabled) {
                 LiveWorkoutBanner(selectedTab: $selectedTab)
             }
-        } else if showsWorkoutBanner {
+        } else if tabBottomAccessoryEnabled {
             tabs.tabViewBottomAccessory {
                 LiveWorkoutBanner(selectedTab: $selectedTab)
             }

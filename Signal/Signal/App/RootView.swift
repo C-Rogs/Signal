@@ -33,7 +33,7 @@ struct RootView: View {
                 WatchConnectivityService.shared.retryPendingPush()
                 LiveWorkoutWatchBridge.shared.retryPendingOutboundTelemetry()
                 runReflectionIfForegroundDue()
-                refreshDailyBriefingSchedule()
+                refreshDailyBriefingScheduleIfNeeded()
             }
         }
         .onChange(of: colorScheme) { _, _ in
@@ -137,6 +137,17 @@ struct RootView: View {
             await ReflectionEngine.shared.runReflection(in: context)
             await DailyBriefingScheduler.shared.refreshSchedule(in: context)
         }
+    }
+
+    private static var lastBriefingRefreshAt: Date?
+
+    private func refreshDailyBriefingScheduleIfNeeded() {
+        let now = Date()
+        if let last = Self.lastBriefingRefreshAt, now.timeIntervalSince(last) < 900 {
+            return
+        }
+        Self.lastBriefingRefreshAt = now
+        refreshDailyBriefingSchedule()
     }
 
     private func refreshDailyBriefingSchedule() {

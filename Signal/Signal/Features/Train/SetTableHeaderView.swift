@@ -8,14 +8,14 @@ struct SetTableHeaderView: View {
     var body: some View {
         HStack(spacing: 6) {
             Text("SET")
-                .frame(width: 26, alignment: .center)
+                .frame(width: 32, alignment: .center)
             Text("PREVIOUS")
                 .frame(minWidth: 56, maxWidth: .infinity, alignment: .leading)
             if mode == .strength {
                 Text(massColumnTitle)
-                    .frame(width: 48, alignment: .trailing)
+                    .frame(width: 52, alignment: .trailing)
                 Text("REPS")
-                    .frame(width: 36, alignment: .trailing)
+                    .frame(width: 40, alignment: .trailing)
             } else {
                 Text(distanceColumnTitle)
                     .frame(width: 44, alignment: .trailing)
@@ -23,11 +23,11 @@ struct SetTableHeaderView: View {
                     .frame(width: 36, alignment: .trailing)
             }
             Text("RPE")
-                .frame(width: 44, alignment: .center)
+                .frame(width: 48, alignment: .center)
             Color.clear
-                .frame(width: 26)
+                .frame(width: 44)
         }
-        .font(.caption2.weight(.semibold))
+        .font(.metadataCaption.weight(.semibold))
         .foregroundStyle(Color("TextSecondary"))
         .textCase(.uppercase)
         .accessibilityHidden(true)

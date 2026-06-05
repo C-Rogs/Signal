@@ -35,8 +35,67 @@ struct SetAutofillTemplate: Sendable, Equatable {
     }
 }
 
+struct ExerciseHistoryHints: Sendable, Equatable {
+    let lastSessionHint: String?
+    let previousSets: [Int: SetAutofillTemplate]
+}
+
 @MainActor
 enum LastSessionAutofill {
+    static var findLastExerciseFetchCountForTesting = 0
+
+    static func resetFetchCountForTesting() {
+        findLastExerciseFetchCountForTesting = 0
+    }
+
+    static func historyHints(
+        catalogEntry: ExerciseCatalog?,
+        exerciseTitle: String,
+        mode: ExerciseLoggingMode,
+        in context: ModelContext,
+        formatter: DisplayUnitFormatter
+    ) throws -> ExerciseHistoryHints {
+        guard let exercise = try findLastExercise(
+            catalogEntry: catalogEntry,
+            exerciseTitle: exerciseTitle,
+            in: context
+        ) else {
+            return ExerciseHistoryHints(lastSessionHint: nil, previousSets: [:])
+        }
+
+        let sortedSets = exercise.sets.sorted { $0.setIndex < $1.setIndex }
+        var previousSets: [Int: SetAutofillTemplate] = [:]
+        for (offset, set) in sortedSets.enumerated() {
+            previousSets[offset] = SetAutofillTemplate(
+                setIndex: offset,
+                setType: set.setType,
+                weightKg: mode == .strength ? set.weightKg : nil,
+                reps: mode == .strength ? set.reps : nil,
+                distanceKm: mode == .cardio ? set.distanceKm : nil,
+                durationSeconds: mode == .cardio ? set.durationSeconds : nil,
+                rpe: set.rpe
+            )
+        }
+
+        let lastHint: String?
+        let workingSets = sortedSets.filter { !isWarmup($0) }
+        if let last = workingSets.last ?? sortedSets.last {
+            switch mode {
+            case .strength:
+                let weightText = formatter.formatMassKg(last.weightKg)
+                let reps = last.reps.map(String.init) ?? "—"
+                lastHint = "Last: \(weightText) × \(reps)"
+            case .cardio:
+                let distance = formatter.formatDistanceKm(last.distanceKm)
+                let duration = formatDuration(last.durationSeconds)
+                lastHint = "Last: \(distance) / \(duration)"
+            }
+        } else {
+            lastHint = nil
+        }
+
+        return ExerciseHistoryHints(lastSessionHint: lastHint, previousSets: previousSets)
+    }
     /// Weight/reps (or cardio distance/duration) from the last completed session. RPE is always nil:
     /// effort is logged fresh each set; use `previousSet` only for cue comparisons and the Previous column.
     static func templates(
@@ -154,6 +213,7 @@ enum LastSessionAutofill {
         exerciseTitle: String,
         in context: ModelContext
     ) throws -> WorkoutExercise? {
+        findLastExerciseFetchCountForTesting += 1
         let completed = try context.fetch(
             FetchDescriptor<WorkoutSession>(
                 predicate: #Predicate { $0.endTime != nil },

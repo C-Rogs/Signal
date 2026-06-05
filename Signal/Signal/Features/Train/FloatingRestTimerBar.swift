@@ -61,5 +61,6 @@ struct FloatingRestTimerBar: View {
             .font(.caption.weight(.semibold))
             .buttonStyle(.bordered)
             .tint(Color("Primary"))
+            .frame(minWidth: 44, minHeight: 36)
     }
 }

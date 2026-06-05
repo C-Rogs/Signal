@@ -64,29 +64,38 @@ enum CoachSessionFactory {
     nonisolated static func makeInstructions(
         referenceDate: Date,
         route: CoachQueryRoute = .general,
+        flags: CoachFeatureFlags = CoachFeatureFlags.current(),
         calendar: Calendar = SchedulingCalendar.make()
     ) -> String {
         let clockLine = CoachClockFormatter.format(referenceDate: referenceDate, calendar: calendar)
-        return [
+        var sections = [
             clockLine,
             CoachSystemPrompt.temporalSemantics,
             CoachSystemPrompt.personaRules,
-            CoachSystemPrompt.reasoningPlan,
-            CoachSystemPrompt.intentAddendum(for: route),
-        ].joined(separator: "\n")
+        ]
+        if flags.deepReasoningEnabled {
+            sections.append(CoachSystemPrompt.reasoningPlan)
+        }
+        if flags.smartContextEnabled {
+            sections.append(CoachSystemPrompt.intentAddendum(for: route))
+        }
+        return sections.joined(separator: "\n")
     }
 
     nonisolated static func makeTools(
         modelContainer: ModelContainer,
         query: String = "",
-        route: CoachQueryRoute? = nil
+        route: CoachQueryRoute? = nil,
+        flags: CoachFeatureFlags = CoachFeatureFlags.current()
     ) -> [any Tool] {
-        let resolvedRoute = route ?? CoachQueryRouter.classify(query)
+        let resolvedRoute = flags.smartContextEnabled
+            ? (route ?? CoachQueryRouter.classify(query))
+            : legacyToolRoute(query: query)
         var tools: [any Tool] = [DeviceClockTool()]
-        if resolvedRoute == .schedule {
+        if resolvedRoute == .schedule || CoachQueryIntent.isScheduleFocused(query) {
             tools.append(CalendarScheduleTool())
         }
-        if resolvedRoute == .exerciseHistory {
+        if resolvedRoute == .exerciseHistory || CoachQueryIntent.isExerciseHistoryFocused(query) {
             tools.append(ExerciseHistoryTool(modelContainer: modelContainer))
         }
         if resolvedRoute == .workoutPrescription || CoachQueryIntent.isVolumeFocused(query) {
@@ -99,13 +108,32 @@ enum CoachSessionFactory {
         modelContainer: ModelContainer,
         referenceDate: Date = Date(),
         query: String = "",
-        route: CoachQueryRoute? = nil
+        route: CoachQueryRoute? = nil,
+        flags: CoachFeatureFlags = CoachFeatureFlags.current()
     ) -> LanguageModelSession {
-        let resolvedRoute = route ?? CoachQueryRouter.classify(query)
+        let resolvedRoute = flags.smartContextEnabled
+            ? (route ?? CoachQueryRouter.classify(query))
+            : legacyToolRoute(query: query)
         return LanguageModelSession(
             model: .default,
-            tools: makeTools(modelContainer: modelContainer, query: query, route: resolvedRoute),
-            instructions: makeInstructions(referenceDate: referenceDate, route: resolvedRoute)
+            tools: makeTools(
+                modelContainer: modelContainer,
+                query: query,
+                route: resolvedRoute,
+                flags: flags
+            ),
+            instructions: makeInstructions(
+                referenceDate: referenceDate,
+                route: resolvedRoute,
+                flags: flags
+            )
         )
+    }
+
+    nonisolated private static func legacyToolRoute(query: String) -> CoachQueryRoute {
+        if CoachQueryIntent.isScheduleFocused(query) { return .schedule }
+        if CoachQueryIntent.isExerciseHistoryFocused(query) { return .exerciseHistory }
+        if CoachQueryIntent.isVolumeFocused(query) { return .workoutPrescription }
+        return .general
     }
 }
