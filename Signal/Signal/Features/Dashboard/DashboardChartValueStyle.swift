@@ -9,6 +9,7 @@ enum DashboardChartValueStyle: Sendable {
     case steps
     case exerciseMinutes
     case nutritionCalories
+    case e1RM
 
     func formattedValue(_ value: Double, formatter: DisplayUnitFormatter) -> String {
         switch self {
@@ -26,6 +27,8 @@ enum DashboardChartValueStyle: Sendable {
             DashboardFormatting.steps(value)
         case .exerciseMinutes:
             DashboardFormatting.minutes(value)
+        case .e1RM:
+            formatter.formatMassKg(value)
         }
     }
 
@@ -38,7 +41,7 @@ enum DashboardChartValueStyle: Sendable {
             return "\(Int(value.rounded()))"
         case .sleepHours:
             return String(format: "%.1f", value)
-        case .bodyMass:
+        case .bodyMass, .e1RM:
             let display = formatter.displayMassKg(value)
             return String(format: "%.0f", display)
         default:

@@ -18,6 +18,7 @@ struct WorkoutExerciseSectionView: View {
     @Environment(TrainPreferences.self) private var trainPreferences
     @Environment(LiveWorkoutWatchBridge.self) private var watchBridge
     @State private var showReplacePicker = false
+    @State private var showSwapSheet = false
     @State private var dismissedWarmupSuggestion = false
     @State private var showRemoveConfirm = false
     @State private var showSupersetPicker = false
@@ -53,7 +54,9 @@ struct WorkoutExerciseSectionView: View {
     }
 
     var body: some View {
-        Section {
+        VStack(alignment: .leading, spacing: 4) {
+            exerciseHeader
+
             if let recommendation = warmupRecommendation {
                 WarmupSuggestionBannerView(
                     summary: recommendation.summary,
@@ -66,6 +69,7 @@ struct WorkoutExerciseSectionView: View {
                         dismissedWarmupSuggestion = true
                     }
                 )
+                .padding(.horizontal, 4)
             }
 
             SetTableHeaderView(
@@ -73,20 +77,12 @@ struct WorkoutExerciseSectionView: View {
                 massColumnTitle: massColumnTitle,
                 distanceColumnTitle: distanceColumnTitle
             )
-            .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 0, trailing: 12))
-            .listRowBackground(Color.clear)
-            .listRowSeparator(.hidden)
+            .padding(.horizontal, 12)
+            .padding(.top, 4)
 
             if !warmupSets.isEmpty {
                 ForEach(warmupSets, id: \.persistentModelID) { set in
                     setRow(for: set)
-                }
-                .onDelete { indexSet in
-                    for index in indexSet {
-                        let set = warmupSets[index]
-                        try? store.deleteSet(set, from: exercise)
-                    }
-                    onNeedsRefresh()
                 }
             }
 
@@ -97,13 +93,6 @@ struct WorkoutExerciseSectionView: View {
             ForEach(workingSets, id: \.persistentModelID) { set in
                 setRow(for: set)
             }
-            .onDelete { indexSet in
-                for index in indexSet {
-                    let set = workingSets[index]
-                    try? store.deleteSet(set, from: exercise)
-                }
-                onNeedsRefresh()
-            }
 
             Button {
                 try? store.addSet(to: exercise)
@@ -111,19 +100,30 @@ struct WorkoutExerciseSectionView: View {
             } label: {
                 Label("Add Set", systemImage: "plus")
             }
-        } header: {
-            exerciseHeader
+            .padding(.horizontal, 12)
+            .padding(.top, 4)
         }
-        .listSectionSpacing(4)
         .sheet(isPresented: $showReplacePicker) {
             ExercisePickerView { catalog in
                 try? store.replaceExercise(
                     exercise,
                     catalogEntry: catalog,
-                    exerciseTitle: catalog.canonicalName
+                    exerciseTitle: catalog.canonicalName,
+                    recoveryScore: recoveryScore,
+                    personalReadiness: personalReadiness,
+                    deloadActive: DeloadSuggestionReader.isDeloadActive(in: modelContext)
                 )
                 onNeedsRefresh()
             }
+        }
+        .sheet(isPresented: $showSwapSheet) {
+            WorkoutSwapSheet(
+                exercise: exercise,
+                store: store,
+                recoveryScore: recoveryScore,
+                personalReadiness: personalReadiness,
+                onApplied: onNeedsRefresh
+            )
         }
         .confirmationDialog(
             "Remove exercise?",
@@ -186,9 +186,8 @@ struct WorkoutExerciseSectionView: View {
             }
         }
         .animation(.easeOut(duration: 0.25), value: activeCues[set.persistentModelID])
-        .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
     }
 
     private func handleSetCompleteToggle(set: SetEntry, completed: Bool) {
@@ -303,9 +302,7 @@ struct WorkoutExerciseSectionView: View {
                 .frame(height: 1)
         }
         .padding(.vertical, 6)
-        .listRowInsets(EdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12))
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
+        .padding(.horizontal, 12)
     }
 
     @ViewBuilder
@@ -320,9 +317,12 @@ struct WorkoutExerciseSectionView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text(exercise.exerciseTitle)
-                            .font(.headline)
-                            .foregroundStyle(Color("TextPrimary"))
+                        NavigationLink(value: TrainRoute.exerciseDetail(.from(exercise: exercise))) {
+                            Text(exercise.exerciseTitle)
+                                .font(.headline)
+                                .foregroundStyle(Color("TextPrimary"))
+                        }
+                        .buttonStyle(.plain)
                         if exercise.supersetId != nil {
                             Text("Superset")
                                 .font(.caption2.weight(.semibold))
@@ -338,6 +338,7 @@ struct WorkoutExerciseSectionView: View {
                                 .foregroundStyle(completionColor)
                         }
                         Menu {
+                            Button("Swap with Signal") { showSwapSheet = true }
                             Button("Replace exercise") { showReplacePicker = true }
                             Button("Start rest timer") {
                                 try? store.startRestTimer(for: exercise)

@@ -24,6 +24,7 @@ struct TrainHomeView: View {
     @State private var healthKitWriteNote: String?
     @State private var busyDayChipTitle: String?
     @State private var showDeloadBanner = false
+    @State private var showImportWorkout = false
     @AppStorage("trainDeloadBannerDismissedWeek") private var dismissedDeloadWeek = ""
 
     init() {
@@ -76,9 +77,10 @@ struct TrainHomeView: View {
         }
         .onChange(of: liveSessions) { _, sessions in
             coordinator.refresh()
-            if sessions.isEmpty, coordinator.pendingWellnessSessionID == nil {
-                path.removeAll()
-            }
+            guard sessions.isEmpty else { return }
+            guard coordinator.pendingWellnessSessionID == nil else { return }
+            guard coordinator.activeSession == nil else { return }
+            path.removeAll()
         }
         .onChange(of: path) { _, newPath in
             if newPath.isEmpty {
@@ -90,6 +92,11 @@ struct TrainHomeView: View {
         }
         .sheet(item: $editingRoutine) { routine in
             RoutineEditorView(routine: routine)
+        }
+        .sheet(isPresented: $showImportWorkout) {
+            GeminiWorkoutImportView { sessionID in
+                path.append(.activeWorkout(sessionID))
+            }
         }
     }
 
@@ -151,6 +158,13 @@ struct TrainHomeView: View {
                         .font(.headline)
                     }
                     .accessibilityIdentifier("startWorkoutButton")
+
+                    Button {
+                        showImportWorkout = true
+                    } label: {
+                        Label("Import workout", systemImage: "doc.on.clipboard")
+                    }
+                    .accessibilityIdentifier("importWorkoutButton")
                 }
 
                 Section("Routines") {
@@ -227,14 +241,23 @@ struct TrainHomeView: View {
         case .activeWorkout(let sessionID):
             ActiveWorkoutContainerView(sessionID: sessionID)
         case .history(let id):
-            if let session = completedSessions.first(where: { $0.persistentModelID == id }) {
+            if let session = resolveSession(id: id) {
                 WorkoutHistoryDetailView(session: session)
             } else {
                 ContentUnavailableView("Session not found", systemImage: "questionmark")
             }
         case .editRoutine:
             ContentUnavailableView("Routine editor unavailable", systemImage: "list.bullet")
+        case .exerciseDetail(let detailRoute):
+            ExerciseDetailView(route: detailRoute)
         }
+    }
+
+    private func resolveSession(id: PersistentIdentifier) -> WorkoutSession? {
+        if let session = completedSessions.first(where: { $0.persistentModelID == id }) {
+            return session
+        }
+        return try? modelContext.model(for: id) as? WorkoutSession
     }
 
     private var screenBackground: Color {

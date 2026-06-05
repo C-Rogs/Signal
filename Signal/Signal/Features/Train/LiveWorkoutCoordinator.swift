@@ -3,10 +3,23 @@ import os
 import Observation
 import SwiftData
 
+struct ExerciseDetailRoute: Hashable {
+    var catalogID: PersistentIdentifier?
+    var exerciseTitle: String
+
+    static func from(exercise: WorkoutExercise) -> ExerciseDetailRoute {
+        ExerciseDetailRoute(
+            catalogID: exercise.catalogEntry?.persistentModelID,
+            exerciseTitle: exercise.exerciseTitle
+        )
+    }
+}
+
 enum TrainRoute: Hashable {
     case activeWorkout(PersistentIdentifier)
     case history(PersistentIdentifier)
     case editRoutine(PersistentIdentifier?)
+    case exerciseDetail(ExerciseDetailRoute)
 }
 
 @MainActor

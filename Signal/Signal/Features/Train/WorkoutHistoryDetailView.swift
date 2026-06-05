@@ -16,10 +16,22 @@ struct WorkoutHistoryDetailView: View {
         DisplayUnitFormatter(preferences: unitPreferences)
     }
 
+    private var sessionMeanWorkingSetRPE: Double? {
+        WorkoutHistoryDetailFormatting.meanWorkingSetRPE(
+            sets: exercises.flatMap(\.sets)
+        )
+    }
+
     var body: some View {
         List {
             if let end = session.endTime {
                 LabeledContent("Ended", value: end.formatted(date: .abbreviated, time: .shortened))
+            }
+            if let meanRPE = sessionMeanWorkingSetRPE {
+                LabeledContent(
+                    "Avg RPE",
+                    value: WorkoutHistoryDetailFormatting.meanRPELabel(for: meanRPE)
+                )
             }
             if exercises.isEmpty {
                 Section {
@@ -28,7 +40,7 @@ struct WorkoutHistoryDetailView: View {
                 }
             } else {
                 ForEach(exercises, id: \.persistentModelID) { exercise in
-                    Section(exercise.exerciseTitle) {
+                    Section {
                         let sets = exercise.sets.sorted { $0.setIndex < $1.setIndex }
                         if sets.isEmpty {
                             Text("No sets logged")
@@ -38,6 +50,12 @@ struct WorkoutHistoryDetailView: View {
                             ForEach(Array(sets.enumerated()), id: \.element.persistentModelID) { index, set in
                                 setSummary(set, exercise: exercise, nextSet: index + 1 < sets.count ? sets[index + 1] : nil)
                             }
+                        }
+                    } header: {
+                        NavigationLink(value: TrainRoute.exerciseDetail(.from(exercise: exercise))) {
+                            Text(exercise.exerciseTitle)
+                                .font(.headline)
+                                .foregroundStyle(Color("TextPrimary"))
                         }
                     }
                 }
@@ -89,7 +107,7 @@ struct WorkoutHistoryDetailView: View {
         exercise: WorkoutExercise,
         nextSet: SetEntry?
     ) -> some View {
-        let setType = WorkoutSetType(storageValue: set.setType)
+        let setType = WorkoutSetType(storageValue: set.setType) ?? .normal
         let isWorkingSet = setType != .warmup
         let workHR = workHeartRateBySetEntryID[set.entryID]
         let restHR = nextSet.flatMap { restHeartRateByNextSetEntryID[$0.entryID] }
@@ -100,8 +118,15 @@ struct WorkoutHistoryDetailView: View {
                 HStack {
                     Text("Set \(set.setIndex + 1)")
                     Spacer()
-                    Text("\(formatter.formatMassKg(set.weightKg)) × \(set.reps.map(String.init) ?? "—")")
-                        .foregroundStyle(.secondary)
+                    Text(
+                        WorkoutHistoryDetailFormatting.strengthLoadLine(
+                            weightLabel: formatter.formatMassKg(set.weightKg),
+                            reps: set.reps,
+                            rpe: set.rpe,
+                            setType: setType
+                        )
+                    )
+                    .foregroundStyle(.secondary)
                     if isWorkingSet, let workHR {
                         Text(SetHeartRateDisplay.workingSetLabel(avgBPM: workHR.avgBPM))
                             .font(.subheadline)
@@ -112,8 +137,15 @@ struct WorkoutHistoryDetailView: View {
                 HStack {
                     Text("Set \(set.setIndex + 1)")
                     Spacer()
-                    Text("\(formatter.formatDistanceKm(set.distanceKm)) / \(formatDuration(set.durationSeconds))")
-                        .foregroundStyle(.secondary)
+                    Text(
+                        WorkoutHistoryDetailFormatting.cardioLoadLine(
+                            distanceLabel: formatter.formatDistanceKm(set.distanceKm),
+                            durationLabel: formatDuration(set.durationSeconds),
+                            rpe: set.rpe,
+                            setType: setType
+                        )
+                    )
+                    .foregroundStyle(.secondary)
                     if isWorkingSet, let workHR {
                         Text(SetHeartRateDisplay.workingSetLabel(avgBPM: workHR.avgBPM))
                             .font(.subheadline)
