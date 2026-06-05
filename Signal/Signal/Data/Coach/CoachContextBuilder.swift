@@ -4,18 +4,32 @@ import os
 
 actor CoachContextBuilder {
     func buildContext(for query: String, modelContainer: ModelContainer) async throws -> CoachContext {
+        let route = CoachQueryRouter.classify(query)
         let referenceDate = Date()
         let calendar = SchedulingCalendar.make()
-        let ragSummaries = try await HealthVectorRetriever.retrieve(
-            query: query,
-            k: 4,
-            modelContainer: modelContainer,
-            referenceDate: referenceDate,
-            calendar: calendar
-        )
         let metricsSnapshot = await DerivedMetricsService.shared.snapshot(modelContainer: modelContainer)
+        let proteinBelowTarget = Self.isProteinBelowTarget(snapshot: metricsSnapshot)
+        let scope = CoachContextScope.make(
+            route: route,
+            query: query,
+            proteinBelowTarget: proteinBelowTarget
+        )
+
+        let ragSummaries: [String]
+        if scope.ragK > 0 {
+            ragSummaries = try await HealthVectorRetriever.retrieve(
+                query: query,
+                k: scope.ragK,
+                modelContainer: modelContainer,
+                referenceDate: referenceDate,
+                calendar: calendar
+            )
+        } else {
+            ragSummaries = []
+        }
+
         let calendarSummary: String
-        if CoachQueryIntent.isScheduleFocused(query) {
+        if scope.includeCalendar {
             calendarSummary = await CalendarContextBuilder().buildSummary(referenceDate: referenceDate) ?? ""
         } else {
             calendarSummary = ""
@@ -23,14 +37,21 @@ actor CoachContextBuilder {
 
         return await MainActor.run {
             let userSummary = Self.buildUserSummary(modelContainer: modelContainer)
-            let activeInsights = Self.fetchActiveInsights(modelContainer: modelContainer)
+            let activeInsights = scope.includeActiveInsights
+                ? Self.fetchActiveInsights(modelContainer: modelContainer)
+                : []
             let derivedMetricsSummary = Self.formatDerivedMetrics(
                 snapshot: metricsSnapshot,
                 referenceDate: referenceDate,
-                calendar: calendar
+                calendar: calendar,
+                include: scope.metricsParts
             )
-            let personalReadinessSummary = Self.formatPersonalReadiness(modelContainer: modelContainer)
-            let recentWorkouts = Self.buildRecentWorkouts(modelContainer: modelContainer)
+            let personalReadinessSummary = scope.includePersonalReadiness
+                ? Self.formatPersonalReadiness(modelContainer: modelContainer)
+                : ""
+            let recentWorkouts = scope.includeRecentWorkouts
+                ? Self.buildRecentWorkouts(modelContainer: modelContainer, limit: scope.recentWorkoutLimit)
+                : []
 
             var context = CoachContext(
                 userSummary: userSummary,
@@ -41,12 +62,20 @@ actor CoachContextBuilder {
                 recentWorkouts: recentWorkouts,
                 calendarSummary: calendarSummary
             )
-            context.prepareForModelInput(query: query)
+            context.prepareForModelInput(query: query, route: route)
+            let sectionNames = context.activeSectionNames().joined(separator: ",")
             Log.coach.info(
-                "context built rag=\(ragSummaries.count, privacy: .public) insights=\(activeInsights.count, privacy: .public) promptChars=\(context.assembledPrompt(query: query).count, privacy: .public)"
+                "coach intent=\(route.rawValue, privacy: .public) contextSections=\(sectionNames, privacy: .public) promptChars=\(context.assembledPrompt(query: query).count, privacy: .public)"
             )
             return context
         }
+    }
+
+    nonisolated private static func isProteinBelowTarget(snapshot: DerivedMetricsSnapshot) -> Bool {
+        guard let protein = snapshot.proteinTarget,
+              let actual = protein.actualGrams
+        else { return false }
+        return actual < protein.targetMinGrams
     }
 
     @MainActor
@@ -86,43 +115,51 @@ actor CoachContextBuilder {
     private static func formatDerivedMetrics(
         snapshot: DerivedMetricsSnapshot,
         referenceDate: Date,
-        calendar: Calendar
+        calendar: Calendar,
+        include: DerivedMetricsParts = [.acwr, .volume, .protein, .exertion, .strainDebt, .syncFreshness]
     ) -> String {
         var lines: [String] = []
 
-        if let acwr = snapshot.acwr {
-            let acwrText = String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), acwr.acwr)
-            lines.append("ACWR: \(acwrText) (\(acwr.zone.badgeLabel)).")
-        } else {
-            lines.append("ACWR: unavailable.")
-        }
-
-        let volumeParts = snapshot.weeklyVolume
-            .filter { $0.fractionalSets > 0 }
-            .map { row in
-                let sets = VolumeCalculator.integerSetCount(from: row.fractionalSets)
-                return "\(row.muscleGroup.rawValue) \(sets) sets (\(row.status.badgeLabel))"
+        if include.contains(.acwr) {
+            if let acwr = snapshot.acwr {
+                let acwrText = String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), acwr.acwr)
+                lines.append("ACWR: \(acwrText) (\(acwr.zone.badgeLabel)).")
+            } else {
+                lines.append("ACWR: unavailable.")
             }
-        if volumeParts.isEmpty {
-            lines.append("Volume this week: no working sets logged.")
-        } else {
-            lines.append("Volume this week: \(volumeParts.joined(separator: "; ")).")
         }
 
-        let clockDayKey = Summarizer.dayKey(for: referenceDate, calendar: calendar)
-        if let latestSync = snapshot.healthSyncLatestDayKey,
-           latestSync != clockDayKey,
-           let dayGap = CoachClockFormatter.calendarDaysBetween(
-               earlierDayKey: latestSync,
-               laterDayKey: clockDayKey,
-               calendar: calendar
-           ),
-           dayGap > 1
-        {
-            lines.append("Health sync latest: \(latestSync).")
+        if include.contains(.volume) {
+            let volumeParts = snapshot.weeklyVolume
+                .filter { $0.fractionalSets > 0 }
+                .map { row in
+                    let sets = VolumeCalculator.integerSetCount(from: row.fractionalSets)
+                    return "\(row.muscleGroup.rawValue) \(sets) sets (\(row.status.badgeLabel))"
+                }
+            if volumeParts.isEmpty {
+                lines.append("Volume this week: no working sets logged.")
+            } else {
+                lines.append("Volume this week: \(volumeParts.joined(separator: "; ")).")
+            }
         }
 
-        if let protein = snapshot.proteinTarget,
+        if include.contains(.syncFreshness) {
+            let clockDayKey = Summarizer.dayKey(for: referenceDate, calendar: calendar)
+            if let latestSync = snapshot.healthSyncLatestDayKey,
+               latestSync != clockDayKey,
+               let dayGap = CoachClockFormatter.calendarDaysBetween(
+                   earlierDayKey: latestSync,
+                   laterDayKey: clockDayKey,
+                   calendar: calendar
+               ),
+               dayGap > 1
+            {
+                lines.append("Health sync latest: \(latestSync).")
+            }
+        }
+
+        if include.contains(.protein),
+           let protein = snapshot.proteinTarget,
            let actual = protein.actualGrams,
            actual < protein.targetMinGrams
         {
@@ -134,11 +171,17 @@ actor CoachContextBuilder {
             )
         }
 
-        if let exertion = snapshot.todayExertion, exertion.isCalibrated {
+        if include.contains(.exertion),
+           let exertion = snapshot.todayExertion,
+           exertion.isCalibrated
+        {
             let scoreInt = Int(exertion.value.rounded())
             lines.append("Exertion today: \(scoreInt)/100 (\(exertion.source.rawValue)).")
         }
-        if let debt = snapshot.exertionDebt, debt.isCalibrated {
+        if include.contains(.strainDebt),
+           let debt = snapshot.exertionDebt,
+           debt.isCalibrated
+        {
             let debtText = String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), debt.exertionDebtNormalized)
             let sumInt = Int(debt.rolling7dSum.rounded())
             let deloadLabel = snapshot.deloadSuggested ? "yes" : "no"
@@ -199,7 +242,8 @@ actor CoachContextBuilder {
     }
 
     @MainActor
-    private static func buildRecentWorkouts(modelContainer: ModelContainer) -> [String] {
+    private static func buildRecentWorkouts(modelContainer: ModelContainer, limit: Int = 2) -> [String] {
+        guard limit > 0 else { return [] }
         let context = ModelContext(modelContainer)
         let twoWeeksAgo = Calendar.current.date(byAdding: .day, value: -14, to: Date())
             ?? .distantPast
@@ -207,7 +251,7 @@ actor CoachContextBuilder {
             predicate: #Predicate { $0.startTime >= twoWeeksAgo },
             sortBy: [SortDescriptor(\.startTime, order: .reverse)]
         )
-        descriptor.fetchLimit = 2
+        descriptor.fetchLimit = limit
         let sessions = (try? context.fetch(descriptor)) ?? []
         let formatter = DateFormatter()
         formatter.dateStyle = .medium

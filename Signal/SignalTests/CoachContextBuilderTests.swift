@@ -44,6 +44,16 @@ final class CoachContextBuilderTests: XCTestCase {
         XCTAssertFalse(CoachQueryIntent.isScheduleFocused("How did bench press progress this month?"))
     }
 
+    func testExerciseHistoryIntentDetection() {
+        XCTAssertTrue(CoachQueryIntent.isExerciseHistoryFocused("How has my bench press progressed?"))
+        XCTAssertFalse(CoachQueryIntent.isExerciseHistoryFocused("How is my recovery today?"))
+    }
+
+    func testOffTopicIntentDetection() {
+        XCTAssertTrue(CoachQueryIntent.isOffTopic("Who will win the next election?"))
+        XCTAssertFalse(CoachQueryIntent.isOffTopic("Should I train legs today?"))
+    }
+
     @MainActor
     func testNonScheduleQueryOmitsCalendarSection() async throws {
         let container = try SignalModelContainer.make(inMemoryOnly: true)
@@ -122,6 +132,46 @@ final class CoachContextBuilderTests: XCTestCase {
         )
         XCTAssertFalse(built.userSummary.contains("nil"))
         XCTAssertTrue(built.userSummary.contains("You,"))
+    }
+
+    @MainActor
+    func testWorkoutPrescriptionOmitsProteinInMetrics() async throws {
+        let container = try SignalModelContainer.make(inMemoryOnly: true)
+        let modelContext = ModelContext(container)
+        let profile = UserProfile()
+        profile.bodyweightKg = 80
+        modelContext.insert(profile)
+        let calendar = SchedulingCalendar.make()
+        let today = calendar.startOfDay(for: Date())
+        modelContext.insert(DailyNutrition(date: today, proteinG: 50, source: "test"))
+        try modelContext.save()
+
+        EmbeddingBackend.useDeterministicTestEmbedding = true
+        defer { EmbeddingBackend.useDeterministicTestEmbedding = false }
+        await DerivedMetricsService.shared.invalidateCache()
+
+        let built = try await CoachContextBuilder().buildContext(
+            for: "What should I train today?",
+            modelContainer: container
+        )
+        XCTAssertFalse(built.derivedMetricsSummary.contains("Protein:"))
+        XCTAssertTrue(built.derivedMetricsSummary.contains("ACWR"))
+    }
+
+    @MainActor
+    func testNutritionQueryOmitsACWRAndWorkouts() async throws {
+        let container = try SignalModelContainer.make(inMemoryOnly: true)
+        EmbeddingBackend.useDeterministicTestEmbedding = true
+        defer { EmbeddingBackend.useDeterministicTestEmbedding = false }
+
+        let built = try await CoachContextBuilder().buildContext(
+            for: "Am I hitting protein?",
+            modelContainer: container
+        )
+        let prompt = built.assembledPrompt(query: "Am I hitting protein?")
+        XCTAssertFalse(built.derivedMetricsSummary.contains("ACWR"))
+        XCTAssertFalse(built.derivedMetricsSummary.contains("Volume this week"))
+        XCTAssertFalse(prompt.contains("## Recent workouts"))
     }
 
     @MainActor

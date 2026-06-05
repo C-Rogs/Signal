@@ -75,6 +75,18 @@ struct CoachContext: Sendable, Equatable {
         return sections.joined(separator: "\n\n")
     }
 
+    func activeSectionNames() -> [String] {
+        var names: [String] = []
+        if !userSummary.isEmpty { names.append("user") }
+        if !activeInsights.isEmpty { names.append("insights") }
+        if !derivedMetricsSummary.isEmpty { names.append("metrics") }
+        if !personalReadinessSummary.isEmpty { names.append("recovery") }
+        if !ragSummaries.isEmpty { names.append("rag") }
+        if !recentWorkouts.isEmpty { names.append("workouts") }
+        if !calendarSummary.isEmpty { names.append("schedule") }
+        return names
+    }
+
     mutating func truncatingToFitBudget(
         maxChars: Int = CoachContextLimits.assembledPromptMaxChars,
         sampleQuery: String = "",
@@ -110,8 +122,9 @@ struct CoachContext: Sendable, Equatable {
         ragSummaries.removeFirst(removeCount)
     }
 
-    mutating func prepareForModelInput(query: String) {
-        let pinSchedule = CoachQueryIntent.isScheduleFocused(query)
+    mutating func prepareForModelInput(query: String, route: CoachQueryRoute? = nil) {
+        let resolvedRoute = route ?? CoachQueryRouter.classify(query)
+        let pinSchedule = resolvedRoute == .schedule
         truncatingToFitBudget(
             maxChars: CoachContextLimits.assembledPromptMaxChars,
             sampleQuery: query,
