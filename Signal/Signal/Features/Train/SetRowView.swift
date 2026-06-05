@@ -20,7 +20,6 @@ struct SetRowView: View {
     @State private var loggedRPE: Double?
     @State private var showRPESheet = false
     @State private var sheetRPE: Double = WorkoutRPEScale.defaultValue
-    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var focusedField: Field?
 
@@ -107,13 +106,6 @@ struct SetRowView: View {
                 commitFields()
             }
         }
-        .onChange(of: scenePhase) { _, phase in
-            if TrainScenePhaseKeyboardPolicy.shouldReleaseSetFieldFocus(for: phase) {
-                TrainWorkoutDiagnostics.record("setRow releaseFocus set=\(set.setIndex) phase=\(phase)")
-                commitFields()
-                focusedField = nil
-            }
-        }
         .contextMenu {
             Button("Delete", role: .destructive, action: onDelete)
         }
@@ -173,7 +165,10 @@ struct SetRowView: View {
     private var previousColumn: some View {
         Group {
             if let previousHint, let onFillPrevious {
-                Button(action: onFillPrevious) {
+                Button {
+                    TrainFeedback.shared.play(.fillPrevious)
+                    onFillPrevious()
+                } label: {
                     Text(previousHint)
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(Color("Primary").opacity(0.85))

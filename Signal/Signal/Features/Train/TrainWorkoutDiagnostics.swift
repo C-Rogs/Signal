@@ -16,6 +16,10 @@ enum TrainWorkoutDiagnostics {
         UserDefaults.standard.set(entries, forKey: storageKey)
     }
 
+    static var hasEntries: Bool {
+        !(UserDefaults.standard.stringArray(forKey: storageKey) ?? []).isEmpty
+    }
+
     static func exportText() -> String {
         let entries = UserDefaults.standard.stringArray(forKey: storageKey) ?? []
         if entries.isEmpty {

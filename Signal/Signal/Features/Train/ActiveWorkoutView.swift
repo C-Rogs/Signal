@@ -3,7 +3,6 @@ import SwiftData
 import SwiftUI
 
 struct ActiveWorkoutView: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
     @Environment(UnitPreferences.self) private var unitPreferences
@@ -102,7 +101,9 @@ struct ActiveWorkoutView: View {
                 }
             }
             .onDisappear {
-                TrainWorkoutDiagnostics.record("activeWorkout disappear exercises=\(orderedExercises.count)")
+                TrainWorkoutDiagnostics.record(
+                    "activeWorkout disappear exercises=\(orderedExercises.count) scenePhase=\(scenePhase) presented=\(coordinator.presentedWorkoutSessionID != nil)"
+                )
                 Log.ui.info("active workout disappeared")
             }
     }
@@ -239,7 +240,7 @@ struct ActiveWorkoutView: View {
     private var workoutToolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             HStack(spacing: 16) {
-                Button("Minimize") { dismiss() }
+                Button("Minimize") { coordinator.minimizeWorkout() }
                 Button("Discard") { showDiscardConfirm = true }
                     .foregroundStyle(.red)
             }
@@ -304,7 +305,6 @@ struct ActiveWorkoutView: View {
             coordinator.presentWellness(for: session)
             coordinator.refresh()
             coordinator.resetTrainNavigation()
-            dismiss()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -318,7 +318,6 @@ struct ActiveWorkoutView: View {
             hintCache.invalidate()
             coordinator.resetTrainNavigation()
             coordinator.refresh()
-            dismiss()
         } catch {
             errorMessage = error.localizedDescription
         }

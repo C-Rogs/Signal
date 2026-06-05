@@ -7,9 +7,17 @@ enum TrainHapticEvent: Sendable {
     case prCelebration
     case restStart
     case restEnd
-    case restCountdown
+    case restCountdown(second: Int)
+    case restMilestone(second: Int)
+    case workoutStart
     case workoutFinish
+    case wellnessComplete
     case primaryTap
+    case fillPrevious
+    case rpeSelect
+    case timerExtend
+    case timerShrink
+    case warmupAdded
     case warning
     case selection
 }
@@ -20,13 +28,11 @@ final class TrainFeedback {
     static let shared = TrainFeedback(preferences: .shared)
 
     private let preferences: TrainPreferences
-    private let haptics: TrainHapticEngine
-    private let bell: RestBellPlayer
+    private let engine = HapticEngine()
+    private let bell = RestBellPlayer()
 
     init(preferences: TrainPreferences) {
         self.preferences = preferences
-        self.haptics = TrainHapticEngine()
-        self.bell = RestBellPlayer()
     }
 
     func play(_ event: TrainHapticEvent) {
@@ -34,12 +40,7 @@ final class TrainFeedback {
             Log.workout.debug("train haptic skipped event=\(String(describing: event), privacy: .public)")
             return
         }
-        haptics.play(event)
-    }
-
-    func playRestCountdown(second: Int) {
-        guard preferences.hapticsEnabled else { return }
-        haptics.playCountdown(second: second)
+        engine.playTrain(event)
     }
 
     func playRestBell() {

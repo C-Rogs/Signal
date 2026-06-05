@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 enum ProfileDestination: Hashable {
     case profileGoals
@@ -17,6 +18,19 @@ struct ProfileView: View {
                 .ignoresSafeArea()
 
             List {
+                if TrainWorkoutDiagnostics.hasEntries {
+                    Section {
+                        Text("Workout debug log")
+                            .font(.headline)
+                        Text(TrainWorkoutDiagnostics.exportText())
+                            .font(.caption2.monospaced())
+                            .textSelection(.enabled)
+                        Button("Copy workout debug log") {
+                            UIPasteboard.general.string = TrainWorkoutDiagnostics.exportText()
+                        }
+                    }
+                }
+
                 Section {
                     NavigationLink(value: ProfileDestination.profileGoals) {
                         profileRow(

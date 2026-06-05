@@ -6,8 +6,6 @@ struct ActiveWorkoutContainerView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
     @Environment(LiveWorkoutCoordinator.self) private var coordinator
-    @Environment(\.dismiss) private var dismiss
-
     let sessionID: PersistentIdentifier
 
     @State private var session: WorkoutSession?
@@ -24,7 +22,7 @@ struct ActiveWorkoutContainerView: View {
                     Text("This session is no longer in progress.")
                 } actions: {
                     Button("Back to Train") {
-                        dismiss()
+                        coordinator.minimizeWorkout()
                     }
                 }
             } else {
@@ -66,7 +64,6 @@ struct ActiveWorkoutContainerView: View {
         TrainWorkoutDiagnostics.record("container FAILED resolve sessionID=\(sessionID)")
         Log.workout.error("active workout container could not resolve session")
         coordinator.resetTrainNavigation()
-        dismiss()
     }
 
     private func resolveSession() -> WorkoutSession? {

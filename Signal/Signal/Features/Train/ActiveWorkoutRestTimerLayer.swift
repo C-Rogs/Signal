@@ -80,7 +80,11 @@ final class ActiveWorkoutRestTimerCoordinator {
         store: LiveWorkoutStore,
         onCoordinatorRefresh: () -> Void
     ) {
-        TrainFeedback.shared.play(.primaryTap)
+        if seconds > 0 {
+            TrainFeedback.shared.play(.timerExtend)
+        } else {
+            TrainFeedback.shared.play(.timerShrink)
+        }
         try? store.adjustRestTimer(for: exercise, by: seconds)
         onCoordinatorRefresh()
     }
@@ -102,7 +106,9 @@ final class ActiveWorkoutRestTimerCoordinator {
             case .restStarted:
                 TrainFeedback.shared.play(.restStart)
             case .countdown(let second):
-                TrainFeedback.shared.playRestCountdown(second: second)
+                TrainFeedback.shared.play(.restCountdown(second: second))
+            case .milestone(let second):
+                TrainFeedback.shared.play(.restMilestone(second: second))
             case .restEnded:
                 TrainFeedback.shared.play(.restEnd)
                 TrainFeedback.shared.playRestBell()

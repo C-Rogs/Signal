@@ -102,6 +102,9 @@ struct LogSetRPEView: View {
     private func rpePickerItem(_ value: Double) -> some View {
         let isSelected = selectedRPE == value
         return Button {
+            if selectedRPE != value {
+                TrainFeedback.shared.play(.rpeSelect)
+            }
             selectedRPE = value
         } label: {
             Text(WorkoutRPEScale.compactLabel(for: value))

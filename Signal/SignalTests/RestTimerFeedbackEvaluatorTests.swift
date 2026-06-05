@@ -37,4 +37,21 @@ final class RestTimerFeedbackEvaluatorTests: XCTestCase {
         state.acknowledgeRestStarted(exerciseID: "exercise-a")
         XCTAssertEqual(state.advance(activeExerciseID: "exercise-a", remainingSeconds: 60), [])
     }
+
+    func testMilestoneFiresAtThirtyAndTenOnceEach() {
+        var state = RestTimerFeedbackState()
+        _ = state.advance(activeExerciseID: "exercise-a", remainingSeconds: 90)
+        XCTAssertEqual(state.advance(activeExerciseID: "exercise-a", remainingSeconds: 31), [])
+        XCTAssertEqual(state.advance(activeExerciseID: "exercise-a", remainingSeconds: 30), [.milestone(second: 30)])
+        XCTAssertEqual(state.advance(activeExerciseID: "exercise-a", remainingSeconds: 30), [])
+        XCTAssertEqual(state.advance(activeExerciseID: "exercise-a", remainingSeconds: 10), [.milestone(second: 10)])
+    }
+
+    func testCountdownFiresAtZeroWhileTimerStillActive() {
+        var state = RestTimerFeedbackState()
+        _ = state.advance(activeExerciseID: "exercise-a", remainingSeconds: 2)
+        _ = state.advance(activeExerciseID: "exercise-a", remainingSeconds: 1)
+        XCTAssertEqual(state.advance(activeExerciseID: "exercise-a", remainingSeconds: 0), [.countdown(second: 0)])
+        XCTAssertEqual(state.advance(activeExerciseID: "exercise-a", remainingSeconds: 0), [])
+    }
 }

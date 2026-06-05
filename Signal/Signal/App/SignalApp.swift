@@ -9,6 +9,7 @@ struct SignalApp: App {
     private let briefingNotificationDelegate: DailyBriefingNotificationDelegate
     @State private var healthKitManager: HealthKitManager
     @State private var unitPreferences = UnitPreferences.shared
+    @State private var appPreferences = AppPreferences.shared
     @State private var trainPreferences = TrainPreferences.shared
     @State private var notificationPreferences = NotificationPreferences.shared
     @State private var recoveryPreferences = RecoveryPreferences.shared
@@ -45,6 +46,7 @@ struct SignalApp: App {
             RootView()
                 .environment(healthKitManager)
                 .environment(unitPreferences)
+                .environment(appPreferences)
                 .environment(trainPreferences)
                 .environment(notificationPreferences)
                 .environment(recoveryPreferences)

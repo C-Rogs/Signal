@@ -43,8 +43,11 @@ struct MainTabView: View {
                     coordinator.refresh()
                 }
             }
-            .onChange(of: selectedTab) { _, tab in
-                if tab != .train, coordinator.activeSession == nil {
+            .onChange(of: selectedTab) { oldTab, tab in
+                if oldTab != tab {
+                    AppFeedback.shared.play(.tabChange)
+                }
+                if tab != .train, coordinator.activeSession == nil, coordinator.presentedWorkoutSessionID == nil {
                     coordinator.isViewingActiveWorkout = false
                 }
                 if tab == .dashboard {

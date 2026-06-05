@@ -8,6 +8,7 @@ struct LiveWorkoutBanner: View {
     var body: some View {
         if coordinator.activeSession != nil {
             Button {
+                AppFeedback.shared.play(.bannerTap)
                 selectedTab = .train
                 coordinator.resumeWorkout()
             } label: {

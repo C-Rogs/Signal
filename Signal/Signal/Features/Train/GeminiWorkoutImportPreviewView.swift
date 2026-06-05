@@ -286,6 +286,7 @@ struct GeminiWorkoutImportPreviewView: View {
                 )
             )
             coordinator.refresh()
+            TrainFeedback.shared.play(.workoutStart)
             watchBridge.prepareLiveSession(for: session, modelContext: modelContext)
             Task {
                 await watchBridge.beginWatchWorkout(for: session, modelContext: modelContext)

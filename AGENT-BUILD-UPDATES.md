@@ -1756,3 +1756,95 @@ Confirm new Swift files in **Signal** + **SignalTests** targets if PBXFileSystem
 | Diagnostics | `DiagnosticsViewModel.swift` (compactionFailed case) |
 | Tests | `CoachContextBudgetTests.swift`, `CoachThreadCompactorTests.swift`, `CoachPreferencesTests.swift` |
 | Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-05 — Coach context ring UX and calendar follow-up fix
+
+### Shipped
+
+- Context ring shows absolute token usage (`fractionUsed` from estimated / 4096); removed baseline-based `ringFractionUsed` and thread baseline token tracking.
+- Ring tap target enlarged (28pt + inset padding) so stroke caps are not clipped in the Coach toolbar.
+- Removed compact banner above chat input; **Compact conversation** appears only in the context usage sheet when near or over limit (emphasized when red).
+- Context usage sheet lists breakdown rows (instructions, tools, turn 1 prompt, conversation, tool outputs) plus active tool names.
+- Auto-compact on `contextTooLarge`: compacts thread once, inserts system notice bubble, retries the same query; logs `coach autoCompact reason=contextOverflow`.
+- Calendar follow-up fix: schedule clarification detection (`isScheduleClarification`, `needsScheduleAccess`), tool refresh via transcript session swap when tool set changes, fresh calendar prefix on schedule follow-ups.
+
+### Gate A (agent)
+
+- `build_device` (pinned iPhone 16 Pro `00008140-001E34E10A01801C`): **pass** (~30.3s).
+- Sim unit tests (20): `CoachContextBudgetTests`, `CoachContextBreakdownTests`, `CoachQueryIntentTests`, `CoachFollowUpToolsTests`, `ChatViewModelTests`, `ChatFeedbackTests`: **pass**.
+
+### Gate B (human, physical iPhone 16 Pro)
+
+1. Long thread with heavy turn 1: context ring reflects real high usage immediately (orange/red when appropriate).
+2. No compact banner above input; compact only in ring sheet when near/over limit.
+3. Ring not clipped on the left in the toolbar.
+4. Tap ring: sheet shows breakdown rows including tools (e.g. `calendarSchedule`).
+5. Force overflow on a long refinement thread: auto-compact note appears and follow-up succeeds.
+6. Calendar: ask about events, then "what are the titles" returns titles without "Something went wrong".
+
+### Human Xcode
+
+Confirm new Swift files in **Signal** + **SignalTests** targets if PBXFileSystemSynchronizedRootGroup did not pick them up:
+
+- `Core/Coach/CoachContextBreakdown.swift`
+- `Data/Coach/CoachScheduleRefresh.swift`
+- `SignalTests/MockLLMCoach.swift`, `CoachContextBreakdownTests.swift`, `CoachQueryIntentTests.swift`, `CoachFollowUpToolsTests.swift`
+
+### Out of scope
+
+- Proactive auto-compact before send when already over limit, chat persistence across relaunch, `.pbxproj` edits.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Context ring / sheet | `CoachContextUsageRing.swift`, `CoachThreadTypes.swift`, `ChatView.swift` |
+| Breakdown | `CoachContextBreakdown.swift`, `CoachContextBudget.swift`, `FoundationModelsCoach.swift` |
+| Auto-compact | `ChatViewModel.swift`, `ChatMessage.swift`, `LLMCoach.swift` |
+| Calendar follow-up | `CoachQueryIntent.swift`, `CoachSystemPrompt.swift`, `CoachScheduleRefresh.swift`, `FoundationModelsCoach.swift` |
+| Tests | `CoachContextBudgetTests.swift`, `CoachContextBreakdownTests.swift`, `CoachQueryIntentTests.swift`, `CoachFollowUpToolsTests.swift`, `ChatViewModelTests.swift`, `ChatFeedbackTests.swift`, `MockLLMCoach.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-05 — P0 Train active workout blank screen (RootView overlay)
+
+### Shipped
+
+- Moved active workout presentation from `MainTabView.fullScreenCover` to a `RootView` `ZStack` overlay (`ActiveWorkoutShell`) so TabView/scenePhase does not own the workout hierarchy.
+- `workoutSurfaceGeneration` on `LiveWorkoutCoordinator`; bumps on `presentWorkout` and on `scenePhase == .active` when workout is still presented (`refreshWorkoutSurfaceAfterForeground`) to force remount after background teardown.
+- Removed `fullScreenCover` binding that called `minimizeWorkout()` on any dismiss (was conflating system teardown with user minimize).
+- Diagnostics: `root scenePhase=…`, `refreshWorkoutSurface gen=…`, `activeWorkout disappear … scenePhase=… presented=…`.
+- Tab switch no longer clears `isViewingActiveWorkout` when workout overlay is presented.
+
+### Gate A (agent)
+
+- `build_run_device` on iPhone 16 Pro `00008140-001E34E10A01801C`: **pass** (~65s).
+
+### Gate B (human, physical iPhone 16 Pro)
+
+1. Start workout with 2+ exercises. App switcher 3×, background 3×, tab switch 2× while workout open.
+2. After each return: exercises visible (not blank toolbar). Live BPM still updates.
+3. Profile → Copy workout debug log. Expect `refreshWorkoutSurface gen=N` after foreground; `disappear` on background is OK if `presented=true` and UI recovers.
+4. Minimize → banner → Continue workout still works.
+5. 30 min gym sim if prior steps pass.
+
+### Human Xcode
+
+Add to **Signal** target if not auto-synced:
+
+- `Features/Train/ActiveWorkoutShell.swift`
+
+### Out of scope
+
+- Crash at `23:22:06 appLaunch` after background (needs separate repro if it persists).
+- Stale `trainPath` routes (legacy nav path; overlay is source of truth now).
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Overlay shell | `ActiveWorkoutShell.swift` |
+| Coordinator | `LiveWorkoutCoordinator.swift` |
+| Root | `RootView.swift` |
+| Tabs | `MainTabView.swift` |
+| Workout UI | `ActiveWorkoutView.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |

@@ -13,8 +13,11 @@ final class ChatFeedbackTests: XCTestCase {
         context = ModelContext(container)
         viewModel = ChatViewModel(
             modelContainer: container,
+            coach: MockLLMCoach(respondHandler: { _, _, _ in
+                ChatTestFixtures.singleChunkStream("Coach reply body")
+            }),
             buildContext: { _, _ in ChatTestFixtures.minimalContext },
-            respond: { _, _ in ChatTestFixtures.singleChunkStream("Coach reply body") }
+            conversationMemoryEnabled: false
         )
     }
 

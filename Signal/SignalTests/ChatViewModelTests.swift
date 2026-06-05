@@ -12,22 +12,24 @@ final class ChatViewModelTests: XCTestCase {
 
     func testUserMessageAppendedBeforeContextBuildCompletes() async throws {
         let gate = AsyncGate()
+        let coach = MockLLMCoach(respondHandler: { _, _, _ in
+            Self.chunkStream(["Done"])
+        })
         let viewModel = ChatViewModel(
             modelContainer: container,
-            buildContext: { query, _ in
+            coach: coach,
+            buildContext: { _, _ in
                 await gate.waitUntilReleased()
-                return Self.minimalContext(for: query)
+                return Self.minimalContext()
             },
-            respond: { _, _ in
-                Self.chunkStream(["Done"])
-            }
+            conversationMemoryEnabled: false
         )
 
         viewModel.sendMessage("Hello")
         try await Task.sleep(for: .milliseconds(50))
 
         XCTAssertEqual(viewModel.messages.count, 1)
-        XCTAssertEqual(viewModel.messages[0].role, .user)
+        XCTAssertEqual(viewModel.messages[0].role, MessageRole.user)
         XCTAssertEqual(viewModel.messages[0].text, "Hello")
         XCTAssertTrue(viewModel.isThinking)
 
@@ -36,12 +38,14 @@ final class ChatViewModelTests: XCTestCase {
     }
 
     func testIsThinkingFalseOnceStreamingStarts() async throws {
+        let coach = MockLLMCoach(respondHandler: { _, _, _ in
+            Self.chunkStream(["A", "B"], delayBetweenChunks: 100_000_000)
+        })
         let viewModel = ChatViewModel(
             modelContainer: container,
-            buildContext: { query, _ in Self.minimalContext(for: query) },
-            respond: { _, _ in
-                Self.chunkStream(["A", "B"], delayBetweenChunks: 100_000_000)
-            }
+            coach: coach,
+            buildContext: { _, _ in Self.minimalContext() },
+            conversationMemoryEnabled: false
         )
 
         viewModel.sendMessage("Stream")
@@ -51,10 +55,14 @@ final class ChatViewModelTests: XCTestCase {
     }
 
     func testStreamingClearsAndAssistantAppendedOnComplete() async throws {
+        let coach = MockLLMCoach(respondHandler: { _, _, _ in
+            Self.chunkStream(["Full reply"])
+        })
         let viewModel = ChatViewModel(
             modelContainer: container,
-            buildContext: { query, _ in Self.minimalContext(for: query) },
-            respond: { _, _ in Self.chunkStream(["Full reply"]) }
+            coach: coach,
+            buildContext: { _, _ in Self.minimalContext() },
+            conversationMemoryEnabled: false
         )
 
         viewModel.sendMessage("Q")
@@ -66,14 +74,16 @@ final class ChatViewModelTests: XCTestCase {
     }
 
     func testErrorPathClearsStreamingAndSetsErrorMessage() async throws {
+        let coach = MockLLMCoach(respondHandler: { _, _, _ in
+            AsyncThrowingStream<String, Error> { continuation in
+                continuation.finish(throwing: CoachError.rateLimited)
+            }
+        })
         let viewModel = ChatViewModel(
             modelContainer: container,
-            buildContext: { query, _ in Self.minimalContext(for: query) },
-            respond: { _, _ in
-                AsyncThrowingStream { continuation in
-                    continuation.finish(throwing: CoachError.rateLimited)
-                }
-            }
+            coach: coach,
+            buildContext: { _, _ in Self.minimalContext() },
+            conversationMemoryEnabled: false
         )
 
         viewModel.sendMessage("Q")
@@ -87,13 +97,17 @@ final class ChatViewModelTests: XCTestCase {
 
     func testDoubleSendGuardReturnsEarly() async throws {
         let gate = AsyncGate()
+        let coach = MockLLMCoach(respondHandler: { _, _, _ in
+            Self.chunkStream(["OK"])
+        })
         let viewModel = ChatViewModel(
             modelContainer: container,
-            buildContext: { query, _ in
+            coach: coach,
+            buildContext: { _, _ in
                 await gate.waitUntilReleased()
-                return Self.minimalContext(for: query)
+                return Self.minimalContext()
             },
-            respond: { _, _ in Self.chunkStream(["OK"]) }
+            conversationMemoryEnabled: false
         )
 
         viewModel.sendMessage("First")
@@ -105,7 +119,7 @@ final class ChatViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.messages.first?.text, "First")
     }
 
-    private nonisolated static func minimalContext(for query: String) -> CoachContext {
+    private nonisolated static func minimalContext() -> CoachContext {
         ChatTestFixtures.minimalContext
     }
 

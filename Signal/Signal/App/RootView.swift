@@ -8,24 +8,39 @@ struct RootView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(LiveWorkoutCoordinator.self) private var workoutCoordinator
     @Bindable private var downloadState = EmbeddingDownloadState.shared
 
     var body: some View {
         Group {
             if downloadState.phase == .ready || EmbeddingBackend.useNLContextualEmbeddingFallback {
-                MainTabView()
+                ZStack {
+                    MainTabView()
+                    if let sessionID = workoutCoordinator.presentedWorkoutSessionID {
+                        ActiveWorkoutShell(sessionID: sessionID)
+                            .zIndex(1)
+                    }
+                }
             } else {
                 embeddingGate
             }
         }
         .onAppear {
             paintHostWindowForScheme()
+            TrainWorkoutDiagnostics.record("appLaunch")
             Log.ui.info("Root view appeared")
             healthKitManager.refreshAccessState()
             healthKitManager.activateBackgroundObserversIfNeeded()
         }
         .onChange(of: scenePhase) { _, phase in
+            TrainWorkoutDiagnostics.record(
+                "root scenePhase=\(phase) presented=\(workoutCoordinator.presentedWorkoutSessionID != nil) viewing=\(workoutCoordinator.isViewingActiveWorkout)"
+            )
+            if phase == .background {
+                try? modelContext.save()
+            }
             if phase == .active {
+                workoutCoordinator.refreshWorkoutSurfaceAfterForeground()
                 EmbeddingRunPolicy.applicationDidBecomeActive()
                 paintHostWindowForScheme()
                 healthKitManager.refreshAccessState()

@@ -13,9 +13,9 @@ final class CoachContextBudgetTests: XCTestCase {
 
     func testSnapshotNearLimitAtSeventyFivePercent() {
         let snapshot = CoachContextBudget.snapshot(
-            instructionsChars: 3500,
-            transcriptChars: 3500,
-            nextPromptChars: 700
+            instructionsChars: 5400,
+            transcriptChars: 5400,
+            nextPromptChars: 0
         )
         XCTAssertTrue(snapshot.isNearLimit)
         XCTAssertFalse(snapshot.isOverLimit)
@@ -24,9 +24,9 @@ final class CoachContextBudgetTests: XCTestCase {
 
     func testSnapshotOverLimitAtNinetyFivePercent() {
         let snapshot = CoachContextBudget.snapshot(
-            instructionsChars: 7000,
-            transcriptChars: 3500,
-            nextPromptChars: 700
+            instructionsChars: 6800,
+            transcriptChars: 6800,
+            nextPromptChars: 22
         )
         XCTAssertTrue(snapshot.isOverLimit)
     }
@@ -39,5 +39,14 @@ final class CoachContextBudgetTests: XCTestCase {
         )
         XCTAssertEqual(snapshot.fractionUsed, 1, accuracy: 0.001)
         XCTAssertEqual(snapshot.estimatedTokens, CoachContextBudget.maxTokens)
+    }
+
+    func testRingUsesAbsoluteFractionUsed() {
+        let snapshot = CoachContextBudget.snapshot(
+            instructionsChars: 0,
+            transcriptChars: 8400,
+            nextPromptChars: 0
+        )
+        XCTAssertEqual(snapshot.fractionUsed, 2400.0 / 4096.0, accuracy: 0.01)
     }
 }

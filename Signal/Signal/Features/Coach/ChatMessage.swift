@@ -18,6 +18,7 @@ struct ChatMessage: Identifiable, Sendable, Equatable {
     var feedbackRating: FeedbackRating?
     var promptQuery: String?
     var isCompactSummary: Bool
+    var isSystemNotice: Bool
 
     init(
         id: UUID = UUID(),
@@ -26,7 +27,8 @@ struct ChatMessage: Identifiable, Sendable, Equatable {
         timestamp: Date = Date(),
         feedbackRating: FeedbackRating? = nil,
         promptQuery: String? = nil,
-        isCompactSummary: Bool = false
+        isCompactSummary: Bool = false,
+        isSystemNotice: Bool = false
     ) {
         self.id = id
         self.role = role
@@ -35,5 +37,6 @@ struct ChatMessage: Identifiable, Sendable, Equatable {
         self.feedbackRating = feedbackRating
         self.promptQuery = promptQuery
         self.isCompactSummary = isCompactSummary
+        self.isSystemNotice = isSystemNotice
     }
 }

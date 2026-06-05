@@ -71,6 +71,7 @@ struct WellnessCaptureView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        TrainFeedback.shared.play(.wellnessComplete)
                         onSave(
                             Int(energy.rounded()),
                             Int(mood.rounded()),

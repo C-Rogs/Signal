@@ -65,6 +65,7 @@ struct WorkoutExerciseSectionView: View {
                     summary: recommendation.summary,
                     onAdd: {
                         try? store.addSuggestedWarmupSets(to: exercise, recommendation: recommendation)
+                        TrainFeedback.shared.play(.warmupAdded)
                         dismissedWarmupSuggestion = true
                         onNeedsRefresh()
                     },

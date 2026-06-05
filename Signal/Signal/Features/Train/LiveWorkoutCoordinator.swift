@@ -47,6 +47,8 @@ enum TrainRoute: Hashable {
 final class LiveWorkoutCoordinator {
     var activeSession: WorkoutSession?
     var pendingTrainRoute: TrainRoute?
+    var presentedWorkoutSessionID: PersistentIdentifier?
+    var workoutSurfaceGeneration = 0
     var scrollToExerciseID: PersistentIdentifier?
     var collapseWorkoutNavigationOnNextTrainAppear = true
     var isViewingActiveWorkout = false
@@ -84,7 +86,29 @@ final class LiveWorkoutCoordinator {
             Log.workout.info("resume requested but no active session in store")
             return
         }
-        pendingTrainRoute = .activeWorkout(session.persistentModelID)
+        presentWorkout(sessionID: session.persistentModelID)
+    }
+
+    func presentWorkout(sessionID: PersistentIdentifier) {
+        presentedWorkoutSessionID = sessionID
+        isViewingActiveWorkout = true
+        pendingTrainRoute = nil
+        workoutSurfaceGeneration += 1
+        TrainWorkoutDiagnostics.record(
+            "presentWorkout session=\(String(describing: sessionID)) gen=\(workoutSurfaceGeneration)"
+        )
+    }
+
+    func minimizeWorkout() {
+        presentedWorkoutSessionID = nil
+        isViewingActiveWorkout = false
+        TrainWorkoutDiagnostics.record("minimizeWorkout")
+    }
+
+    func refreshWorkoutSurfaceAfterForeground() {
+        guard presentedWorkoutSessionID != nil else { return }
+        workoutSurfaceGeneration += 1
+        TrainWorkoutDiagnostics.record("refreshWorkoutSurface gen=\(workoutSurfaceGeneration)")
     }
 
     func consumeCollapseWorkoutNavigationFlag() -> Bool {
@@ -108,6 +132,7 @@ final class LiveWorkoutCoordinator {
     }
 
     func resetTrainNavigation() {
+        presentedWorkoutSessionID = nil
         isViewingActiveWorkout = false
         pendingTrainRoute = nil
         trainNavigationResetToken += 1

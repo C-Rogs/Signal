@@ -28,9 +28,6 @@ struct ChatView: View {
 
             VStack(spacing: 0) {
                 messageList
-                if viewModel.showCompactOffer, coachPreferences.conversationMemoryEnabled {
-                    compactBanner
-                }
                 inputRow
             }
         }
@@ -52,6 +49,7 @@ struct ChatView: View {
                             showsContextSheet = true
                         } label: {
                             CoachContextUsageRing(usage: viewModel.contextUsage)
+                                .padding(.leading, 2)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Context usage")
@@ -173,23 +171,6 @@ struct ChatView: View {
             .opacity(thinkingPulse ? 0.45 : 1)
     }
 
-    private var compactBanner: some View {
-        Button {
-            viewModel.compactConversation()
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.down.right.and.arrow.up.left")
-                Text("Context filling up · Compact")
-                    .font(.metadataCaption)
-            }
-            .foregroundStyle(Color("Primary"))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
-            .background(Color("Surface"))
-        }
-        .buttonStyle(.plain)
-    }
-
     private var inputRow: some View {
         HStack(spacing: 12) {
             TextField("Ask Signal...", text: $draftText, axis: .vertical)
@@ -250,13 +231,14 @@ private struct ChatMessageBubble: View {
         case .user:
             ChatUserBubble(text: message.text, timestamp: message.timestamp)
         case .assistant:
+            let isNotice = message.isCompactSummary || message.isSystemNotice
             VStack(alignment: .leading, spacing: 6) {
                 ChatAssistantBubble(
                     text: message.text,
-                    renderMarkdown: !message.isCompactSummary,
-                    subdued: message.isCompactSummary
+                    renderMarkdown: !isNotice,
+                    subdued: isNotice
                 )
-                if !message.isCompactSummary {
+                if !isNotice {
                     Text(message.timestamp, style: .time)
                         .font(.caption2)
                         .foregroundStyle(Color("TextSecondary"))

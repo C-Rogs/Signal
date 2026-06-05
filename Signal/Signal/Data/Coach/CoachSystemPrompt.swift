@@ -104,11 +104,9 @@ enum CoachSessionFactory {
         route: CoachQueryRoute? = nil,
         flags: CoachFeatureFlags = CoachFeatureFlags.current()
     ) -> [any Tool] {
-        let resolvedRoute = flags.smartContextEnabled
-            ? (route ?? CoachQueryRouter.classify(query))
-            : legacyToolRoute(query: query)
+        let resolvedRoute = mergedRoute(pinnedRoute: route, query: query, flags: flags)
         var tools: [any Tool] = [DeviceClockTool()]
-        if resolvedRoute == .schedule || CoachQueryIntent.isScheduleFocused(query) {
+        if resolvedRoute == .schedule {
             tools.append(CalendarScheduleTool())
         }
         if resolvedRoute == .exerciseHistory || CoachQueryIntent.isExerciseHistoryFocused(query) {
@@ -120,6 +118,39 @@ enum CoachSessionFactory {
         return tools
     }
 
+    nonisolated static func toolNames(
+        modelContainer: ModelContainer,
+        query: String = "",
+        route: CoachQueryRoute? = nil,
+        flags: CoachFeatureFlags = CoachFeatureFlags.current()
+    ) -> [String] {
+        makeTools(
+            modelContainer: modelContainer,
+            query: query,
+            route: route,
+            flags: flags
+        )
+        .map(\.name)
+        .sorted()
+    }
+
+    nonisolated static func mergedRoute(
+        pinnedRoute: CoachQueryRoute?,
+        query: String,
+        flags: CoachFeatureFlags = CoachFeatureFlags.current()
+    ) -> CoachQueryRoute {
+        if flags.smartContextEnabled {
+            if CoachQueryIntent.needsScheduleAccess(query: query, pinnedRoute: pinnedRoute) {
+                return .schedule
+            }
+            if let pinnedRoute {
+                return pinnedRoute
+            }
+            return CoachQueryRouter.classify(query)
+        }
+        return legacyToolRoute(query: query)
+    }
+
     nonisolated static func makeSession(
         modelContainer: ModelContainer,
         referenceDate: Date = Date(),
@@ -129,9 +160,7 @@ enum CoachSessionFactory {
         threadKind: CoachThreadKind = .newThread,
         compactSummary: String? = nil
     ) -> LanguageModelSession {
-        let resolvedRoute = flags.smartContextEnabled
-            ? (route ?? CoachQueryRouter.classify(query))
-            : legacyToolRoute(query: query)
+        let resolvedRoute = mergedRoute(pinnedRoute: route, query: query, flags: flags)
         return LanguageModelSession(
             model: .default,
             tools: makeTools(

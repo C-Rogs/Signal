@@ -8,7 +8,6 @@ actor FoundationModelsCoach: LLMCoach {
     private var responding = false
     private var activeSession: LanguageModelSession?
     private var pinnedThreadRoute: CoachQueryRoute?
-    private var instructionsCharCount = 0
     private var lastUsageSnapshot = CoachContextUsageSnapshot.empty
 
     var isResponding: Bool {
@@ -32,12 +31,7 @@ actor FoundationModelsCoach: LLMCoach {
     }
 
     func contextUsage(nextPrompt: String) -> CoachContextUsageSnapshot {
-        let transcriptChars = transcriptCharacterCount()
-        let snapshot = CoachContextBudget.snapshot(
-            instructionsChars: instructionsCharCount,
-            transcriptChars: transcriptChars,
-            nextPromptChars: nextPrompt.count
-        )
+        let snapshot = makeUsageSnapshot(nextPrompt: nextPrompt)
         lastUsageSnapshot = snapshot
         return snapshot
     }
@@ -45,7 +39,6 @@ actor FoundationModelsCoach: LLMCoach {
     func resetThread() {
         activeSession = nil
         pinnedThreadRoute = nil
-        instructionsCharCount = 0
         lastUsageSnapshot = .empty
         Log.coach.info("coach thread reset")
     }
@@ -78,7 +71,6 @@ actor FoundationModelsCoach: LLMCoach {
             threadKind: .newThread,
             compactSummary: summary
         )
-        instructionsCharCount = instructions.count
 
         activeSession = CoachSessionFactory.makeSession(
             modelContainer: modelContainer,
@@ -90,7 +82,7 @@ actor FoundationModelsCoach: LLMCoach {
         )
         pinnedThreadRoute = route
 
-        let charsAfter = instructionsCharCount + CoachTranscriptText.characterCount(from: trimmed)
+        let charsAfter = instructions.count + CoachTranscriptText.characterCount(from: trimmed)
         Log.coach.info(
             "coach compact charsBefore=\(charsBefore, privacy: .public) charsAfter=\(charsAfter, privacy: .public)"
         )
@@ -127,7 +119,7 @@ actor FoundationModelsCoach: LLMCoach {
         let flags = CoachFeatureFlags.current()
         let effectiveKind = effectiveThreadKind(threadKind, flags: flags)
         var workingContext = context
-        let route = pinnedRoute(for: effectiveKind, contextRoute: workingContext.route)
+        let route = pinnedRoute(for: effectiveKind, contextRoute: workingContext.route, query: query, flags: flags)
         workingContext.prepareForModelInput(query: query, route: route)
 
         let prompt: String
@@ -135,7 +127,16 @@ actor FoundationModelsCoach: LLMCoach {
         case .newThread:
             prompt = workingContext.assembledPrompt(query: query)
         case .followUp:
-            prompt = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            var userText = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            if CoachQueryIntent.needsScheduleAccess(query: query, pinnedRoute: pinnedThreadRoute) {
+                if let summary = await CoachScheduleRefresh.freshSummary() {
+                    userText = "Schedule (fresh):\n\(summary)\n\n\(userText)"
+                    Log.coach.info(
+                        "coach followUp scheduleRefresh tools=calendarSchedule promptChars=\(userText.count, privacy: .public)"
+                    )
+                }
+            }
+            prompt = userText
         }
 
         let sectionNames = workingContext.activeSectionNames().joined(separator: ",")
@@ -149,7 +150,7 @@ actor FoundationModelsCoach: LLMCoach {
 
                 while true {
                     do {
-                        let session = try await self.sessionForTurn(
+                        let session = try self.sessionForTurn(
                             effectiveKind: effectiveKind,
                             modelContainer: container,
                             query: query,
@@ -252,18 +253,43 @@ actor FoundationModelsCoach: LLMCoach {
     ) throws -> LanguageModelSession {
         switch effectiveKind {
         case .followUp:
-            if let activeSession {
-                return activeSession
+            if let session = activeSession {
+                let mergedRoute = CoachSessionFactory.mergedRoute(
+                    pinnedRoute: pinnedThreadRoute,
+                    query: query,
+                    flags: flags
+                )
+                let neededNames = Set(
+                    CoachSessionFactory.toolNames(
+                        modelContainer: modelContainer,
+                        query: query,
+                        route: mergedRoute,
+                        flags: flags
+                    )
+                )
+                let currentNames = Set(CoachContextBreakdown.activeToolNames(from: session.transcript))
+                if neededNames != currentNames {
+                    let tools = CoachSessionFactory.makeTools(
+                        modelContainer: modelContainer,
+                        query: query,
+                        route: mergedRoute,
+                        flags: flags
+                    )
+                    let refreshed = LanguageModelSession(
+                        model: .default,
+                        tools: tools,
+                        transcript: session.transcript
+                    )
+                    activeSession = refreshed
+                    Log.coach.info(
+                        "coach followUp toolRefresh tools=\(neededNames.sorted().joined(separator: ","), privacy: .public)"
+                    )
+                    return refreshed
+                }
+                return session
             }
             fallthrough
         case .newThread:
-            let instructions = CoachSessionFactory.makeInstructions(
-                referenceDate: Date(),
-                route: route,
-                flags: flags,
-                threadKind: .newThread
-            )
-            instructionsCharCount = instructions.count
             let session = CoachSessionFactory.makeSession(
                 modelContainer: modelContainer,
                 referenceDate: Date(),
@@ -286,12 +312,21 @@ actor FoundationModelsCoach: LLMCoach {
         return .newThread
     }
 
-    private func pinnedRoute(for kind: CoachThreadKind, contextRoute: CoachQueryRoute) -> CoachQueryRoute {
+    private func pinnedRoute(
+        for kind: CoachThreadKind,
+        contextRoute: CoachQueryRoute,
+        query: String,
+        flags: CoachFeatureFlags
+    ) -> CoachQueryRoute {
         switch kind {
         case .newThread:
             return contextRoute
         case .followUp:
-            return pinnedThreadRoute ?? contextRoute
+            return CoachSessionFactory.mergedRoute(
+                pinnedRoute: pinnedThreadRoute ?? contextRoute,
+                query: query,
+                flags: flags
+            )
         }
     }
 
@@ -299,19 +334,32 @@ actor FoundationModelsCoach: LLMCoach {
         activeSession = nil
     }
 
-    private func transcriptCharacterCount() -> Int {
-        if let activeSession {
-            return CoachTranscriptText.characterCount(from: activeSession)
+    private func pendingPromptCharacterCount(_ nextPrompt: String) -> Int {
+        let trimmed = nextPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return 0 }
+        guard let activeSession else { return trimmed.count }
+        let transcriptText = CoachTranscriptText.fromSession(activeSession)
+        guard !transcriptText.contains(trimmed) else { return 0 }
+        return trimmed.count
+    }
+
+    private func makeUsageSnapshot(nextPrompt: String) -> CoachContextUsageSnapshot {
+        let pending = pendingPromptCharacterCount(nextPrompt)
+        guard let activeSession else {
+            return CoachContextBudget.snapshot(
+                instructionsChars: 0,
+                transcriptChars: 0,
+                nextPromptChars: pending
+            )
         }
-        return 0
+        return CoachContextBreakdown.snapshot(
+            transcript: activeSession.transcript,
+            pendingPromptChars: pending
+        )
     }
 
     private func refreshUsageSnapshot(nextPrompt: String) {
-        let snapshot = CoachContextBudget.snapshot(
-            instructionsChars: instructionsCharCount,
-            transcriptChars: transcriptCharacterCount(),
-            nextPromptChars: nextPrompt.count
-        )
+        let snapshot = makeUsageSnapshot(nextPrompt: nextPrompt)
         lastUsageSnapshot = snapshot
         Log.coach.info("coach contextTokens=\(snapshot.estimatedTokens, privacy: .public)")
     }

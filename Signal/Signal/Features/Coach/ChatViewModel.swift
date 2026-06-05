@@ -12,10 +12,9 @@ final class ChatViewModel {
     var streamingText = ""
     var errorMessage: String?
     var contextUsage = CoachContextUsageSnapshot.empty
-    var showCompactOffer = false
 
     private let modelContainer: ModelContainer
-    private let coach: FoundationModelsCoach
+    private let coach: any LLMCoach
     private let buildContext: @Sendable (String, ModelContainer) async throws -> CoachContext
     private var sendInFlight = false
     private var activeSendTask: Task<Void, Never>?
@@ -34,7 +33,7 @@ final class ChatViewModel {
 
     init(
         modelContainer: ModelContainer,
-        coach: FoundationModelsCoach,
+        coach: any LLMCoach,
         buildContext: @escaping @Sendable (String, ModelContainer) async throws -> CoachContext,
         conversationMemoryEnabled: Bool = CoachFeatureFlags.current().conversationMemoryEnabled
     ) {
@@ -60,7 +59,6 @@ final class ChatViewModel {
         if !enabled {
             Task { await coach.resetThread() }
             contextUsage = .empty
-            showCompactOffer = false
         }
     }
 
@@ -70,7 +68,6 @@ final class ChatViewModel {
         isThinking = false
         streamingText = ""
         errorMessage = nil
-        showCompactOffer = false
         messages = []
         Task {
             await coach.resetThread()
@@ -85,7 +82,6 @@ final class ChatViewModel {
         sendInFlight = true
         isThinking = true
         errorMessage = nil
-        showCompactOffer = false
 
         activeSendTask?.cancel()
         activeSendTask = Task { [weak self] in
@@ -100,13 +96,12 @@ final class ChatViewModel {
 
         sendInFlight = true
         errorMessage = nil
-        showCompactOffer = false
         messages.append(ChatMessage(role: .user, text: trimmed))
         isThinking = true
 
         activeSendTask?.cancel()
         activeSendTask = Task { [weak self] in
-            await self?.performSend(query: trimmed)
+            await self?.performSend(query: trimmed, isRetryAfterAutoCompact: false)
         }
     }
 
@@ -117,7 +112,8 @@ final class ChatViewModel {
     ) {
         guard let index = messages.firstIndex(where: { $0.id == messageID }),
               messages[index].role == .assistant,
-              !messages[index].isCompactSummary
+              !messages[index].isCompactSummary,
+              !messages[index].isSystemNotice
         else { return }
 
         messages[index].feedbackRating = rating
@@ -170,7 +166,7 @@ final class ChatViewModel {
         }
     }
 
-    private func performSend(query: String) async {
+    private func performSend(query: String, isRetryAfterAutoCompact: Bool) async {
         defer {
             sendInFlight = false
             isThinking = false
@@ -203,6 +199,12 @@ final class ChatViewModel {
                     streamingText += chunk
                 }
             } catch let error as CoachError {
+                if case .contextTooLarge = error,
+                   conversationMemoryEnabled,
+                   !isRetryAfterAutoCompact {
+                    await attemptAutoCompactAndRetry(query: query)
+                    return
+                }
                 handleCoachError(error, query: query)
                 return
             } catch {
@@ -215,14 +217,37 @@ final class ChatViewModel {
             guard !completed.isEmpty else { return }
             messages.append(ChatMessage(role: .assistant, text: completed, promptQuery: query))
             await refreshContextUsage(nextPrompt: "")
-            if conversationMemoryEnabled, contextUsage.isNearLimit {
-                showCompactOffer = true
-            }
         } catch let error as CoachError {
+            if case .contextTooLarge = error,
+               conversationMemoryEnabled,
+               !isRetryAfterAutoCompact {
+                await attemptAutoCompactAndRetry(query: query)
+                return
+            }
             handleCoachError(error, query: query)
         } catch {
             if error is CancellationError { return }
             handleFailure(Self.assistantMessage(for: error), query: query)
+        }
+    }
+
+    private func attemptAutoCompactAndRetry(query: String) async {
+        Log.coach.info("coach autoCompact reason=contextOverflow")
+        do {
+            let result = try await coach.compactThread(messages: messages)
+            guard !Task.isCancelled else { return }
+            messages = result.messages
+            messages.append(
+                ChatMessage(
+                    role: .assistant,
+                    text: "Context was compacted automatically so we could keep going.",
+                    isSystemNotice: true
+                )
+            )
+            await refreshContextUsage(nextPrompt: "")
+            await performSend(query: query, isRetryAfterAutoCompact: true)
+        } catch {
+            handleCoachError(.contextTooLarge, query: query)
         }
     }
 
@@ -247,9 +272,6 @@ final class ChatViewModel {
         errorMessage = text
         streamingText = ""
         isThinking = false
-        if case .contextTooLarge = error {
-            showCompactOffer = true
-        }
         messages.append(ChatMessage(role: .assistant, text: text, promptQuery: query))
     }
 

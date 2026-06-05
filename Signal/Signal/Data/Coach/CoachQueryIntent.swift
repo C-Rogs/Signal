@@ -5,6 +5,25 @@ enum CoachQueryIntent {
         CoachQueryRouter.classify(query) == .schedule
     }
 
+    nonisolated static func isScheduleClarification(_ query: String) -> Bool {
+        containsAny(in: query, keywords: [
+            "title",
+            "titles",
+            "event name",
+            "event names",
+            "names of the events",
+            "what are they called",
+            "what are those called",
+            "name them",
+            "list the names",
+        ])
+    }
+
+    nonisolated static func needsScheduleAccess(query: String, pinnedRoute: CoachQueryRoute?) -> Bool {
+        isScheduleFocused(query)
+            || (pinnedRoute == .schedule && isScheduleClarification(query))
+    }
+
     nonisolated static func isExerciseHistoryFocused(_ query: String) -> Bool {
         CoachQueryRouter.classify(query) == .exerciseHistory
     }

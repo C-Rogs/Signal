@@ -4,7 +4,7 @@ import FoundationModels
 enum CoachTranscriptText {
     nonisolated static func fromMessages(_ messages: [ChatMessage]) -> String {
         messages
-            .filter { !$0.isCompactSummary }
+            .filter { !$0.isCompactSummary && !$0.isSystemNotice }
             .map { message in
                 switch message.role {
                 case .user:
@@ -30,6 +30,13 @@ enum CoachTranscriptText {
 
     nonisolated static func characterCount(from transcript: Transcript) -> Int {
         fromTranscript(transcript).count
+    }
+
+    nonisolated static func hasResponse(in transcript: Transcript) -> Bool {
+        transcript.contains { entry in
+            if case .response = entry { return true }
+            return false
+        }
     }
 
     nonisolated static func fromTranscript(_ transcript: Transcript) -> String {

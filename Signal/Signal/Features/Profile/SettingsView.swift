@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.modelContext) private var modelContext
     @Environment(UnitPreferences.self) private var unitPreferences
+    @Environment(AppPreferences.self) private var appPreferences
     @Environment(TrainPreferences.self) private var trainPreferences
     @Environment(NotificationPreferences.self) private var notificationPreferences
     @Environment(RecoveryPreferences.self) private var recoveryPreferences
@@ -70,6 +71,16 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle("App haptics", isOn: Bindable(appPreferences).hapticsEnabled)
+                } header: {
+                    Text("App")
+                } footer: {
+                    Text(
+                        "Tactile feedback when switching tabs and using general navigation. Independent from workout haptics below."
+                    )
+                }
+
+                Section {
                     Toggle("Suggest warmup sets", isOn: Bindable(trainPreferences).suggestWarmupSets)
                     Toggle("Workout haptics", isOn: Bindable(trainPreferences).hapticsEnabled)
                     Toggle("Rest timer bell", isOn: Bindable(trainPreferences).restBellEnabled)
@@ -77,7 +88,7 @@ struct SettingsView: View {
                     Text("Train")
                 } footer: {
                     Text(
-                        "During a workout, Signal can suggest ramp sets for early compound lifts. Ramp percentages follow your training goal from Profile. Workout haptics give tactile feedback on sets and rest. The rest timer bell plays when rest ends."
+                        "During a workout, Signal can suggest ramp sets for early compound lifts. Ramp percentages follow your training goal from Profile. Workout haptics use distinct patterns for sets, rest, timers, and milestones. The rest timer bell plays when rest ends."
                     )
                 }
 
@@ -377,6 +388,7 @@ struct SettingsView: View {
         SettingsView()
     }
     .environment(UnitPreferences.shared)
+    .environment(AppPreferences.shared)
     .environment(TrainPreferences.shared)
     .environment(NotificationPreferences.shared)
     .environment(RecoveryPreferences.shared)

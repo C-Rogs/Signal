@@ -59,6 +59,7 @@ struct TrainHomeView: View {
         }
         .onAppear {
             coordinator.configure(modelContext: modelContext)
+            stripStaleActiveWorkoutRoutes()
             collapseWorkoutNavigationIfNeeded()
             consumePendingRouteIfNeeded()
             consumeHealthKitWriteNoteIfNeeded()
@@ -83,10 +84,6 @@ struct TrainHomeView: View {
             path.removeAll()
         }
         .onChange(of: path) { _, newPath in
-            coordinator.isViewingActiveWorkout = newPath.contains { route in
-                if case .activeWorkout = route { return true }
-                return false
-            }
             TrainWorkoutDiagnostics.record(
                 "trainPath count=\(newPath.count) viewingWorkout=\(coordinator.isViewingActiveWorkout) routes=\(newPath.map(\.diagnosticLabel).joined(separator: ","))"
             )
@@ -102,7 +99,7 @@ struct TrainHomeView: View {
         }
         .sheet(isPresented: $showImportWorkout) {
             GeminiWorkoutImportView { sessionID in
-                path.append(.activeWorkout(sessionID))
+                coordinator.presentWorkout(sessionID: sessionID)
             }
         }
     }
@@ -332,8 +329,8 @@ struct TrainHomeView: View {
     @ViewBuilder
     private func routeDestination(_ route: TrainRoute) -> some View {
         switch route {
-        case .activeWorkout(let sessionID):
-            ActiveWorkoutContainerView(sessionID: sessionID)
+        case .activeWorkout:
+            EmptyView()
         case .history(let id):
             if let session = resolveSession(id: id) {
                 WorkoutHistoryDetailView(session: session)
@@ -365,8 +362,14 @@ struct TrainHomeView: View {
 
     private func consumePendingRouteIfNeeded() {
         guard case .activeWorkout(let sessionID) = coordinator.pendingTrainRoute else { return }
-        openActiveWorkout(sessionID: sessionID)
-        coordinator.pendingTrainRoute = nil
+        coordinator.presentWorkout(sessionID: sessionID)
+    }
+
+    private func stripStaleActiveWorkoutRoutes() {
+        path.removeAll { route in
+            if case .activeWorkout = route { return true }
+            return false
+        }
     }
 
     private func consumeHealthKitWriteNoteIfNeeded() {
@@ -378,10 +381,7 @@ struct TrainHomeView: View {
         coordinator.refresh()
         guard let session = inProgressSession else { return }
         let targetID = sessionID ?? session.persistentModelID
-        let route = TrainRoute.activeWorkout(targetID)
-        if !path.contains(route) {
-            path.append(route)
-        }
+        coordinator.presentWorkout(sessionID: targetID)
     }
 
     private func startOrResumeWorkout() {
@@ -395,11 +395,12 @@ struct TrainHomeView: View {
             } else {
                 let session = try store.startEmpty()
                 coordinator.refresh()
+                TrainFeedback.shared.play(.workoutStart)
                 watchBridge.prepareLiveSession(for: session, modelContext: modelContext)
                 Task {
                     await watchBridge.beginWatchWorkout(for: session, modelContext: modelContext)
                 }
-                path.append(.activeWorkout(session.persistentModelID))
+                coordinator.presentWorkout(sessionID: session.persistentModelID)
             }
         } catch {
             errorMessage = error.localizedDescription
@@ -418,11 +419,12 @@ struct TrainHomeView: View {
             }
             let session = try store.start(from: routine)
             coordinator.refresh()
+            TrainFeedback.shared.play(.workoutStart)
             watchBridge.prepareLiveSession(for: session, modelContext: modelContext)
             Task {
                 await watchBridge.beginWatchWorkout(for: session, modelContext: modelContext)
             }
-            path.append(.activeWorkout(session.persistentModelID))
+            coordinator.presentWorkout(sessionID: session.persistentModelID)
         } catch {
             errorMessage = error.localizedDescription
         }
