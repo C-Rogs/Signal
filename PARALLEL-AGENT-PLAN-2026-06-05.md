@@ -36,13 +36,13 @@ Central coordination doc for **parallel implementation agents** (streams A1–A7
 
 | ID | Stream | Priority | Status | Owner / branch |
 |----|--------|----------|--------|----------------|
-| **A1** | Train blank screen P0 | P0 | `DONE — integrator commit pending` | `40309465` |
-| **A2** | Catalog completeness + matching | P1 | `DONE — integrator commit pending` | `f81ecd55` |
-| **A3** | Gemini import rest timers + parser | P2 | `DONE — integrator commit pending` | `381d1d5d` |
-| **A4** | Coach router + intent context | P2 | `DONE — integrator commit pending` | `b4b7a5d1` |
-| **A5** | Chat markdown rendering | P2 | `DONE — integrator commit pending` | `208ccf67` |
-| **A6** | History shows RPE | P2 | `DONE — integrator commit pending` | `73a2d68b` |
-| **A7** | Exercise homepage (Hevy-style) | P3 | `DONE — integrator commit pending` | `908b4a34` |
+| **A1** | Train blank screen P0 | P0 | `COMMITTED` `9c7ec8a` | `40309465` |
+| **A2** | Catalog completeness + matching | P1 | `COMMITTED` `7f46745` | `f81ecd55` |
+| **A3** | Gemini import rest timers + parser | P2 | `COMMITTED` `ebdb425` | `381d1d5d` |
+| **A4** | Coach router + intent context | P2 | `COMMITTED` `6369086` | `b4b7a5d1` |
+| **A5** | Chat markdown rendering | P2 | `COMMITTED` `5011678` | `208ccf67` |
+| **A6** | History shows RPE | P2 | `COMMITTED` `5deb82b` | `73a2d68b` |
+| **A7** | Exercise homepage (Hevy-style) | P3 | `COMMITTED` `6f12504` | `908b4a34` |
 
 **Merge order if rebasing:** A1 → A2 → A3 → (A4 ∥ A5) → A6 → A7.
 
