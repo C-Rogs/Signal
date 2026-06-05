@@ -940,3 +940,488 @@ Confirm in **SignalTests**:
 | Tests | `FoundationModelsHealthGraderTests.swift`, `FoundationModelsHealthDeviceTests.swift` (new) |
 | Script | `scripts/run-fm-health-check.sh` (new) |
 | Handoff log | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-05 — In-workout exercise swap (Signal-guided)
+
+### Shipped
+
+- **Swap with Signal** on active workout exercise menu: constraint text, FM pick from ranked catalog shortlist, set prescription with progression intent, Apply swap or Pick manually.
+- `ExerciseSwapCandidateRanker` filters by movement pattern, muscles, equipment constraints, history, picker defaults (max 8).
+- `ExerciseSwapLoadPrescription` preserves remaining set structure, applies hold/increase/deload intent from last-session comparison and recovery.
+- `WorkoutSwapFMSelector` structured FM selection with ranker fallback when model unavailable or pick invalid.
+- `LiveWorkoutStore.swapExercise` rebuilds uncompleted sets; manual **Replace exercise** now uses same prescription path.
+
+### Gate A (agent)
+
+- `test_sim` (8 tests): `ExerciseSwapCandidateRankerTests`, `ExerciseSwapLoadPrescriptionTests`, `LiveWorkoutStoreSwapTests`, `WorkoutSwapFMSelectorTests` pass.
+- `build_sim` pass.
+
+### Gate B (human, device)
+
+1. Start a live workout with Barbell Bench Press prefilled.
+2. Exercise menu → **Swap with Signal**.
+3. Type *bench is occupied* → **Suggest** → sensible substitute with set preview.
+4. **Apply swap** updates exercise row and weights; **Pick manually** still works.
+5. With completed working sets, confirm dialog appears before swap.
+
+### Human Xcode
+
+Confirm in **Signal** target:
+
+- `Data/Workout/ExerciseSwapCandidateRanker.swift`
+- `Data/Workout/ExerciseSwapLoadPrescription.swift`
+- `Data/Workout/WorkoutSwapFMSelector.swift`
+- `Features/Train/WorkoutSwapSheet.swift`
+
+Confirm in **SignalTests**:
+
+- `ExerciseSwapCandidateRankerTests.swift`
+- `ExerciseSwapLoadPrescriptionTests.swift`
+- `LiveWorkoutStoreSwapTests.swift`
+- `WorkoutSwapFMSelectorTests.swift`
+
+### Out of scope
+
+- Main Coach chat swap commands.
+- Cross-exercise e1RM translation without substitute history.
+- Free-text workout logging.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Swap engine | `ExerciseSwapCandidateRanker.swift`, `ExerciseSwapLoadPrescription.swift`, `WorkoutSwapFMSelector.swift` (new) |
+| Store | `LiveWorkoutStore.swift` |
+| Train UI | `WorkoutSwapSheet.swift` (new), `WorkoutExerciseSectionView.swift` |
+| Tests | `ExerciseSwapCandidateRankerTests.swift`, `ExerciseSwapLoadPrescriptionTests.swift`, `LiveWorkoutStoreSwapTests.swift`, `WorkoutSwapFMSelectorTests.swift` (new) |
+| Handoff log | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-05 — Gemini workout paste import (Train M1)
+
+### Shipped
+
+- **Import workout** on Train home: paste Gemini-style text, preview catalog matches, start live session with prescribed sets.
+- `GeminiWorkoutPasteParser` (pure Swift): title, exercises, kg/lb/DBs, RPE, warmup, coaching notes in parens.
+- `LiveWorkoutStore.start(fromParsedPlan:)` + `addExercise(presetSets:)` bypasses `LastSessionAutofill` when sets are provided.
+- `SetEntry.prescriptionNote` persisted for future Coach context (no Train row UI v1).
+- Preview shows match badges, set summaries, optional manual catalog override via `ExercisePickerView`.
+
+### Gate A (agent)
+
+- `test_sim`: `GeminiWorkoutPasteParserTests` (18 cases) + `LiveWorkoutStoreTests` pass.
+- `build_sim` pass (pinned iPhone 16 Pro sim).
+- Build unblockers on same branch: `WorkoutSwapFMSelector` double-optional unwrap, `WorkoutSwapSheet` ViewBuilder fix.
+
+### Gate B (human, device)
+
+1. Copy Gemini export → Train → Import → Preview matches sample.
+2. Start workout → `ActiveWorkoutView` shows kg, reps, RPE, warmup flags.
+3. Complete a set → finish → HK write OK.
+4. Catalog: lat pulldown, chest press, lateral raise match or manual pick works.
+
+### Human Xcode
+
+New files auto-sync via `PBXFileSystemSynchronizedRootGroup`; confirm in **Signal**:
+
+- `Data/Workout/ParsedWorkoutPlan.swift`
+- `Data/Workout/GeminiWorkoutPasteParser.swift`
+- `Features/Train/GeminiWorkoutImportView.swift`
+- `Features/Train/GeminiWorkoutImportPreviewView.swift`
+
+Confirm in **SignalTests**:
+
+- `GeminiWorkoutPasteParserTests.swift`
+
+SwiftData: `SetEntry.prescriptionNote` added (lightweight migration on next launch).
+
+### Out of scope
+
+- Save parsed plan as routine with set templates.
+- Coach reading `prescriptionNote`.
+- Share sheet / Shortcuts import.
+- Cardio set lines.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Parser | `ParsedWorkoutPlan.swift`, `GeminiWorkoutPasteParser.swift` (new) |
+| Store | `LiveWorkoutStore.swift`, `LastSessionAutofill.swift`, `SetEntry.swift` |
+| Backup | `BackupDTO.swift`, `BackupService.swift` |
+| Train UI | `GeminiWorkoutImportView.swift`, `GeminiWorkoutImportPreviewView.swift` (new), `TrainHomeView.swift` |
+| Tests | `GeminiWorkoutPasteParserTests.swift` (new), `LiveWorkoutStoreTests.swift` |
+| Build fix | `WorkoutSwapFMSelector.swift`, `WorkoutSwapSheet.swift` |
+| Docs | `HANDOFF-GEMINI-WORKOUT-IMPORT.md` (new), `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-05 — Coach M1 query router + intent-scoped context
+
+### Shipped
+
+- **`CoachQueryRouter`**: rule-based classifier with six routes (readiness, workoutPrescription, exerciseHistory, nutrition, schedule, general) and keyword scoring + tie-break.
+- **`CoachContextScope`**: per-route context budget (RAG k, metrics parts, recovery, workouts, calendar).
+- **Intent-scoped context**: nutrition omits ACWR/volume/workouts; workout prescription omits protein unless diet mentioned or deficit in data; readiness limits workout history to 1 session.
+- **System prompt addenda** per route + instruction-level reasoning plan (Apple TN3193 Option A: step plan in instructions, single streaming pass, no invented APIs).
+- **Logging**: `coach intent=... contextSections=... promptChars=...` in context builder and stream start.
+
+### Gate A (agent)
+
+- Coach Swift compiles (`CoachQueryRouter`, `CoachContextBuilder`, `CoachSystemPrompt`, `FoundationModelsCoach`).
+- Full `build_sim` / `test_sim` **not run**: blocked by pre-existing compile error in `CoachMessageFormatting.swift` (unrelated `Font.Weight` comparison on this branch).
+- Unit tests written: `CoachQueryRouterTests`, intent-scoping cases in `CoachContextBuilderTests`.
+
+### Gate B (human, device)
+
+1. Add `CoachQueryRouterTests.swift` to **SignalTests** if not auto-synced.
+2. Fix `CoachMessageFormatting.swift` build error, then run `./scripts/build-and-test.sh`.
+3. On iPhone 16 Pro: ask **"What should I train today?"** → answer cites ACWR/recovery, no protein paragraph unless Metrics shows deficit.
+4. Ask **"Am I hitting protein?"** → cites protein/exertion, no ACWR lecture.
+5. Confirm first-token latency still acceptable (<15s typical).
+
+### Human Xcode
+
+Confirm in **Signal**:
+
+- `Data/Coach/CoachQueryRouter.swift` (new)
+
+Confirm in **SignalTests**:
+
+- `CoachQueryRouterTests.swift` (new)
+
+### Out of scope
+
+- Cloud Gemini fallback, fine-tuning, MLX LLM swap.
+- Two-pass `respond` planning (Option B); kept single-pass for latency per TN3193 guidance.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Router | `CoachQueryRouter.swift` (new) |
+| Context | `CoachContextBuilder.swift`, `CoachContext.swift` |
+| Intent | `CoachQueryIntent.swift` |
+| Prompt / session | `CoachSystemPrompt.swift`, `FoundationModelsCoach.swift` |
+| Tests | `CoachQueryRouterTests.swift` (new), `CoachContextBuilderTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-05 — P0 active workout blank screen fix
+
+### Shipped
+
+- **Root cause (videos + code):** SwiftUI `List` + `@FocusState` numpad in `SetRowView` left the active workout body blank while toolbar/session stayed alive (lock, app switch, in-app scroll/complete). Prior keyboard-only fix (same day) was insufficient.
+- **`ActiveWorkoutView`:** Replaced workout `List` with `ScrollView` + `LazyVStack`; refresh surface `.id` on `scenePhase == .active`; `category:ui` appear/disappear/scenePhase logs.
+- **Keyboard policy:** Dismiss keyboard only on `.inactive` / `.background` (removed resume `.active` `TrainKeyboard.dismiss()` that fought layout).
+- **`SetRowView`:** Removed redundant focus clear on `.active`; long-press **Delete** context menu (swipe delete was List-only).
+- **`WorkoutExerciseSectionView`:** VStack layout (no `Section` / `listRow*` modifiers).
+- **`ActiveWorkoutContainerView`:** Keep cached session if reload misses (no flash/dismiss).
+- **`TrainHomeView`:** Only clear nav `path` when `liveSessions` empty **and** `coordinator.activeSession == nil` (guards SwiftData query flicker).
+
+### Gate A (agent)
+
+- `build_sim` (pinned iPhone 16 Pro sim `20DDD35B-812A-49BE-9DCF-0685401ACC15`): pass.
+- `test_sim` `TrainScenePhaseKeyboardPolicyTests` + `LiveWorkoutStoreTests`: 13 passed.
+
+### Gate B (human, device, ~30 min gym sim)
+
+1. Start or resume live workout with 3+ exercises.
+2. Edit weight/reps (numpad up) → lock phone 10+ s → unlock: list visible, no blank body.
+3. Repeat background via app switcher 3×; live BPM still updates each return.
+4. Minimize (banner) → background → resume via banner: content visible.
+5. Tab switch Dashboard ↔ Train 2× during live session: no blank requiring force-quit.
+6. Complete a set, open RPE sheet, dismiss: list still populated.
+7. Console: filter `category:ui` + `category:workout`; confirm `active workout appeared` / `scenePhase=active` with `exercises=N` (N > 0).
+
+### Human Xcode
+
+- No new files. Existing Train files auto-sync via `PBXFileSystemSynchronizedRootGroup`.
+
+### Out of scope
+
+- Exercise drag-reorder (removed with List; rare v1 path).
+- Coach, import parser, watch bridge changes.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Active workout | `ActiveWorkoutView.swift`, `ActiveWorkoutContainerView.swift` |
+| Exercise sections | `WorkoutExerciseSectionView.swift`, `WarmupSuggestionBannerView.swift` |
+| Set row / keyboard | `SetRowView.swift`, `TrainKeyboard.swift` |
+| Train home | `TrainHomeView.swift` |
+| Tests | `TrainScenePhaseKeyboardPolicyTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-05 — A7 exercise homepage (Hevy-style)
+
+### Shipped
+
+- **`TrainRoute.exerciseDetail(ExerciseDetailRoute)`** with `catalogID` + `exerciseTitle` fallback; `TrainHomeView.routeDestination` pushes `ExerciseDetailView` without popping active workout.
+- **Entry taps:** `WorkoutHistoryDetailView` section headers and `WorkoutExerciseSectionView` exercise titles navigate via `NavigationLink`.
+- **`ExerciseDetailView`:** Header (`ExerciseIllustrationView`, `MuscleChipRow`) + segmented **History** (last 10 sessions, RPE-aware set lines, link to `WorkoutHistoryDetailView`), **Progress** (e1RM `DashboardSparklineChart`, PR e1RM, PR load, avg working-set volume), **How-to** (numbered steps or empty state).
+- **`HevyExerciseGuides.json`:** 104 how-to presets from owner `fixtures/HevyExport.csv` (115 distinct titles) matched to `free-exercise-db.json` instructions; `ExerciseGuideLoader` (bundled, no network).
+- **Data helpers:** `ExerciseDetailHistoryLoader`, `ExerciseVolumeCalculator`, `ExerciseDetailViewModel`.
+- **Regen script:** `scripts/build-hevy-exercise-guides.sh`.
+
+**How-to preset count:** 104 exercises (11 Hevy export titles unmatched: Aerobics, Chest Fly variants, Chest Supported Y Raise, Diamond Push Up, Hip Abduction, Nordic Hamstrings Curls, Pilates, Push Up Close Grip, Reverse Fly Single Arm, Seated Cable Row V Grip, plus titles with no instruction match).
+
+Sample presets: Bench Press (Barbell), Lat Pulldown (Cable), Incline Bench Press (Dumbbell), Shoulder Press (Machine Plates), Triceps Rope Pushdown, Squat (Barbell), Deadlift (Barbell). Full list in `Signal/Resources/HevyExerciseGuides.json`.
+
+### Gate A (agent)
+
+- `build_sim` (pinned iPhone 16 Pro sim `20DDD35B-812A-49BE-9DCF-0685401ACC15`): pass.
+- `test_sim` `ExerciseGuideLoaderTests`, `ExerciseVolumeCalculatorTests`, `ExerciseDetailHistoryLoaderTests`: 6 passed.
+
+### Gate B (human, device)
+
+1. Train → Recent → history → tap exercise name → detail → back returns to history.
+2. Active workout → tap exercise name → detail → back returns to live session (not Train home).
+3. Progress tab: e1RM chart when `ExerciseProgress` rows exist.
+4. How-to tab: steps for Lat Pulldown (Cable) or Bench Press (Barbell).
+5. Unknown guide exercise: How-to empty state, no crash.
+
+### Human Xcode
+
+Confirm in **Signal**:
+
+- `Data/Workout/ExerciseGuideLoader.swift` (new)
+- `Data/Workout/ExerciseDetailHistoryLoader.swift` (new)
+- `Data/Workout/ExerciseVolumeCalculator.swift` (new)
+- `Features/Train/ExerciseDetailView.swift` (new)
+- `Features/Train/ExerciseDetailViewModel.swift` (new)
+- `Resources/HevyExerciseGuides.json` (new, Copy Bundle Resources)
+
+Confirm in **SignalTests**:
+
+- `ExerciseGuideLoaderTests.swift` (new)
+- `ExerciseVolumeCalculatorTests.swift` (new)
+- `ExerciseDetailHistoryLoaderTests.swift` (new)
+
+Touched: `LiveWorkoutCoordinator.swift`, `TrainHomeView.swift`, `WorkoutExerciseSectionView.swift`, `WorkoutHistoryDetailView.swift`, `DashboardChartValueStyle.swift`.
+
+### Out of scope
+
+- Exercise images, full catalog how-to, Coach deep links, watchOS, edit-from-detail.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Navigation | `LiveWorkoutCoordinator.swift`, `TrainHomeView.swift` |
+| Detail UI | `ExerciseDetailView.swift`, `ExerciseDetailViewModel.swift` (new) |
+| Data | `ExerciseGuideLoader.swift`, `ExerciseDetailHistoryLoader.swift`, `ExerciseVolumeCalculator.swift` (new), `HevyExerciseGuides.json` (new) |
+| Entry taps | `WorkoutHistoryDetailView.swift`, `WorkoutExerciseSectionView.swift` |
+| Charts | `DashboardChartValueStyle.swift` |
+| Scripts | `scripts/build-hevy-exercise-guides.sh` (new) |
+| Tests | `ExerciseGuideLoaderTests.swift`, `ExerciseVolumeCalculatorTests.swift`, `ExerciseDetailHistoryLoaderTests.swift` (new) |
+| Handover | `AGENT-BUILD-UPDATES.md`, `PARALLEL-AGENT-PLAN-2026-06-05.md` |
+
+## 2026-06-05 — A6 history shows RPE
+
+### Shipped
+
+- **`WorkoutHistoryDetailFormatting`:** Testable helpers for strength/cardio set lines with optional ` · RPE N` suffix (`WorkoutRPEScale.compactLabel`), warmup omission, and session mean working-set RPE.
+- **`WorkoutHistoryDetailView`:** Strength and cardio set rows show RPE when `set.rpe != nil` on working sets; header **Avg RPE** when any working set has RPE logged.
+
+### Gate A (agent)
+
+- `build_sim` (pinned iPhone 16 Pro sim `20DDD35B-812A-49BE-9DCF-0685401ACC15`): pass.
+- `test_sim` `WorkoutHistoryDetailFormattingTests`: 6 passed.
+
+### Gate B (human, device)
+
+1. Train → Recent → open session with Hevy import or live-logged RPE.
+2. Each working set line shows `72.5 kg × 10 · RPE 8` (or equivalent) where data exists.
+3. Warmup sets omit RPE even if stored.
+4. Sets without RPE unchanged (no stray `RPE —`).
+5. **Avg RPE** row appears when session has working-set RPE data.
+
+### Human Xcode
+
+Confirm in **Signal**:
+
+- `Data/Workout/WorkoutHistoryDetailFormatting.swift` (new)
+
+Confirm in **SignalTests**:
+
+- `WorkoutHistoryDetailFormattingTests.swift` (new)
+
+### Out of scope
+
+- Exercise homepage (A7), inline RPE edit in history, model changes.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Formatting | `WorkoutHistoryDetailFormatting.swift` (new) |
+| History UI | `WorkoutHistoryDetailView.swift` |
+| Tests | `WorkoutHistoryDetailFormattingTests.swift` (new) |
+| Handover | `AGENT-BUILD-UPDATES.md`, `PARALLEL-AGENT-PLAN-2026-06-05.md` |
+
+## 2026-06-05 — A6 history shows RPE
+
+### Shipped
+
+- **`WorkoutHistoryDetailFormatting`:** Testable helpers for strength/cardio set lines with optional ` · RPE N` suffix (`WorkoutRPEScale.compactLabel`), warmup omission, and session mean working-set RPE.
+- **`WorkoutHistoryDetailView`:** Strength and cardio set rows show RPE when `set.rpe != nil` on working sets; header **Avg RPE** when any working set has RPE logged.
+
+### Gate A (agent)
+
+- `build_sim` (pinned iPhone 16 Pro sim `20DDD35B-812A-49BE-9DCF-0685401ACC15`): pass.
+- `test_sim` `WorkoutHistoryDetailFormattingTests`: 6 passed.
+
+### Gate B (human, device)
+
+1. Train → Recent → open session with Hevy import or live-logged RPE.
+2. Each working set line shows `72.5 kg × 10 · RPE 8` (or equivalent) where data exists.
+3. Warmup sets omit RPE even if stored.
+4. Sets without RPE unchanged (no stray `RPE —`).
+5. **Avg RPE** row appears when session has working-set RPE data.
+
+### Human Xcode
+
+Confirm in **Signal**:
+
+- `Data/Workout/WorkoutHistoryDetailFormatting.swift` (new)
+
+Confirm in **SignalTests**:
+
+- `WorkoutHistoryDetailFormattingTests.swift` (new)
+
+### Out of scope
+
+- Exercise homepage (A7), inline RPE edit in history, model changes.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Formatting | `WorkoutHistoryDetailFormatting.swift` (new) |
+| History UI | `WorkoutHistoryDetailView.swift` |
+| Tests | `WorkoutHistoryDetailFormattingTests.swift` (new) |
+| Handover | `AGENT-BUILD-UPDATES.md`, `PARALLEL-AGENT-PLAN-2026-06-05.md` |
+
+## 2026-06-05 — Train M1b paste import rest timers + parser hardening
+
+### Shipped
+
+- `GeminiWorkoutPasteParser` parses exercise rest (`Rest: 90s`, `Rest 2 min`, `(90s rest)`) and per-set rest between set lines.
+- Set regex accepts optional `Set N:` prefix, unicode `×`, and bare `@7` RPE without `RPE` suffix.
+- `ParsedExercise.restDurationSeconds` and `ParsedWorkoutSet.restDurationSeconds` flow into `WorkoutExercise` / `SetEntry` on `start(fromParsedPlan:)`.
+- Auto-rest on set complete prefers per-set imported rest, then exercise default.
+- Import preview shows `Rest 90s` per exercise (or per-set summary when rests differ).
+
+### Gate A (agent)
+
+- `xcodebuild test` pinned iPhone 16 Pro sim `20DDD35B-812A-49BE-9DCF-0685401ACC15`, derived data `/tmp/SignalM1bDD`: pass.
+- `GeminiWorkoutPasteParserTests` (25 cases, 7 new): pass.
+- `LiveWorkoutStoreTests.testStartFromParsedPlanAppliesRestDuration`: pass.
+
+### Gate B (human, device)
+
+1. Paste Gemini plan with `Rest 90s` after an exercise block → Preview shows **Rest 90s**.
+2. Start workout → complete a set → floating rest bar counts down from imported duration (not default 90s when import says otherwise).
+3. Optional: paste per-set rests (`Rest 60s` between sets) → first set complete uses 60s timer.
+
+### Human Xcode
+
+No new files. `SetEntry.restDurationSeconds` is a SwiftData model field; confirm lightweight migration or delete/reinstall if sim schema conflicts on upgrade.
+
+### Out of scope
+
+- Routine templates (Train M2).
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Parser | `GeminiWorkoutPasteParser.swift` |
+| Models | `ParsedWorkoutPlan.swift`, `SetEntry.swift` |
+| Store | `LiveWorkoutStore.swift`, `LastSessionAutofill.swift` |
+| UI | `GeminiWorkoutImportPreviewView.swift` |
+| Backup | `BackupDTO.swift`, `BackupService.swift` |
+| Tests | `GeminiWorkoutPasteParserTests.swift`, `LiveWorkoutStoreTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-05 — Catalog M1 staple exercises + Gemini import match rate
+
+### Shipped
+
+- `ExerciseTitleNormalizer` strips Gemini parentheticals, parses equipment-prefixed titles (`Dumbbell Lateral Raise`), and strips grip modifiers for fuzzy match.
+- `CatalogAliasGenerator.geminiStyleAliases` maps staple Gemini names to catalog entries (machine chest press, lateral raise, cable triceps extension, bicep curl, lat pulldown).
+- `ExerciseCatalogMatcher` fast-paths machine chest press and cable triceps extension; synonym tokens (bicep/biceps, extension/pushdown, chest/bench); review threshold raised to 0.7.
+- Import preview auto-picks Review matches; **Change exercise** only on true Unmatched.
+- Diagnostics **Catalog match report** for six Gemini sample titles.
+- `ExerciseCatalogCurator` staple list expanded for machine press, triceps pushdown, bicep curl.
+
+### Gate A (agent)
+
+- `xcodebuild build-for-testing` pinned iPhone 16 Pro sim `20DDD35B-812A-49BE-9DCF-0685401ACC15`, derived data `.derivedDataDevice`: pass.
+- `test-without-building` `ExerciseCatalogTests/geminiImportStapleTitlesMatchCatalog`: pass (retry after earlier sim Mach -308 aborts).
+- `ExerciseCatalogTests/geminiImportStapleTitlesMatchCatalog` added (six user staple titles + equipment assertions).
+
+### Gate B (human, device)
+
+1. Paste user sample Gemini workout (lat pulldown, machine chest press, lateral raise, triceps, bicep curl).
+2. Preview: ≥5/6 **Matched** or **Review** with catalog entry pre-selected; lateral raise, triceps, machine chest never **Unmatched** at 0 confidence.
+3. **Change exercise** appears only on true Unmatched rows.
+4. Diagnostics → **Catalog match report** shows six sample lines all matched or review.
+
+### Human Xcode
+
+No new files. Existing catalog Swift changes only.
+
+### Out of scope
+
+- Rest timer paste (Train M1b, other agent).
+- Editing `free-exercise-db.json` (aliases cover naming gaps in matcher).
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Matcher | `ExerciseCatalogMatcher.swift`, `ExerciseTitleNormalizer.swift` |
+| Aliases / seed | `CatalogAliasGenerator.swift`, `ExerciseCatalogSeeder.swift` |
+| Curator | `ExerciseCatalogCurator.swift` |
+| Import UX | `GeminiWorkoutImportPreviewView.swift`, `ParsedWorkoutPlan.swift` |
+| Diagnostics | `CatalogMatchReport.swift`, `DiagnosticsView.swift`, `DiagnosticsViewModel.swift` |
+| Tests | `ExerciseCatalogTests.swift` |
+| Collateral build fix | `CoachMessageFormatting.swift` (moved `applyParagraphStyle` before use) |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-05 — Coach M2 markdown in chat bubbles
+
+### Shipped
+
+- `CoachMessageFormatting` parses full markdown (`interpretedSyntax: .full`) with custom styling: `###` headings (semibold headline/title fonts), bullet and numbered lists (paragraph spacing), `**bold**`, inline and fenced code (monospace + `SurfaceElevated` background).
+- `ChatAssistantBubble` takes `renderMarkdown` flag: completed assistant messages render attributed markdown; streaming and "Thinking..." show plain text to avoid broken partial headers.
+- Removed bubble-level `.font(.body)` override on markdown `Text` so per-run heading and emphasis fonts apply.
+- Five unit tests in `CoachMessageFormattingTests` (headings, bold numbers, bullet list, numbered list, inline code).
+
+### Gate A (agent)
+
+- `test_sim` `SignalTests/CoachMessageFormattingTests`: pass (5/5).
+- App target compiles with updated `CoachMessageFormatting.swift` and `ChatView.swift`.
+
+### Gate B (human)
+
+1. On device, ask Coach a question that returns `###` sections and bullet lists (e.g. "How did I recover this week?").
+2. Confirm headings render as styled text, not raw `###`.
+3. Confirm bullets and **bold numbers** are readable on `Surface` in dark mode.
+4. While streaming, text appears as plain characters; after completion, markdown styling appears.
+
+### Human Xcode
+
+No new files. Existing Swift only.
+
+### Out of scope
+
+- Coach M1 query router changes.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Formatting | `CoachMessageFormatting.swift` |
+| Chat UI | `ChatView.swift` |
+| Tests | `CoachMessageFormattingTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
