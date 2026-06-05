@@ -51,6 +51,12 @@ struct ActiveWorkoutContainerView: View {
         if let resolved = resolveSession() {
             session = resolved
             loadFailed = false
+            Log.workout.info("active workout container resolved session")
+            return
+        }
+
+        if session != nil {
+            Log.workout.warning("active workout container reload missed session; keeping cached view")
             return
         }
 

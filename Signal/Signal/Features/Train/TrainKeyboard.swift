@@ -16,8 +16,4 @@ enum TrainScenePhaseKeyboardPolicy {
     static func shouldReleaseSetFieldFocus(for phase: ScenePhase) -> Bool {
         phase == .inactive || phase == .background
     }
-
-    static func shouldDismissKeyboardOnResume(for phase: ScenePhase) -> Bool {
-        phase == .active
-    }
 }

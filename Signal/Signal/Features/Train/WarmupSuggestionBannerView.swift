@@ -35,9 +35,6 @@ struct WarmupSuggestionBannerView: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(Color("Primary").opacity(0.2), lineWidth: 1)
         }
-        .listRowInsets(EdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12))
-        .listRowBackground(Color.clear)
-        .listRowSeparator(.hidden)
         .accessibilityIdentifier("warmupSuggestionBanner")
     }
 }

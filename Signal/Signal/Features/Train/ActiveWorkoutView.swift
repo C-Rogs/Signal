@@ -26,6 +26,7 @@ struct ActiveWorkoutView: View {
     @State private var sessionRecoveryScore: RecoveryScore?
     @State private var sessionPersonalReadiness: PersonalReadinessProfile?
     @State private var deloadChipTitle: String?
+    @State private var workoutSurfaceID = UUID()
 
     private var store: LiveWorkoutStore {
         LiveWorkoutStore(context: modelContext)
@@ -72,16 +73,17 @@ struct ActiveWorkoutView: View {
                 applyDynamicRestExtension(at: date)
             }
             .onChange(of: scenePhase) { _, phase in
+                Log.ui.info(
+                    "active workout scenePhase=\(String(describing: phase), privacy: .public) exercises=\(orderedExercises.count, privacy: .public)"
+                )
                 if phase == .background {
                     try? modelContext.save()
                 }
                 if phase == .active {
                     reloadSessionRecoveryScore()
+                    workoutSurfaceID = UUID()
                 }
                 if TrainScenePhaseKeyboardPolicy.shouldReleaseSetFieldFocus(for: phase) {
-                    TrainKeyboard.dismiss()
-                }
-                if TrainScenePhaseKeyboardPolicy.shouldDismissKeyboardOnResume(for: phase) {
                     TrainKeyboard.dismiss()
                 }
             }
@@ -89,11 +91,17 @@ struct ActiveWorkoutView: View {
                 coordinator.isViewingActiveWorkout = true
                 reloadSessionRecoveryScore()
                 watchBridge.prepareLiveSession(for: session, modelContext: modelContext)
+                Log.ui.info(
+                    "active workout appeared exercises=\(orderedExercises.count, privacy: .public) sessionID=\(String(describing: session.persistentModelID), privacy: .public)"
+                )
                 Task {
                     await watchBridge.ensureWatchWorkoutStarted(for: session, modelContext: modelContext)
                 }
             }
-            .onDisappear { coordinator.isViewingActiveWorkout = false }
+            .onDisappear {
+                coordinator.isViewingActiveWorkout = false
+                Log.ui.info("active workout disappeared")
+            }
     }
 
     private var recoveryBandContext: RecoveryBandContext? {
@@ -144,16 +152,15 @@ struct ActiveWorkoutView: View {
 
     private var workoutList: some View {
         ScrollViewReader { proxy in
-            List {
-                if let errorMessage {
-                    Section {
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    if let errorMessage {
                         Text(errorMessage)
                             .foregroundStyle(.red)
                             .font(.footnote)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                }
 
-                Section {
                     WorkoutLiveSummaryBar(
                         summary: liveSummary,
                         formatter: formatter,
@@ -161,51 +168,49 @@ struct ActiveWorkoutView: View {
                         deloadChipTitle: deloadChipTitle,
                         heartRateUI: watchBridge.heartRateUIState(now: tick)
                     )
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                    .listRowBackground(Color("Surface"))
-                }
+                    .padding(.vertical, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color("Surface"))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-                ForEach(orderedExercises, id: \.persistentModelID) { exercise in
-                    WorkoutExerciseSectionView(
-                        exercise: exercise,
-                        session: session,
-                        mode: ExerciseLoggingMode.from(catalogEntry: exercise.catalogEntry),
-                        formatter: formatter,
-                        lastHint: lastHint(for: exercise),
-                        recoveryScore: sessionRecoveryScore ?? defaultSessionRecoveryScore,
-                        personalReadiness: sessionPersonalReadiness,
-                        store: store,
-                        modelContext: modelContext,
-                        onSupersetScroll: { id in
-                            withAnimation {
-                                proxy.scrollTo(id, anchor: .top)
+                    ForEach(orderedExercises, id: \.persistentModelID) { exercise in
+                        WorkoutExerciseSectionView(
+                            exercise: exercise,
+                            session: session,
+                            mode: ExerciseLoggingMode.from(catalogEntry: exercise.catalogEntry),
+                            formatter: formatter,
+                            lastHint: lastHint(for: exercise),
+                            recoveryScore: sessionRecoveryScore ?? defaultSessionRecoveryScore,
+                            personalReadiness: sessionPersonalReadiness,
+                            store: store,
+                            modelContext: modelContext,
+                            onSupersetScroll: { id in
+                                withAnimation {
+                                    proxy.scrollTo(id, anchor: .top)
+                                }
+                            },
+                            onNeedsRefresh: {
+                                coordinator.refresh()
+                                tick = Date()
+                                reloadSessionRecoveryScore()
                             }
-                        },
-                        onNeedsRefresh: {
-                            coordinator.refresh()
-                            tick = Date()
-                            reloadSessionRecoveryScore()
-                        }
-                    )
-                    .id(exercise.persistentModelID)
-                }
-                .onMove { source, destination in
-                    try? store.reorderExercises(in: session, fromOffsets: source, toOffset: destination)
-                    coordinator.refresh()
-                }
+                        )
+                        .id(exercise.persistentModelID)
+                    }
 
-                Section {
                     Button {
                         showAddExercise = true
                     } label: {
                         Label("Add exercise", systemImage: "plus")
                     }
                     .accessibilityIdentifier("addExerciseButton")
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
             }
-            .listStyle(.insetGrouped)
+            .id(workoutSurfaceID)
             .scrollDismissesKeyboard(.interactively)
-            .scrollContentBackground(.hidden)
             .onAppear {
                 if let target = coordinator.consumeScrollTarget() {
                     proxy.scrollTo(target, anchor: .top)

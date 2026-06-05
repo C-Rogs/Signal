@@ -111,9 +111,10 @@ struct SetRowView: View {
             if TrainScenePhaseKeyboardPolicy.shouldReleaseSetFieldFocus(for: phase) {
                 commitFields()
                 focusedField = nil
-            } else if phase == .active, focusedField != nil {
-                focusedField = nil
             }
+        }
+        .contextMenu {
+            Button("Delete", role: .destructive, action: onDelete)
         }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
