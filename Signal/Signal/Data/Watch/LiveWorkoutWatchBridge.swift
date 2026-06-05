@@ -71,6 +71,15 @@ final class LiveWorkoutWatchBridge {
         send(packet: packet, isRetry: true)
     }
 
+    func heartRateUIState(now: Date = .now) -> LiveWatchHeartRateUIState {
+        LiveWatchHeartRateUIStateBuilder.make(
+            isWatchWorkoutRequested: isWatchWorkoutRequested,
+            latestHeartRateBPM: latestHeartRateBPM,
+            lastHeartRateAt: lastHeartRateAt,
+            now: now
+        )
+    }
+
     func endWatchWorkout() {
         guard let sessionKey = activeSessionKey else { return }
         send(packet: LiveWorkoutTelemetryPacket(kind: .sessionStop, sessionKey: sessionKey))

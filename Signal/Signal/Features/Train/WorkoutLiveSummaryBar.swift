@@ -4,6 +4,12 @@ struct WorkoutLiveSummaryBar: View {
     let summary: WorkoutLiveSummary
     let formatter: DisplayUnitFormatter
     var recoveryChipTitle: String?
+    var heartRateUI: LiveWatchHeartRateUIState = LiveWatchHeartRateUIState(
+        showsHeartRateSlot: false,
+        bpm: nil,
+        isStale: false,
+        statusChipTitle: nil
+    )
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -16,6 +22,12 @@ struct WorkoutLiveSummaryBar: View {
                     .background(Color("Warning").opacity(0.15))
                     .clipShape(Capsule())
                     .accessibilityIdentifier("lowRecoveryChip")
+            }
+            if let statusChipTitle = heartRateUI.statusChipTitle {
+                Text(statusChipTitle)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(Color("TextSecondary"))
+                    .accessibilityIdentifier("watchHeartRateStatusChip")
             }
             statsRow
         }
@@ -43,9 +55,9 @@ struct WorkoutLiveSummaryBar: View {
                 value: "\(summary.completedSetCount)",
                 emphasize: false
             )
-            if let heartRateBPM = summary.heartRateBPM {
+            if heartRateUI.showsHeartRateSlot {
                 statDivider
-                liveHeartRateColumn(bpm: heartRateBPM)
+                liveHeartRateColumn
             }
         }
     }
@@ -62,13 +74,19 @@ struct WorkoutLiveSummaryBar: View {
         if let recoveryChipTitle {
             parts.append(recoveryChipTitle)
         }
+        if let statusChipTitle = heartRateUI.statusChipTitle {
+            parts.append(statusChipTitle)
+        }
         parts.append(contentsOf: [
             "Duration \(WorkoutLiveSummary.formatDuration(seconds: summary.durationSeconds))",
             "volume \(formattedVolume)",
             "\(summary.completedSetCount) sets completed",
         ])
-        if let heartRateBPM = summary.heartRateBPM {
-            parts.append("heart rate \(heartRateBPM)")
+        if let bpm = heartRateUI.bpm {
+            let freshness = heartRateUI.isStale ? "stale" : "live"
+            parts.append("heart rate \(bpm) \(freshness)")
+        } else if heartRateUI.showsHeartRateSlot {
+            parts.append("heart rate waiting")
         }
         return parts.joined(separator: ", ")
     }
@@ -79,7 +97,7 @@ struct WorkoutLiveSummaryBar: View {
             .frame(width: 1, height: 36)
     }
 
-    private func liveHeartRateColumn(bpm: Int) -> some View {
+    private var liveHeartRateColumn: some View {
         ZStack {
             LiveHeartRateDecor()
                 .frame(height: 40)
@@ -92,11 +110,24 @@ struct WorkoutLiveSummaryBar: View {
                         .font(.caption)
                 }
                 .foregroundStyle(Color("Primary"))
-                Text("\(bpm)")
-                    .font(.subheadline.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(Color("TextPrimary"))
-                    .minimumScaleFactor(0.8)
-                    .lineLimit(1)
+                if let bpm = heartRateUI.bpm {
+                    Text("\(bpm)")
+                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(Color("TextPrimary"))
+                        .opacity(heartRateUI.isStale ? 0.45 : 1)
+                        .minimumScaleFactor(0.8)
+                        .lineLimit(1)
+                } else {
+                    Image(systemName: LiveHeartRateIcon.liveSymbol)
+                        .font(.subheadline.weight(.semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(Color("Primary").opacity(0.45))
+                        .symbolEffect(.pulse, options: .repeating)
+                    Text("—")
+                        .font(.subheadline.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(Color("TextSecondary"))
+                        .accessibilityHidden(true)
+                }
             }
         }
         .frame(maxWidth: .infinity)
