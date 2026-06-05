@@ -23,14 +23,22 @@ enum CalendarAlcoholFMClassifier {
             Log.calendar.info("calendar FM classify skipped model unavailable")
             return nil
         }
-        guard await FoundationModelsInferenceGate.shared.tryAcquire() else {
+        guard let result = await FoundationModelsInferenceGate.shared.withExclusiveAccess({
+            await Self.classifyWithSession(
+                eventTitle: eventTitle,
+                shortSleepLastNight: shortSleepLastNight
+            )
+        }) else {
             Log.calendar.info("calendar FM classify skipped gate busy")
             return nil
         }
-        defer {
-            Task { await FoundationModelsInferenceGate.shared.release() }
-        }
+        return result
+    }
 
+    private static func classifyWithSession(
+        eventTitle: String,
+        shortSleepLastNight: Bool
+    ) async -> (confidence: Double, reason: String)? {
         let instructions = """
             Classify whether a calendar event title likely refers to social drinking or alcohol.
             Be conservative. Work meetings, medical appointments, gym, and travel are not alcohol.

@@ -109,30 +109,15 @@ enum FoundationModelsHealthRunner {
     }
 
     private static func executeMinimalGenerate(since started: Date) async -> FoundationModelsHealthProbeExecution {
-        guard await FoundationModelsInferenceGate.shared.tryAcquire() else {
-            return FoundationModelsHealthProbeExecution(
-                latencyMs: elapsedMs(since: started),
-                errorMessage: "Inference gate busy"
-            )
-        }
-        defer {
-            Task { await FoundationModelsInferenceGate.shared.release() }
-        }
-
         do {
-            let session = LanguageModelSession(instructions: "Reply with one short word only.")
-            guard !session.isResponding else {
+            guard let text = try await FoundationModelsInferenceGate.shared.withExclusiveAccess({
+                try await Self.minimalGenerateText()
+            }) else {
                 return FoundationModelsHealthProbeExecution(
                     latencyMs: elapsedMs(since: started),
-                    errorMessage: "Session already responding"
+                    errorMessage: "Inference gate busy"
                 )
             }
-            let stream = session.streamResponse(to: "Say hello.")
-            var text = ""
-            for try await snapshot in stream {
-                text = snapshot.content
-            }
-            text = text.trimmingCharacters(in: .whitespacesAndNewlines)
             return FoundationModelsHealthProbeExecution(
                 textValue: text,
                 latencyMs: elapsedMs(since: started)
@@ -143,6 +128,19 @@ enum FoundationModelsHealthRunner {
                 errorMessage: error.localizedDescription
             )
         }
+    }
+
+    private static func minimalGenerateText() async throws -> String {
+        let session = LanguageModelSession(instructions: "Reply with one short word only.")
+        guard !session.isResponding else {
+            throw CoachError.busy
+        }
+        let stream = session.streamResponse(to: "Say hello.")
+        var text = ""
+        for try await snapshot in stream {
+            text = snapshot.content
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func executeStructuredClassify(
@@ -165,15 +163,21 @@ enum FoundationModelsHealthRunner {
         modelContainer: ModelContainer,
         since started: Date
     ) async -> FoundationModelsHealthProbeExecution {
-        let coach = FoundationModelsCoach(modelContainer: modelContainer)
+        _ = modelContainer
         let context = FoundationModelsHealthFixtures.minimalCoachContext
         let query = "Reply with one short sentence confirming you can read this health check."
+        var working = context
+        working.prepareForModelInput(query: query)
+        let prompt = working.assembledPrompt(query: query)
 
         do {
-            let stream = try await coach.respond(to: query, context: context)
-            var combined = ""
-            for try await chunk in stream {
-                combined += chunk
+            guard let combined = try await FoundationModelsInferenceGate.shared.withExclusiveAccess({
+                try await Self.streamCoachSmoke(prompt: prompt)
+            }) else {
+                return FoundationModelsHealthProbeExecution(
+                    latencyMs: elapsedMs(since: started),
+                    errorMessage: "Inference gate busy"
+                )
             }
             return FoundationModelsHealthProbeExecution(
                 textValue: combined,
@@ -187,35 +191,33 @@ enum FoundationModelsHealthRunner {
         }
     }
 
-    private static func executeToolRoundtrip(since started: Date) async -> FoundationModelsHealthProbeExecution {
-        guard await FoundationModelsInferenceGate.shared.tryAcquire() else {
-            return FoundationModelsHealthProbeExecution(
-                latencyMs: elapsedMs(since: started),
-                errorMessage: "Inference gate busy"
-            )
+    private static func streamCoachSmoke(prompt: String) async throws -> String {
+        let session = LanguageModelSession(
+            model: .default,
+            tools: [DeviceClockTool()],
+            instructions: "You are Signal coach. Answer briefly using only the user context below."
+        )
+        guard !session.isResponding else {
+            throw CoachError.busy
         }
-        defer {
-            Task { await FoundationModelsInferenceGate.shared.release() }
+        let stream = session.streamResponse(to: prompt)
+        var combined = ""
+        for try await snapshot in stream {
+            combined = snapshot.content
         }
+        return combined.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
+    private static func executeToolRoundtrip(since started: Date) async -> FoundationModelsHealthProbeExecution {
         do {
-            let session = LanguageModelSession(
-                model: .default,
-                tools: [DeviceClockTool()],
-                instructions: "When asked for the device clock, call getDeviceClock and return that value."
-            )
-            guard !session.isResponding else {
+            guard let text = try await FoundationModelsInferenceGate.shared.withExclusiveAccess({
+                try await Self.toolRoundtripText()
+            }) else {
                 return FoundationModelsHealthProbeExecution(
                     latencyMs: elapsedMs(since: started),
-                    errorMessage: "Session already responding"
+                    errorMessage: "Inference gate busy"
                 )
             }
-            let stream = session.streamResponse(to: "What is the device clock right now?")
-            var text = ""
-            for try await snapshot in stream {
-                text = snapshot.content
-            }
-            text = text.trimmingCharacters(in: .whitespacesAndNewlines)
             return FoundationModelsHealthProbeExecution(
                 textValue: text,
                 latencyMs: elapsedMs(since: started)
@@ -226,6 +228,23 @@ enum FoundationModelsHealthRunner {
                 errorMessage: error.localizedDescription
             )
         }
+    }
+
+    private static func toolRoundtripText() async throws -> String {
+        let session = LanguageModelSession(
+            model: .default,
+            tools: [DeviceClockTool()],
+            instructions: "When asked for the device clock, call getDeviceClock and return that value."
+        )
+        guard !session.isResponding else {
+            throw CoachError.busy
+        }
+        let stream = session.streamResponse(to: "What is the device clock right now?")
+        var text = ""
+        for try await snapshot in stream {
+            text = snapshot.content
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func elapsedMs(since started: Date) -> Int {

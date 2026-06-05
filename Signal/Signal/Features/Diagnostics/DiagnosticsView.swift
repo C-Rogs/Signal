@@ -23,9 +23,11 @@ struct DiagnosticsView: View {
                         derivedMetricsSection(viewModel: viewModel)
                         syncSection(viewModel: viewModel)
                         importSummarySection
+                        catalogMatchReportSection(viewModel: viewModel)
                         ragSmokeTestSection(viewModel: viewModel)
                         askCoachSection(viewModel: viewModel)
                         fmHealthCheckSection(viewModel: viewModel)
+                        coachUATSection(viewModel: viewModel)
                         dayDumpSection(viewModel: viewModel)
                         retrievalUATSection(viewModel: viewModel)
                     } else {
@@ -269,6 +271,28 @@ struct DiagnosticsView: View {
     }
 
     @ViewBuilder
+    private func catalogMatchReportSection(viewModel: DiagnosticsViewModel) -> some View {
+        elevatedCard {
+            Text("Catalog match report")
+                .font(.cardLabel)
+                .foregroundStyle(Color("TextPrimary"))
+
+            Text("Gemini import staple titles against the bundled exercise catalog.")
+                .font(.footnote)
+                .foregroundStyle(Color("TextSecondary"))
+
+            if viewModel.catalogMatchReportText.isEmpty {
+                Text("No catalog match data yet.")
+                    .foregroundStyle(Color("TextSecondary"))
+            } else {
+                Text(viewModel.catalogMatchReportText)
+                    .font(.system(.caption, design: .monospaced))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
     private func ragSmokeTestSection(viewModel: DiagnosticsViewModel) -> some View {
         elevatedCard {
             Text("RAG smoke test")
@@ -384,6 +408,7 @@ struct DiagnosticsView: View {
                     viewModel.coachIsBuildingContext
                         || viewModel.coachIsResponding
                         || viewModel.isRunningFMHealthCheck
+                        || viewModel.isRunningCoachUAT
                         || viewModel.coachQueryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 )
 
@@ -396,6 +421,7 @@ struct DiagnosticsView: View {
                     viewModel.coachIsResponding
                         || viewModel.coachIsBuildingContext
                         || viewModel.isRunningFMHealthCheck
+                        || viewModel.isRunningCoachUAT
                         || !viewModel.coachCanAsk
                         || viewModel.coachQueryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 )
@@ -481,7 +507,7 @@ struct DiagnosticsView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(Color("Primary"))
-            .disabled(viewModel.isRunningFMHealthCheck || !viewModel.coachCanAsk)
+            .disabled(viewModel.isRunningFMHealthCheck || viewModel.isRunningCoachUAT || !viewModel.coachCanAsk)
 
             HStack(spacing: 12) {
                 Button("Copy report (\(viewModel.fmHealthReportCharacterCount) chars)") {
@@ -548,6 +574,98 @@ struct DiagnosticsView: View {
             return .red
         case .skip:
             return Color("TextSecondary")
+        }
+    }
+
+    private func coachUATVerdictColor(_ verdict: CoachUATVerdict) -> Color {
+        switch verdict {
+        case .pass:
+            return Color("Primary")
+        case .review:
+            return .orange
+        case .fail:
+            return .red
+        case .limit:
+            return Color("TextSecondary")
+        }
+    }
+
+    @ViewBuilder
+    private func coachUATSection(viewModel: DiagnosticsViewModel) -> some View {
+        elevatedCard {
+            Text("Coach evaluation")
+                .font(.cardLabel)
+                .foregroundStyle(Color("TextPrimary"))
+
+            Text(
+                "Runs 15 realistic coach prompts against your data. Keep the phone unlocked and idle; Apple Intelligence rate limits if you run this back to back with other FM checks. Automated USB tests only run a 4-prompt smoke subset."
+            )
+            .fixedSize(horizontal: false, vertical: true)
+
+            Button("Run coach evaluation") {
+                Task {
+                    await viewModel.runCoachUAT()
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color("Primary"))
+            .disabled(viewModel.isRunningCoachUAT || viewModel.isRunningFMHealthCheck || !viewModel.coachCanAsk)
+
+            HStack(spacing: 12) {
+                Button("Copy report (\(viewModel.coachUATReportCharacterCount) chars)") {
+                    viewModel.copyCoachUATReportToPasteboard()
+                }
+                .buttonStyle(.bordered)
+                .tint(Color("Primary"))
+                .disabled(!viewModel.canCopyCoachUATReport)
+
+                ShareLink(item: viewModel.coachUATReportText) {
+                    Text("Share report (\(viewModel.coachUATReportCharacterCount) chars)")
+                }
+                .buttonStyle(.bordered)
+                .tint(Color("Primary"))
+                .disabled(!viewModel.canCopyCoachUATReport)
+            }
+
+            if viewModel.isRunningCoachUAT {
+                if let runningID = viewModel.coachUATRunningCaseID,
+                   let label = CoachUATCatalog.definition(id: runningID)?.label {
+                    ProgressView("Running \(label)...")
+                        .tint(Color("Primary"))
+                } else {
+                    ProgressView("Running coach evaluation...")
+                        .tint(Color("Primary"))
+                }
+            }
+
+            if let error = viewModel.coachUATError {
+                Text(error)
+                    .foregroundStyle(.orange)
+            }
+
+            if !viewModel.coachUATSummaryLine.isEmpty {
+                Text(viewModel.coachUATSummaryLine)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Color("TextPrimary"))
+            }
+
+            if !viewModel.coachUATResults.isEmpty {
+                ForEach(viewModel.coachUATResults) { result in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("[\(result.verdict.rawValue)] \(result.label)")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(coachUATVerdictColor(result.verdict))
+                        Text("\"\(result.query)\" · \(result.ratioLabel)")
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(Color("TextSecondary"))
+                        if !result.notes.isEmpty {
+                            Text(result.notes.joined(separator: " · "))
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                }
+            }
         }
     }
 

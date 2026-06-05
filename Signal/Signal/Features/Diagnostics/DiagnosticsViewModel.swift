@@ -89,12 +89,19 @@ final class DiagnosticsViewModel {
     var isRunningFMHealthCheck = false
     var fmHealthRunningProbeID: String?
     var fmHealthError: String?
+    var coachUATResults: [CoachUATResult] = []
+    var coachUATReportText = ""
+    var coachUATSummaryLine = ""
+    var isRunningCoachUAT = false
+    var coachUATRunningCaseID: String?
+    var coachUATError: String?
     var recoveryDiagnostics: RecoveryDiagnosticsSnapshot?
     var hrAttributionDiagnostics = HRAttributionDiagnosticsSnapshot(
         totalRows: 0,
         fullSessionCount: 0,
         partialSessionCount: 0
     )
+    var catalogMatchReportText = ""
 
     var uatReportCharacterCount: Int { uatReportText.count }
     var dayDumpReportCharacterCount: Int { dayDumpReportText.count }
@@ -111,6 +118,12 @@ final class DiagnosticsViewModel {
 
     var canCopyFMHealthReport: Bool {
         !isRunningFMHealthCheck && !fmHealthReportText.isEmpty
+    }
+
+    var coachUATReportCharacterCount: Int { coachUATReportText.count }
+
+    var canCopyCoachUATReport: Bool {
+        !isRunningCoachUAT && !coachUATReportText.isEmpty
     }
 
     private let modelContainer: ModelContainer
@@ -172,8 +185,62 @@ final class DiagnosticsViewModel {
         }
     }
 
+    func runCoachUAT() async {
+        guard !isRunningCoachUAT else { return }
+
+        refreshCoachModelStatus()
+        guard coachCanAsk else {
+            coachUATError = "Foundation model is not ready."
+            return
+        }
+
+        isRunningCoachUAT = true
+        coachUATError = nil
+        coachUATResults = []
+        coachUATReportText = ""
+        coachUATSummaryLine = ""
+        coachUATRunningCaseID = nil
+        defer {
+            isRunningCoachUAT = false
+            coachUATRunningCaseID = nil
+        }
+
+        let report = await CoachUATRunner.run(
+            modelContainer: modelContainer,
+            onCaseStart: { [weak self] definition in
+                Task { @MainActor in
+                    self?.coachUATRunningCaseID = definition.id
+                }
+            },
+            onCaseComplete: { [weak self] result in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if let index = self.coachUATResults.firstIndex(where: { $0.definitionID == result.definitionID }) {
+                        self.coachUATResults[index] = result
+                    } else {
+                        self.coachUATResults.append(result)
+                    }
+                }
+            }
+        )
+
+        coachUATResults = report.results
+        coachUATSummaryLine = report.summaryLine
+        coachUATReportText = CoachUATShareReport.build(report: report)
+        Log.coach.info(
+            "coach_uat finished summary=\(report.summaryLine, privacy: .public) cases=\(report.results.count, privacy: .public)"
+        )
+    }
+
+    func copyCoachUATReportToPasteboard() {
+        guard canCopyCoachUATReport else { return }
+        UIPasteboard.general.string = coachUATReportText
+        Log.ui.info("diagnostics coach UAT report copied chars=\(self.coachUATReportText.count, privacy: .public)")
+    }
+
     func runFMHealthCheck() async {
         guard !isRunningFMHealthCheck else { return }
+        guard !isRunningCoachUAT else { return }
 
         refreshCoachModelStatus()
         isRunningFMHealthCheck = true
@@ -224,6 +291,7 @@ final class DiagnosticsViewModel {
         let trimmed = coachQueryText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         guard !isRunningFMHealthCheck else { return }
+        guard !isRunningCoachUAT else { return }
 
         refreshCoachModelStatus()
         guard coachCanAsk else {
@@ -344,6 +412,7 @@ final class DiagnosticsViewModel {
             dataQualityFlagRows = DerivedMetricsDiagnosticsLoader.loadDataQualityFlags(in: context)
             recoveryDiagnostics = RecoveryDiagnosticsLoader.load(in: context)
             hrAttributionDiagnostics = HRAttributionDiagnosticsLoader.load(in: context)
+            refreshCatalogMatchReport(in: context)
             Log.ui.info(
                 "diagnostics refreshed metrics=\(self.dailyMetricCount, privacy: .public) vectors=\(self.healthVectorCount, privacy: .public) syncFinished=\(healthKitManager.lastSyncFinishedAt != nil, privacy: .public)"
             )
@@ -612,5 +681,21 @@ final class DiagnosticsViewModel {
     private static func ragSectionPreview(from summaries: [String]) -> String {
         guard !summaries.isEmpty else { return "(no RAG days retrieved)" }
         return summaries.joined(separator: "\n\n")
+    }
+
+    private func refreshCatalogMatchReport(in context: ModelContext) {
+        do {
+            _ = try ExerciseCatalogSeeder.seedIfNeeded(in: context)
+            let catalog = try context.fetch(FetchDescriptor<ExerciseCatalog>())
+            let report = CatalogMatchReporter.buildReport(
+                for: CatalogMatchReporter.geminiImportSampleTitles,
+                catalog: catalog
+            )
+            var lines = report.matchTableLines
+            lines.append(contentsOf: report.reviewLines)
+            catalogMatchReportText = lines.joined(separator: "\n")
+        } catch {
+            catalogMatchReportText = "Catalog match report failed: \(error.localizedDescription)"
+        }
     }
 }

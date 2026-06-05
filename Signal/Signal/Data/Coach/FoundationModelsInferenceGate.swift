@@ -14,4 +14,12 @@ actor FoundationModelsInferenceGate {
     func release() {
         responding = false
     }
+
+    func withExclusiveAccess<T>(
+        _ operation: () async throws -> T
+    ) async rethrows -> T? {
+        guard tryAcquire() else { return nil }
+        defer { release() }
+        return try await operation()
+    }
 }
