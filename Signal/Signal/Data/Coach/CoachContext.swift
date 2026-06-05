@@ -78,6 +78,17 @@ struct CoachContext: Sendable, Equatable {
         return sections.joined(separator: "\n\n")
     }
 
+    static func followUpPlaceholder(route: CoachQueryRoute) -> CoachContext {
+        CoachContext(
+            route: route,
+            userSummary: "",
+            activeInsights: [],
+            derivedMetricsSummary: "",
+            ragSummaries: [],
+            recentWorkouts: []
+        )
+    }
+
     func activeSectionNames() -> [String] {
         var names: [String] = []
         if !userSummary.isEmpty { names.append("user") }

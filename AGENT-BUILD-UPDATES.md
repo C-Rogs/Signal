@@ -1704,3 +1704,55 @@ Verify new files in **Signal** + **SignalTests** targets if not auto-synced:
 | Foreground | `RootView.swift` |
 | Tests | `ExerciseSessionHintCacheTests.swift` |
 | Docs | `PERF-AUDIT-2026-06.md`, `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-05 — Coach M2 multi-turn chat
+
+### Shipped
+
+- Reused `LanguageModelSession` across follow-ups when conversation memory is on; turn 1 loads full scoped context, turn 2+ sends user text only.
+- Pinned thread route from turn 1; deep reasoning and full context build on turn 1 only.
+- Context usage ring in Coach toolbar (~tokens / 4096); tap opens sheet with compact action.
+- Near-limit banner and overflow messaging offer user-triggered compaction.
+- `CoachThreadCompactor` summarizes transcript and seeds a new session with condensed summary (TN3193 pattern via instructions addendum).
+- New conversation toolbar button resets thread and clears messages.
+- Settings toggle **Conversation memory** (default on); off reverts to single-turn behavior per message.
+
+### Gate A (agent)
+
+- `build_device` (pinned iPhone 16 Pro `00008140-001E34E10A01801C`): **pass** (~9.5s).
+- Sim tests: **not run** (per milestone plan).
+
+### Gate B (human, physical iPhone 16 Pro)
+
+1. Coach → "What should I train today?" → get prescription.
+2. Follow-up: "Only 45 minutes, skip shoulders" → refines prior plan (does not ignore turn 1).
+3. Context ring rises across turns; tap shows estimate.
+4. At high fill, **Compact conversation** → ring drops; follow-up still coherent.
+5. **New conversation** (toolbar) → ring resets; no memory of prior thread.
+6. Settings → Conversation memory OFF → each message behaves like isolated Q&A.
+7. Console: `coach thread=followUp`, `coach compact`, `contextTokens=…`.
+
+### Human Xcode
+
+Confirm new Swift files in **Signal** + **SignalTests** targets if PBXFileSystemSynchronizedRootGroup did not pick them up:
+
+- `Core/Coach/CoachContextBudget.swift`
+- `Data/Coach/CoachThreadTypes.swift`, `CoachTranscriptText.swift`, `CoachThreadCompactor.swift`
+- `Features/Coach/CoachContextUsageRing.swift`
+- `SignalTests/CoachContextBudgetTests.swift`, `CoachThreadCompactorTests.swift`
+
+### Out of scope
+
+- Chat persistence across app relaunch, live workout in Coach context, Start workout action, Diagnostics multi-turn, thumbs-down steering, proactive Coach tab nudge.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Thread engine | `LLMCoach.swift`, `FoundationModelsCoach.swift`, `CoachSystemPrompt.swift`, `CoachContext.swift` |
+| Budget / transcript | `CoachContextBudget.swift`, `CoachThreadTypes.swift`, `CoachTranscriptText.swift`, `CoachThreadCompactor.swift` |
+| Chat UI | `ChatViewModel.swift`, `ChatView.swift`, `ChatMessage.swift`, `CoachContextUsageRing.swift` |
+| Settings | `CoachFeatureFlags.swift`, `CoachPreferences.swift`, `SettingsView.swift` |
+| Diagnostics | `DiagnosticsViewModel.swift` (compactionFailed case) |
+| Tests | `CoachContextBudgetTests.swift`, `CoachThreadCompactorTests.swift`, `CoachPreferencesTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |

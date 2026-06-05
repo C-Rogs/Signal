@@ -18,6 +18,10 @@ final class CoachPreferences {
         didSet { persistCompoundQueries() }
     }
 
+    var conversationMemoryEnabled: Bool {
+        didSet { persistConversationMemory() }
+    }
+
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -26,13 +30,15 @@ final class CoachPreferences {
         smartContextEnabled = flags.smartContextEnabled
         deepReasoningEnabled = flags.deepReasoningEnabled
         compoundQueriesEnabled = flags.compoundQueriesEnabled
+        conversationMemoryEnabled = flags.conversationMemoryEnabled
     }
 
     var featureFlags: CoachFeatureFlags {
         CoachFeatureFlags(
             smartContextEnabled: smartContextEnabled,
             deepReasoningEnabled: deepReasoningEnabled,
-            compoundQueriesEnabled: compoundQueriesEnabled
+            compoundQueriesEnabled: compoundQueriesEnabled,
+            conversationMemoryEnabled: conversationMemoryEnabled
         )
     }
 
@@ -46,5 +52,9 @@ final class CoachPreferences {
 
     private func persistCompoundQueries() {
         defaults.set(compoundQueriesEnabled, forKey: CoachPreferenceKeys.compoundQueries)
+    }
+
+    private func persistConversationMemory() {
+        defaults.set(conversationMemoryEnabled, forKey: CoachPreferenceKeys.conversationMemory)
     }
 }

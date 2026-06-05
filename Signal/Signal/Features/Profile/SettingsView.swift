@@ -60,11 +60,12 @@ struct SettingsView: View {
                     Toggle("Deep reasoning", isOn: Bindable(coachPreferences).deepReasoningEnabled)
                     Toggle("Compound queries", isOn: Bindable(coachPreferences).compoundQueriesEnabled)
                         .disabled(!coachPreferences.smartContextEnabled)
+                    Toggle("Conversation memory", isOn: Bindable(coachPreferences).conversationMemoryEnabled)
                 } header: {
                     Text("Coach")
                 } footer: {
                     Text(
-                        "Smart context loads only relevant metrics per question (faster, tighter answers). Deep reasoning adds a planning step before answering. Turn either off if responses feel slow. Compound queries blend context when a question spans two topics (e.g. recovery and calendar)."
+                        "Smart context loads only relevant metrics per question (faster, tighter answers). Deep reasoning adds a planning step before answering. Turn either off if responses feel slow. Compound queries blend context when a question spans two topics (e.g. recovery and calendar). Conversation memory keeps follow-ups in the same thread so you can refine plans; turn off for isolated one-shot answers."
                     )
                 }
 

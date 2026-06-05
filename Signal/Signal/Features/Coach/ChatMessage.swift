@@ -17,6 +17,7 @@ struct ChatMessage: Identifiable, Sendable, Equatable {
     let timestamp: Date
     var feedbackRating: FeedbackRating?
     var promptQuery: String?
+    var isCompactSummary: Bool
 
     init(
         id: UUID = UUID(),
@@ -24,7 +25,8 @@ struct ChatMessage: Identifiable, Sendable, Equatable {
         text: String,
         timestamp: Date = Date(),
         feedbackRating: FeedbackRating? = nil,
-        promptQuery: String? = nil
+        promptQuery: String? = nil,
+        isCompactSummary: Bool = false
     ) {
         self.id = id
         self.role = role
@@ -32,5 +34,6 @@ struct ChatMessage: Identifiable, Sendable, Equatable {
         self.timestamp = timestamp
         self.feedbackRating = feedbackRating
         self.promptQuery = promptQuery
+        self.isCompactSummary = isCompactSummary
     }
 }

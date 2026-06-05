@@ -4,9 +4,11 @@ import SwiftUI
 struct ChatView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.modelContext) private var modelContext
+    @Environment(CoachPreferences.self) private var coachPreferences
     @State private var viewModel: ChatViewModel
     @State private var draftText = ""
     @State private var thinkingPulse = false
+    @State private var showsContextSheet = false
     @FocusState private var isInputFocused: Bool
 
     private static let suggestions = [
@@ -26,17 +28,51 @@ struct ChatView: View {
 
             VStack(spacing: 0) {
                 messageList
+                if viewModel.showCompactOffer, coachPreferences.conversationMemoryEnabled {
+                    compactBanner
+                }
                 inputRow
             }
         }
         .navigationTitle("Signal Coach")
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    viewModel.startNewConversation()
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                }
+                .accessibilityLabel("New conversation")
+            }
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink("Insights") {
-                    InsightsView()
+                HStack(spacing: 16) {
+                    if coachPreferences.conversationMemoryEnabled {
+                        Button {
+                            showsContextSheet = true
+                        } label: {
+                            CoachContextUsageRing(usage: viewModel.contextUsage)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Context usage")
+                    }
+                    NavigationLink("Insights") {
+                        InsightsView()
+                    }
                 }
             }
+        }
+        .sheet(isPresented: $showsContextSheet) {
+            CoachContextUsageSheet(
+                usage: viewModel.contextUsage,
+                conversationMemoryEnabled: coachPreferences.conversationMemoryEnabled,
+                onCompact: {
+                    viewModel.compactConversation()
+                }
+            )
+        }
+        .onChange(of: coachPreferences.conversationMemoryEnabled) { _, enabled in
+            viewModel.updateConversationMemoryEnabled(enabled)
         }
         .onAppear {
             viewModel.prewarm()
@@ -137,6 +173,23 @@ struct ChatView: View {
             .opacity(thinkingPulse ? 0.45 : 1)
     }
 
+    private var compactBanner: some View {
+        Button {
+            viewModel.compactConversation()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                Text("Context filling up · Compact")
+                    .font(.metadataCaption)
+            }
+            .foregroundStyle(Color("Primary"))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(Color("Surface"))
+        }
+        .buttonStyle(.plain)
+    }
+
     private var inputRow: some View {
         HStack(spacing: 12) {
             TextField("Ask Signal...", text: $draftText, axis: .vertical)
@@ -198,11 +251,17 @@ private struct ChatMessageBubble: View {
             ChatUserBubble(text: message.text, timestamp: message.timestamp)
         case .assistant:
             VStack(alignment: .leading, spacing: 6) {
-                ChatAssistantBubble(text: message.text)
-                Text(message.timestamp, style: .time)
-                    .font(.caption2)
-                    .foregroundStyle(Color("TextSecondary"))
-                feedbackRow
+                ChatAssistantBubble(
+                    text: message.text,
+                    renderMarkdown: !message.isCompactSummary,
+                    subdued: message.isCompactSummary
+                )
+                if !message.isCompactSummary {
+                    Text(message.timestamp, style: .time)
+                        .font(.caption2)
+                        .foregroundStyle(Color("TextSecondary"))
+                    feedbackRow
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -258,6 +317,7 @@ private struct ChatUserBubble: View {
 private struct ChatAssistantBubble: View {
     let text: String
     var renderMarkdown = true
+    var subdued = false
 
     var body: some View {
         Group {
@@ -272,8 +332,8 @@ private struct ChatAssistantBubble: View {
                 .textSelection(.enabled)
             } else {
                 Text(CoachMessageFormatting.plainStreamingText(text))
-                    .font(.body)
-                    .foregroundStyle(Color("TextPrimary"))
+                    .font(subdued ? .metadataCaption : .body)
+                    .foregroundStyle(subdued ? Color("TextSecondary") : Color("TextPrimary"))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }

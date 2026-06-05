@@ -646,6 +646,8 @@ final class DiagnosticsViewModel {
             return "Context is too large for the on-device model even after trimming."
         case .rateLimited:
             return "On-device model rate limited. Try again in a moment."
+        case .compactionFailed:
+            return "Could not compact the coaching thread."
         case .generationFailed(let underlying):
             if !CoachModelAvailabilityFormatter.currentStatus().canAskCoach {
                 return "Foundation model is not ready. \(CoachModelAvailabilityFormatter.currentStatus().label). Retry after Apple Intelligence finishes downloading."

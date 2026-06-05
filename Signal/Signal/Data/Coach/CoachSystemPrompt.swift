@@ -30,6 +30,14 @@ enum CoachSystemPrompt: Sendable {
         Before answering, work through three steps internally: (1) pick the 2-3 context numbers most relevant to this question, (2) connect them to what the user asked, (3) form a direct recommendation. Give the user only the final answer, not these steps.
         """
 
+    nonisolated static let threadAddendum = """
+        This is an ongoing coaching conversation. Build on prior messages in the transcript. Refine plans when the user adds constraints; do not restart from scratch. Ask one clarifying question when a key constraint (time, injury, equipment) is missing.
+        """
+
+    nonisolated static let compactedThreadPrefix = """
+        Prior conversation summary (condensed). Treat as factual context for follow-ups:
+        """
+
     nonisolated static func intentAddendum(for route: CoachQueryRoute) -> String {
         switch route {
         case .readiness:
@@ -65,6 +73,8 @@ enum CoachSessionFactory {
         referenceDate: Date,
         route: CoachQueryRoute = .general,
         flags: CoachFeatureFlags = CoachFeatureFlags.current(),
+        threadKind: CoachThreadKind = .newThread,
+        compactSummary: String? = nil,
         calendar: Calendar = SchedulingCalendar.make()
     ) -> String {
         let clockLine = CoachClockFormatter.format(referenceDate: referenceDate, calendar: calendar)
@@ -73,11 +83,17 @@ enum CoachSessionFactory {
             CoachSystemPrompt.temporalSemantics,
             CoachSystemPrompt.personaRules,
         ]
-        if flags.deepReasoningEnabled {
+        if flags.conversationMemoryEnabled {
+            sections.append(CoachSystemPrompt.threadAddendum)
+        }
+        if flags.deepReasoningEnabled, threadKind == .newThread {
             sections.append(CoachSystemPrompt.reasoningPlan)
         }
         if flags.smartContextEnabled {
             sections.append(CoachSystemPrompt.intentAddendum(for: route))
+        }
+        if let compactSummary, !compactSummary.isEmpty {
+            sections.append("\(CoachSystemPrompt.compactedThreadPrefix)\n\(compactSummary)")
         }
         return sections.joined(separator: "\n")
     }
@@ -109,7 +125,9 @@ enum CoachSessionFactory {
         referenceDate: Date = Date(),
         query: String = "",
         route: CoachQueryRoute? = nil,
-        flags: CoachFeatureFlags = CoachFeatureFlags.current()
+        flags: CoachFeatureFlags = CoachFeatureFlags.current(),
+        threadKind: CoachThreadKind = .newThread,
+        compactSummary: String? = nil
     ) -> LanguageModelSession {
         let resolvedRoute = flags.smartContextEnabled
             ? (route ?? CoachQueryRouter.classify(query))
@@ -125,7 +143,9 @@ enum CoachSessionFactory {
             instructions: makeInstructions(
                 referenceDate: referenceDate,
                 route: resolvedRoute,
-                flags: flags
+                flags: flags,
+                threadKind: threadKind,
+                compactSummary: compactSummary
             )
         )
     }

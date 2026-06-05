@@ -4,17 +4,20 @@ enum CoachPreferenceKeys {
     nonisolated static let smartContext = "signal.coach.smartContextEnabled"
     nonisolated static let deepReasoning = "signal.coach.deepReasoningEnabled"
     nonisolated static let compoundQueries = "signal.coach.compoundQueriesEnabled"
+    nonisolated static let conversationMemory = "signal.coach.conversationMemoryEnabled"
 }
 
 struct CoachFeatureFlags: Sendable, Equatable {
     var smartContextEnabled: Bool
     var deepReasoningEnabled: Bool
     var compoundQueriesEnabled: Bool
+    var conversationMemoryEnabled: Bool
 
     static let defaults = CoachFeatureFlags(
         smartContextEnabled: true,
         deepReasoningEnabled: true,
-        compoundQueriesEnabled: true
+        compoundQueriesEnabled: true,
+        conversationMemoryEnabled: true
     )
 
     nonisolated static func current(defaults userDefaults: UserDefaults = .standard) -> CoachFeatureFlags {
@@ -23,6 +26,11 @@ struct CoachFeatureFlags: Sendable, Equatable {
             deepReasoningEnabled: boolValue(forKey: CoachPreferenceKeys.deepReasoning, default: true, defaults: userDefaults),
             compoundQueriesEnabled: boolValue(
                 forKey: CoachPreferenceKeys.compoundQueries,
+                default: true,
+                defaults: userDefaults
+            ),
+            conversationMemoryEnabled: boolValue(
+                forKey: CoachPreferenceKeys.conversationMemory,
                 default: true,
                 defaults: userDefaults
             )

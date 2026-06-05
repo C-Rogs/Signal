@@ -9,6 +9,7 @@ final class CoachPreferencesTests: XCTestCase {
         XCTAssertTrue(flags.smartContextEnabled)
         XCTAssertTrue(flags.deepReasoningEnabled)
         XCTAssertTrue(flags.compoundQueriesEnabled)
+        XCTAssertTrue(flags.conversationMemoryEnabled)
     }
 
     func testLegacyScopeLoadsFullContext() {

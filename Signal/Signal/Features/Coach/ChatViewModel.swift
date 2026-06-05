@@ -11,32 +11,37 @@ final class ChatViewModel {
     var isThinking = false
     var streamingText = ""
     var errorMessage: String?
+    var contextUsage = CoachContextUsageSnapshot.empty
+    var showCompactOffer = false
 
     private let modelContainer: ModelContainer
+    private let coach: FoundationModelsCoach
     private let buildContext: @Sendable (String, ModelContainer) async throws -> CoachContext
-    private let respond: @Sendable (String, CoachContext) async throws -> AsyncThrowingStream<String, Error>
     private var sendInFlight = false
     private var activeSendTask: Task<Void, Never>?
+    private var conversationMemoryEnabled: Bool
+
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
+        self.conversationMemoryEnabled = CoachFeatureFlags.current().conversationMemoryEnabled
         let contextBuilder = CoachContextBuilder()
         let coach = FoundationModelsCoach(modelContainer: modelContainer)
+        self.coach = coach
         self.buildContext = { query, container in
             try await contextBuilder.buildContext(for: query, modelContainer: container)
-        }
-        self.respond = { query, context in
-            try await coach.respond(to: query, context: context)
         }
     }
 
     init(
         modelContainer: ModelContainer,
+        coach: FoundationModelsCoach,
         buildContext: @escaping @Sendable (String, ModelContainer) async throws -> CoachContext,
-        respond: @escaping @Sendable (String, CoachContext) async throws -> AsyncThrowingStream<String, Error>
+        conversationMemoryEnabled: Bool = CoachFeatureFlags.current().conversationMemoryEnabled
     ) {
         self.modelContainer = modelContainer
+        self.coach = coach
         self.buildContext = buildContext
-        self.respond = respond
+        self.conversationMemoryEnabled = conversationMemoryEnabled
     }
 
     func prewarm() {
@@ -50,6 +55,44 @@ final class ChatViewModel {
         }
     }
 
+    func updateConversationMemoryEnabled(_ enabled: Bool) {
+        conversationMemoryEnabled = enabled
+        if !enabled {
+            Task { await coach.resetThread() }
+            contextUsage = .empty
+            showCompactOffer = false
+        }
+    }
+
+    func startNewConversation() {
+        activeSendTask?.cancel()
+        sendInFlight = false
+        isThinking = false
+        streamingText = ""
+        errorMessage = nil
+        showCompactOffer = false
+        messages = []
+        Task {
+            await coach.resetThread()
+            await refreshContextUsage(nextPrompt: "")
+        }
+    }
+
+    func compactConversation() {
+        guard conversationMemoryEnabled else { return }
+        guard !sendInFlight else { return }
+
+        sendInFlight = true
+        isThinking = true
+        errorMessage = nil
+        showCompactOffer = false
+
+        activeSendTask?.cancel()
+        activeSendTask = Task { [weak self] in
+            await self?.performCompact()
+        }
+    }
+
     func sendMessage(_ rawText: String) {
         let trimmed = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -57,6 +100,7 @@ final class ChatViewModel {
 
         sendInFlight = true
         errorMessage = nil
+        showCompactOffer = false
         messages.append(ChatMessage(role: .user, text: trimmed))
         isThinking = true
 
@@ -72,7 +116,8 @@ final class ChatViewModel {
         modelContext: ModelContext
     ) {
         guard let index = messages.firstIndex(where: { $0.id == messageID }),
-              messages[index].role == .assistant
+              messages[index].role == .assistant,
+              !messages[index].isCompactSummary
         else { return }
 
         messages[index].feedbackRating = rating
@@ -106,6 +151,25 @@ final class ChatViewModel {
         Log.coach.info("chat feedback rating=\(rating.rawValue, privacy: .public) queryPrefix=\(queryPrefix, privacy: .public)")
     }
 
+    private func performCompact() async {
+        defer {
+            sendInFlight = false
+            isThinking = false
+        }
+
+        do {
+            let result = try await coach.compactThread(messages: messages)
+            guard !Task.isCancelled else { return }
+            messages = result.messages
+            await refreshContextUsage(nextPrompt: "")
+        } catch let error as CoachError {
+            errorMessage = Self.assistantMessage(for: error)
+        } catch {
+            if error is CancellationError { return }
+            errorMessage = Self.assistantMessage(for: error)
+        }
+    }
+
     private func performSend(query: String) async {
         defer {
             sendInFlight = false
@@ -113,11 +177,18 @@ final class ChatViewModel {
         }
 
         do {
-            let context = try await buildContext(query, modelContainer)
+            let threadKind = await resolveThreadKind()
+            let context: CoachContext
+            if threadKind == .followUp, let route = await coach.threadRoute() {
+                context = CoachContext.followUpPlaceholder(route: route)
+            } else {
+                context = try await buildContext(query, modelContainer)
+            }
             guard !Task.isCancelled else { return }
 
+            await refreshContextUsage(nextPrompt: query)
             isThinking = false
-            let stream = try await respond(query, context)
+            let stream = try await coach.respond(to: query, context: context, threadKind: threadKind)
             guard !Task.isCancelled else {
                 streamingText = ""
                 return
@@ -143,6 +214,10 @@ final class ChatViewModel {
             streamingText = ""
             guard !completed.isEmpty else { return }
             messages.append(ChatMessage(role: .assistant, text: completed, promptQuery: query))
+            await refreshContextUsage(nextPrompt: "")
+            if conversationMemoryEnabled, contextUsage.isNearLimit {
+                showCompactOffer = true
+            }
         } catch let error as CoachError {
             handleCoachError(error, query: query)
         } catch {
@@ -151,11 +226,30 @@ final class ChatViewModel {
         }
     }
 
+    private func resolveThreadKind() async -> CoachThreadKind {
+        guard conversationMemoryEnabled else { return .newThread }
+        if await coach.hasActiveThread() {
+            return .followUp
+        }
+        return .newThread
+    }
+
+    private func refreshContextUsage(nextPrompt: String) async {
+        guard conversationMemoryEnabled else {
+            contextUsage = .empty
+            return
+        }
+        contextUsage = await coach.contextUsage(nextPrompt: nextPrompt)
+    }
+
     private func handleCoachError(_ error: CoachError, query: String) {
         let text = Self.assistantMessage(for: error)
         errorMessage = text
         streamingText = ""
         isThinking = false
+        if case .contextTooLarge = error {
+            showCompactOffer = true
+        }
         messages.append(ChatMessage(role: .assistant, text: text, promptQuery: query))
     }
 
@@ -178,7 +272,9 @@ final class ChatViewModel {
         case .rateLimited:
             return "Signal is cooling down. Try again in a moment."
         case .contextTooLarge:
-            return "Try a more focused question. Narrower context works better."
+            return "Context is full. Compact the conversation or start a new one."
+        case .compactionFailed:
+            return "Could not compact this thread. Try a new conversation."
         case .generationFailed:
             return "Something went wrong. Try again."
         case .busy:
