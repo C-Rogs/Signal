@@ -125,7 +125,12 @@ struct RecoveryEngineTests {
                 topPR: nil,
                 acwrZone: nil,
                 averageSleepHours: nil
-            )
+            ),
+            activeDisruptors: [],
+            personalReadiness: nil,
+            exertionDebt: nil,
+            todayExertion: nil,
+            deloadSuggested: false
         )
         let rules = ReflectionRules.hrvSuppressedRules(
             snapshot: snapshot,
@@ -160,7 +165,12 @@ struct RecoveryEngineTests {
                 topPR: nil,
                 acwrZone: nil,
                 averageSleepHours: nil
-            )
+            ),
+            activeDisruptors: [],
+            personalReadiness: nil,
+            exertionDebt: nil,
+            todayExertion: nil,
+            deloadSuggested: false
         )
         let blocked = ReflectionRules.hrvSuppressedRules(
             snapshot: blockedSnapshot,

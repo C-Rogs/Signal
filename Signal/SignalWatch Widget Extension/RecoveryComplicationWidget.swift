@@ -5,6 +5,7 @@ import WidgetKit
 struct SignalWatchWidgetBundle: WidgetBundle {
     var body: some Widget {
         RecoveryComplicationWidget()
+        RecoveryBatteryInlineComplicationWidget()
         BodyBatteryComplicationWidget()
     }
 }
@@ -17,8 +18,8 @@ struct RecoveryComplicationWidget: Widget {
             RecoveryComplicationEntryView(entry: entry)
         }
         .configurationDisplayName("Recovery")
-        .description("Today's recovery score from Signal.")
-        .supportedFamilies([.accessoryCircular, .accessoryRectangular])
+        .description("Recovery score and HRV band. For battery percent use Body Battery.")
+        .supportedFamilies([.accessoryCircular, .accessoryRectangular, .accessoryInline])
     }
 }
 
@@ -29,24 +30,27 @@ struct RecoveryComplicationEntry: TimelineEntry {
 
 struct RecoveryComplicationProvider: TimelineProvider {
     func placeholder(in context: Context) -> RecoveryComplicationEntry {
-        RecoveryComplicationEntry(date: Date(), snapshot: .waiting)
+        RecoveryComplicationEntry(date: Date(), snapshot: .preview)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (RecoveryComplicationEntry) -> Void) {
-        completion(RecoveryComplicationEntry(date: Date(), snapshot: loadSnapshot()))
+        let snapshot = context.isPreview ? .preview : loadSnapshot()
+        completion(RecoveryComplicationEntry(date: Date(), snapshot: snapshot))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<RecoveryComplicationEntry>) -> Void) {
+        let now = Date()
         let snapshot = loadSnapshot()
-        let entry = RecoveryComplicationEntry(date: Date(), snapshot: snapshot)
-        let refresh = snapshot == .waiting
-            ? Date().addingTimeInterval(60)
-            : Calendar.current.date(byAdding: .minute, value: 15, to: Date()) ?? Date().addingTimeInterval(900)
+        let entry = RecoveryComplicationEntry(date: now, snapshot: snapshot)
+        let refresh = WatchComplicationTimelinePolicy.nextReloadDate(
+            after: now,
+            isWaiting: snapshot == .waiting
+        )
         completion(Timeline(entries: [entry], policy: .after(refresh)))
     }
 
     private func loadSnapshot() -> RecoveryWidgetSnapshot {
-        RecoveryWidgetSnapshot.make(from: WatchPayloadCache.readPayload())
+        RecoveryWidgetSnapshot.make(from: WatchPayloadCache.readPayloadHydratingFromSession())
     }
 }
 
@@ -60,6 +64,8 @@ struct RecoveryComplicationEntryView: View {
             RecoveryCircularComplicationView(snapshot: entry.snapshot)
         case .accessoryRectangular:
             RecoveryRectangularComplicationView(snapshot: entry.snapshot)
+        case .accessoryInline:
+            RecoveryInlineComplicationView(snapshot: entry.snapshot)
         default:
             RecoveryCircularComplicationView(snapshot: entry.snapshot)
         }
@@ -67,17 +73,55 @@ struct RecoveryComplicationEntryView: View {
 }
 
 struct RecoveryCircularComplicationView: View {
+    @Environment(\.showsWidgetLabel) private var showsWidgetLabel
     let snapshot: RecoveryWidgetSnapshot
 
     var body: some View {
-        Text(displayScore)
-            .font(.system(size: 20, weight: .bold, design: .rounded))
-            .monospacedDigit()
-            .minimumScaleFactor(0.5)
-            .lineLimit(1)
-            .containerBackground(for: .widget) {
-                AccessoryWidgetBackground()
+        Group {
+            if showsWidgetLabel {
+                Text(displayScore)
+                    .font(.system(.title3, design: .rounded).weight(.bold))
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+                    .widgetLabel {
+                        Text(snapshot.hrvLabel)
+                            .font(.caption2)
+                            .lineLimit(1)
+                    }
+            } else {
+                Text(displayScore)
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
             }
+        }
+        .containerBackground(for: .widget) {
+            AccessoryWidgetBackground()
+        }
+    }
+
+    private var displayScore: String {
+        let text = snapshot.scoreText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? "—" : text
+    }
+}
+
+struct RecoveryInlineComplicationView: View {
+    let snapshot: RecoveryWidgetSnapshot
+
+    var body: some View {
+        Group {
+            if snapshot.scoreValue != nil {
+                Text("\(Image(systemName: "waveform.path.ecg")) \(displayScore) · \(snapshot.hrvLabel)")
+            } else {
+                Text("\(Image(systemName: "waveform.path.ecg")) Waiting for Signal")
+            }
+        }
+        .containerBackground(for: .widget) {
+            AccessoryWidgetBackground()
+        }
     }
 
     private var displayScore: String {

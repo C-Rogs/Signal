@@ -7,10 +7,22 @@ struct WatchPayload: Codable, Sendable, Equatable {
     let todayHRV: Double?
     let todayRestingHR: Double?
     let lastUpdated: Date
+    let personalP25: Double?
+    let personalP75: Double?
+    let isCalibrated: Bool?
 
     var scoreInt: Int { Int(recoveryScore.rounded()) }
 
+    var usesPersonalBands: Bool {
+        isCalibrated == true && personalP25 != nil && personalP75 != nil
+    }
+
     var scoreColor: String {
+        if usesPersonalBands, let p25 = personalP25, let p75 = personalP75 {
+            if recoveryScore >= p75 { return "Positive" }
+            if recoveryScore >= p25 { return "Warning" }
+            return "Negative"
+        }
         if recoveryScore >= 70 { return "Positive" }
         if recoveryScore >= 40 { return "Warning" }
         return "Negative"
@@ -35,7 +47,10 @@ struct WatchPayload: Codable, Sendable, Equatable {
         confidence: String,
         todayHRV: Double?,
         todayRestingHR: Double?,
-        lastUpdated: Date
+        lastUpdated: Date,
+        personalP25: Double? = nil,
+        personalP75: Double? = nil,
+        isCalibrated: Bool? = nil
     ) {
         self.recoveryScore = recoveryScore
         self.hrvClassification = hrvClassification
@@ -43,6 +58,9 @@ struct WatchPayload: Codable, Sendable, Equatable {
         self.todayHRV = todayHRV
         self.todayRestingHR = todayRestingHR
         self.lastUpdated = lastUpdated
+        self.personalP25 = personalP25
+        self.personalP75 = personalP75
+        self.isCalibrated = isCalibrated
     }
 
     static func makeDecoder() -> JSONDecoder {
@@ -70,13 +88,22 @@ struct WatchPayload: Codable, Sendable, Equatable {
             confidence: confidence,
             todayHRV: doubleValue(in: applicationContext, key: "todayHRV"),
             todayRestingHR: doubleValue(in: applicationContext, key: "todayRestingHR"),
-            lastUpdated: lastUpdated
+            lastUpdated: lastUpdated,
+            personalP25: doubleValue(in: applicationContext, key: "personalP25"),
+            personalP75: doubleValue(in: applicationContext, key: "personalP75"),
+            isCalibrated: boolValue(in: applicationContext, key: "isCalibrated")
         )
     }
 
     private static func doubleValue(in dictionary: [String: Any], key: String) -> Double? {
         if let value = dictionary[key] as? Double { return value }
         if let value = dictionary[key] as? NSNumber { return value.doubleValue }
+        return nil
+    }
+
+    private static func boolValue(in dictionary: [String: Any], key: String) -> Bool? {
+        if let value = dictionary[key] as? Bool { return value }
+        if let value = dictionary[key] as? NSNumber { return value.boolValue }
         return nil
     }
 

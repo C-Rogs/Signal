@@ -23,6 +23,8 @@ struct TrainHomeView: View {
     @State private var errorMessage: String?
     @State private var healthKitWriteNote: String?
     @State private var busyDayChipTitle: String?
+    @State private var showDeloadBanner = false
+    @AppStorage("trainDeloadBannerDismissedWeek") private var dismissedDeloadWeek = ""
 
     init() {
         let liveSource = WorkoutSessionSource.live
@@ -60,6 +62,7 @@ struct TrainHomeView: View {
             consumePendingRouteIfNeeded()
             consumeHealthKitWriteNoteIfNeeded()
             reloadBusyDayChip()
+            reloadDeloadBanner()
         }
         .onChange(of: coordinator.pendingHealthKitWriteNote) { _, _ in
             consumeHealthKitWriteNoteIfNeeded()
@@ -114,6 +117,20 @@ struct TrainHomeView: View {
                 }
 
                 Section {
+                    if showDeloadBanner {
+                        HStack(alignment: .top) {
+                            Text("Load is above your recent norm. Consider fewer working sets or capping RPE around 7.")
+                                .font(.footnote)
+                                .foregroundStyle(Color("Warning"))
+                            Spacer(minLength: 8)
+                            Button("Dismiss") {
+                                dismissedDeloadWeek = currentISOWeekKey()
+                                showDeloadBanner = false
+                            }
+                            .font(.footnote.weight(.semibold))
+                        }
+                        .accessibilityIdentifier("trainDeloadBanner")
+                    }
                     if let busyDayChipTitle {
                         Text(busyDayChipTitle)
                             .font(.caption.weight(.semibold))
@@ -304,5 +321,16 @@ struct TrainHomeView: View {
             _ = await CalendarEventStore.shared.requestAccessIfNeeded()
             busyDayChipTitle = await CalendarContextBuilder().todayBusyChipTitle()
         }
+    }
+
+    private func reloadDeloadBanner() {
+        let active = DeloadSuggestionReader.isDeloadActive(in: modelContext)
+        showDeloadBanner = active && dismissedDeloadWeek != currentISOWeekKey()
+    }
+
+    private func currentISOWeekKey() -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        return ISOWeekIdentifier.current(calendar: calendar).keySegment
     }
 }

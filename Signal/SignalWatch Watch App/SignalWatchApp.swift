@@ -18,6 +18,10 @@ struct SignalWatch_Watch_AppApp: App {
                 receiver: receiver,
                 workoutManager: WatchLiveWorkoutSessionManager.shared
             )
+            .onAppear {
+                receiver.activate()
+                WatchComplicationRefreshScheduler.scheduleNextRefreshIfNeeded()
+            }
         }
     }
 }

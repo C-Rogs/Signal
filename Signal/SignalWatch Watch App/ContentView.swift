@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     var receiver: WatchConnectivityReceiver
-    var workoutManager: WatchLiveWorkoutSessionManager
+    @Bindable var workoutManager: WatchLiveWorkoutSessionManager
 
     var body: some View {
         Group {
@@ -25,32 +25,33 @@ struct ContentView: View {
 
     private var activeWorkoutContent: some View {
         ZStack {
-            LiveHeartRateDecor(accent: Color("Primary"))
-                .frame(width: 110, height: 88)
-            VStack(spacing: 6) {
+            LiveHeartRateDecor(accent: WatchTrainPalette.accent)
+                .frame(width: 96, height: 76)
+            VStack(spacing: 4) {
                 HStack(spacing: 4) {
                     Image(systemName: LiveHeartRateIcon.liveSymbol)
                         .font(.caption2)
                         .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(Color("Primary"))
+                        .foregroundStyle(WatchTrainPalette.accent)
                     Text("Train")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
                 if let bpm = workoutManager.latestHeartRateBPM {
                     Text("\(bpm)")
-                        .font(.system(size: 52, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color("TextPrimary"))
-                        .minimumScaleFactor(0.7)
+                        .font(.system(size: 44, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
+                        .monospacedDigit()
+                        .minimumScaleFactor(0.6)
                         .lineLimit(1)
                     Text("BPM")
-                        .font(.caption)
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                 } else {
                     Image(systemName: LiveHeartRateIcon.liveSymbol)
                         .font(.title3)
                         .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(Color("Primary").opacity(0.5))
+                        .foregroundStyle(WatchTrainPalette.accent.opacity(0.5))
                         .symbolEffect(.pulse, options: .repeating)
                     Text("Reading heart rate")
                         .font(.caption2)

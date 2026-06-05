@@ -11,6 +11,7 @@ struct SignalApp: App {
     @State private var unitPreferences = UnitPreferences.shared
     @State private var trainPreferences = TrainPreferences.shared
     @State private var notificationPreferences = NotificationPreferences.shared
+    @State private var recoveryPreferences = RecoveryPreferences.shared
     @State private var liveWorkoutCoordinator = LiveWorkoutCoordinator()
     private let liveWorkoutWatchBridge = LiveWorkoutWatchBridge.shared
 
@@ -27,6 +28,7 @@ struct SignalApp: App {
             _ = ReflectionEngine.shared
             _ = SetHRAttributionTrigger.shared
             WatchConnectivityService.shared.activate()
+            WatchRecoveryPushCoordinator.shared.start()
             _healthKitManager = State(
                 wrappedValue: HealthKitManager(modelContainer: container)
             )
@@ -44,6 +46,7 @@ struct SignalApp: App {
                 .environment(unitPreferences)
                 .environment(trainPreferences)
                 .environment(notificationPreferences)
+                .environment(recoveryPreferences)
                 .environment(liveWorkoutCoordinator)
                 .environment(liveWorkoutWatchBridge)
         }

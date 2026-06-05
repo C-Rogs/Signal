@@ -30,11 +30,9 @@ enum DiagnosticsRetrievalRunner {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let mode = QueryRetrievalMode.resolve(in: trimmed, referenceDate: referenceDate, calendar: calendar)
 
-        let context = ModelContext(modelContainer)
-        let store = SwiftDataVectorStore(context: context)
-        let service = EmbeddingBackend.makeService()
-
         do {
+            let context = ModelContext(modelContainer)
+            let store = SwiftDataVectorStore(context: context)
             let vectorCount = try store.count()
             guard vectorCount > 0 else {
                 return DiagnosticsRetrievalRun(
@@ -50,47 +48,12 @@ enum DiagnosticsRetrievalRunner {
                 )
             }
 
-            let temporalWindow: TemporalQueryWindow?
-            let recencyIntent: Bool
-            let searchPoolK: Int
-            let fromDayKey: String?
-            let toDayKey: String?
-
-            switch mode {
-            case .fixedWindow(let window):
-                temporalWindow = window
-                recencyIntent = false
-                searchPoolK = retrievalTopK
-                fromDayKey = window.fromDayKey
-                toDayKey = window.toDayKey
-            case .recencyRanking:
-                temporalWindow = nil
-                recencyIntent = true
-                searchPoolK = vectorCount
-                fromDayKey = nil
-                toDayKey = nil
-            case .pureCosine:
-                temporalWindow = nil
-                recencyIntent = false
-                searchPoolK = retrievalTopK
-                fromDayKey = nil
-                toDayKey = nil
-            }
-
-            let rawNeighbors = try await EmbeddingVectorStoreBridge.search(
+            let outcome = try await HealthVectorRetriever.retrieveDetailed(
                 query: trimmed,
-                store: store,
-                service: service,
-                k: searchPoolK,
-                fromDayKey: fromDayKey,
-                toDayKey: toDayKey
-            )
-
-            let outcome = DiagnosticsRetrieval.rankedNeighbors(
-                rawNeighbors,
-                temporalWindow: temporalWindow,
-                recencyIntent: recencyIntent,
-                topK: retrievalTopK
+                k: retrievalTopK,
+                modelContainer: modelContainer,
+                referenceDate: referenceDate,
+                calendar: calendar
             )
 
             let hits = outcome.neighbors.prefix(displayHitCount).map {
@@ -103,9 +66,9 @@ enum DiagnosticsRetrievalRunner {
 
             return DiagnosticsRetrievalRun(
                 query: trimmed,
-                mode: mode,
+                mode: outcome.mode,
                 hits: Array(hits),
-                temporalWindow: temporalWindow,
+                temporalWindow: outcome.temporalWindow,
                 usedTemporalFilter: outcome.usedTemporalFilter,
                 usedRecencyRanking: outcome.usedRecencyRanking,
                 fallbackToGlobal: outcome.fallbackToGlobal,

@@ -10,6 +10,10 @@ enum BodyBatteryComplicationKind {
     static let widgetKind = "BodyBatteryComplication"
 }
 
+enum RecoveryBatteryInlineComplicationKind {
+    static let widgetKind = "RecoveryBatteryInlineComplication"
+}
+
 enum WatchComplicationRefresh {
     private static let logger = Logger(
         subsystem: SignalIdentifiers.watchApp,
@@ -20,17 +24,18 @@ enum WatchComplicationRefresh {
         let cached = WatchPayloadCache.write(context: context)
         reloadAllComplicationKinds()
         logger.info(
-            "watch complication reload recovery+bodyBattery cache=\(cached, privacy: .public)"
+            "watch complication reload all kinds cache=\(cached, privacy: .public)"
         )
     }
 
     static func reloadTimelineOnly() {
         reloadAllComplicationKinds()
-        logger.info("watch complication timeline reload only recovery+bodyBattery")
+        logger.info("watch complication timeline reload only all kinds")
     }
 
     private static func reloadAllComplicationKinds() {
         WidgetCenter.shared.reloadTimelines(ofKind: RecoveryComplicationKind.widgetKind)
         WidgetCenter.shared.reloadTimelines(ofKind: BodyBatteryComplicationKind.widgetKind)
+        WidgetCenter.shared.reloadTimelines(ofKind: RecoveryBatteryInlineComplicationKind.widgetKind)
     }
 }

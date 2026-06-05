@@ -4,6 +4,7 @@ private enum CoachContextLimits {
     static let maxUserSummaryChars = 400
     static let maxActiveInsightsTotalChars = 800
     static let maxDerivedMetricsSummaryChars = 800
+    static let maxPersonalReadinessSummaryChars = 400
     static let maxRAGSummariesTotalChars = 4000
     static let maxRecentWorkoutsTotalChars = 1200
     static let maxCalendarSummaryChars = 1200
@@ -17,6 +18,7 @@ struct CoachContext: Sendable, Equatable {
     var userSummary: String
     var activeInsights: [String]
     var derivedMetricsSummary: String
+    var personalReadinessSummary: String
     var ragSummaries: [String]
     var recentWorkouts: [String]
     var calendarSummary: String
@@ -25,6 +27,7 @@ struct CoachContext: Sendable, Equatable {
         userSummary: String,
         activeInsights: [String],
         derivedMetricsSummary: String,
+        personalReadinessSummary: String = "",
         ragSummaries: [String],
         recentWorkouts: [String],
         calendarSummary: String = ""
@@ -32,6 +35,10 @@ struct CoachContext: Sendable, Equatable {
         self.userSummary = Self.clamped(userSummary, max: CoachContextLimits.maxUserSummaryChars)
         self.activeInsights = Self.clampedLines(activeInsights, maxTotal: CoachContextLimits.maxActiveInsightsTotalChars)
         self.derivedMetricsSummary = Self.clamped(derivedMetricsSummary, max: CoachContextLimits.maxDerivedMetricsSummaryChars)
+        self.personalReadinessSummary = Self.clamped(
+            personalReadinessSummary,
+            max: CoachContextLimits.maxPersonalReadinessSummaryChars
+        )
         self.ragSummaries = Self.clampedLines(ragSummaries, maxTotal: CoachContextLimits.maxRAGSummariesTotalChars)
         self.recentWorkouts = Self.clampedLines(recentWorkouts, maxTotal: CoachContextLimits.maxRecentWorkoutsTotalChars)
         self.calendarSummary = Self.clamped(calendarSummary, max: CoachContextLimits.maxCalendarSummaryChars)
@@ -48,6 +55,9 @@ struct CoachContext: Sendable, Equatable {
         }
         if !derivedMetricsSummary.isEmpty {
             sections.append("## Metrics\n\(derivedMetricsSummary)")
+        }
+        if !personalReadinessSummary.isEmpty {
+            sections.append("## Recovery\n\(personalReadinessSummary)")
         }
         if !ragSummaries.isEmpty {
             sections.append("## History (RAG)\n\(ragSummaries.joined(separator: "\n\n"))")

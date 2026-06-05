@@ -45,6 +45,69 @@ final class CoachContextBuilderTests: XCTestCase {
     }
 
     @MainActor
+    func testNonScheduleQueryOmitsCalendarSection() async throws {
+        let container = try SignalModelContainer.make(inMemoryOnly: true)
+        EmbeddingBackend.useDeterministicTestEmbedding = true
+        defer { EmbeddingBackend.useDeterministicTestEmbedding = false }
+
+        let built = try await CoachContextBuilder().buildContext(
+            for: "How is my ACWR?",
+            modelContainer: container
+        )
+        let prompt = built.assembledPrompt(query: "How is my ACWR?")
+        XCTAssertFalse(prompt.contains("## Schedule"))
+    }
+
+    @MainActor
+    func testStaleHealthSyncAddsFreshnessLine() async throws {
+        let container = try SignalModelContainer.make(inMemoryOnly: true)
+        let context = ModelContext(container)
+        let calendar = SchedulingCalendar.make()
+        let staleDay = try XCTUnwrap(calendar.date(byAdding: .day, value: -5, to: calendar.startOfDay(for: Date())))
+        context.insert(
+            DailyMetric(
+                date: staleDay,
+                hrvSDNN_ms: 50,
+                source: "test"
+            )
+        )
+        try context.save()
+
+        EmbeddingBackend.useDeterministicTestEmbedding = true
+        defer { EmbeddingBackend.useDeterministicTestEmbedding = false }
+        await DerivedMetricsService.shared.invalidateCache()
+
+        let built = try await CoachContextBuilder().buildContext(
+            for: "How is recovery?",
+            modelContainer: container
+        )
+        XCTAssertTrue(built.derivedMetricsSummary.contains("Health sync latest:"))
+    }
+
+    @MainActor
+    func testProteinLineOmitsWhenOnlyOldNutritionLogged() async throws {
+        let container = try SignalModelContainer.make(inMemoryOnly: true)
+        let context = ModelContext(container)
+        let profile = UserProfile()
+        profile.bodyweightKg = 80
+        context.insert(profile)
+        let calendar = SchedulingCalendar.make()
+        let oldDay = try XCTUnwrap(calendar.date(byAdding: .day, value: -10, to: calendar.startOfDay(for: Date())))
+        context.insert(DailyNutrition(date: oldDay, proteinG: 50, source: "test"))
+        try context.save()
+
+        EmbeddingBackend.useDeterministicTestEmbedding = true
+        defer { EmbeddingBackend.useDeterministicTestEmbedding = false }
+        await DerivedMetricsService.shared.invalidateCache()
+
+        let built = try await CoachContextBuilder().buildContext(
+            for: "Volume check",
+            modelContainer: container
+        )
+        XCTAssertFalse(built.derivedMetricsSummary.contains("Protein:"))
+    }
+
+    @MainActor
     func testUserSummaryOmitsNilLiteral() async throws {
         let container = try SignalModelContainer.make(inMemoryOnly: true)
         let modelContext = ModelContext(container)

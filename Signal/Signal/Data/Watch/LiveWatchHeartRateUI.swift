@@ -9,17 +9,28 @@ struct LiveWatchHeartRateUIState: Equatable, Sendable {
 
 enum LiveWatchHeartRateUIStateBuilder {
     static func make(
-        isWatchWorkoutRequested: Bool,
+        isLiveHeartRateRequested: Bool,
+        source: LiveHeartRateSource,
         latestHeartRateBPM: Int?,
         lastHeartRateAt: Date?,
+        accessStatusMessage: String? = nil,
         now: Date
     ) -> LiveWatchHeartRateUIState {
-        guard isWatchWorkoutRequested else {
+        guard isLiveHeartRateRequested else {
             return LiveWatchHeartRateUIState(
                 showsHeartRateSlot: false,
                 bpm: nil,
                 isStale: false,
                 statusChipTitle: nil
+            )
+        }
+
+        if let accessStatusMessage, latestHeartRateBPM == nil, lastHeartRateAt == nil {
+            return LiveWatchHeartRateUIState(
+                showsHeartRateSlot: true,
+                bpm: nil,
+                isStale: false,
+                statusChipTitle: accessStatusMessage
             )
         }
 
@@ -35,9 +46,9 @@ enum LiveWatchHeartRateUIStateBuilder {
         if fresh {
             statusChipTitle = nil
         } else if isStale {
-            statusChipTitle = "Watch HR signal lost"
+            statusChipTitle = staleChipTitle(for: source)
         } else {
-            statusChipTitle = "Waiting for watch HR"
+            statusChipTitle = waitingChipTitle(for: source)
         }
 
         return LiveWatchHeartRateUIState(
@@ -46,5 +57,19 @@ enum LiveWatchHeartRateUIStateBuilder {
             isStale: isStale,
             statusChipTitle: statusChipTitle
         )
+    }
+
+    private static func waitingChipTitle(for source: LiveHeartRateSource) -> String {
+        switch source {
+        case .watch: "Waiting for watch HR"
+        case .phoneHealthKit: "Waiting for heart rate"
+        }
+    }
+
+    private static func staleChipTitle(for source: LiveHeartRateSource) -> String {
+        switch source {
+        case .watch: "Watch HR signal lost"
+        case .phoneHealthKit: "HR signal lost"
+        }
     }
 }

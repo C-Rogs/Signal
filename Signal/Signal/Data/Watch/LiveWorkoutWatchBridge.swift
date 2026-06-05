@@ -13,11 +13,14 @@ final class LiveWorkoutWatchBridge {
     private(set) var latestHeartRateBPM: Int?
     private(set) var lastHeartRateAt: Date?
     private(set) var activeSessionKey: String?
-    private(set) var isWatchWorkoutRequested = false
+    private(set) var isLiveHeartRateRequested = false
 
+    private var lockedHeartRateSource: LiveHeartRateSource?
     private var hasActiveWatchHandshake = false
+    private var hasActivePhoneSession = false
 
     private let healthStore = HKHealthStore()
+    private let phoneSessionManager = LiveWorkoutPhoneSessionManager.shared
     private let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? SignalIdentifiers.iosApp,
         category: "workout"
@@ -38,8 +41,13 @@ final class LiveWorkoutWatchBridge {
         }
         let sessionKey = LiveWorkoutSessionKey.ensure(on: session, in: modelContext)
         activeSessionKey = sessionKey
-        isWatchWorkoutRequested = true
-        logger.info("live sessionKey prepared sessionKey=\(sessionKey, privacy: .public)")
+        isLiveHeartRateRequested = true
+        if lockedHeartRateSource == nil {
+            lockedHeartRateSource = LiveHeartRateSourcePolicy.currentFromWatchConnectivity()
+        }
+        logger.info(
+            "live sessionKey prepared sessionKey=\(sessionKey, privacy: .public) source=\(self.sourceLogLabel, privacy: .public)"
+        )
         return sessionKey
     }
 
@@ -50,6 +58,111 @@ final class LiveWorkoutWatchBridge {
     ) async {
         guard let sessionKey = prepareLiveSession(for: session, modelContext: modelContext) else { return }
 
+        switch lockedHeartRateSource {
+        case .watch:
+            await ensureWatchSourceStarted(
+                for: session,
+                sessionKey: sessionKey,
+                forceFullHandshake: forceFullHandshake
+            )
+        case .phoneHealthKit:
+            await ensurePhoneSourceStarted(
+                for: session,
+                sessionKey: sessionKey,
+                forceFullHandshake: forceFullHandshake
+            )
+        case nil:
+            break
+        }
+    }
+
+    func retryPendingOutboundTelemetry() {
+        guard lockedHeartRateSource == .watch else { return }
+        guard let packet = LiveWorkoutOutboundQueue.pending else { return }
+        send(packet: packet, isRetry: true)
+    }
+
+    func heartRateUIState(now: Date = .now) -> LiveWatchHeartRateUIState {
+        let accessStatusMessage: String?
+        if lockedHeartRateSource == .phoneHealthKit,
+           latestHeartRateBPM == nil,
+           let message = phoneSessionManager.statusMessage
+        {
+            accessStatusMessage = message
+        } else {
+            accessStatusMessage = nil
+        }
+
+        return LiveWatchHeartRateUIStateBuilder.make(
+            isLiveHeartRateRequested: isLiveHeartRateRequested,
+            source: lockedHeartRateSource ?? .watch,
+            latestHeartRateBPM: latestHeartRateBPM,
+            lastHeartRateAt: lastHeartRateAt,
+            accessStatusMessage: accessStatusMessage,
+            now: now
+        )
+    }
+
+    func endWatchWorkout() {
+        let source = lockedHeartRateSource
+        let sessionKey = activeSessionKey
+
+        switch source {
+        case .watch:
+            if let sessionKey {
+                send(packet: LiveWorkoutTelemetryPacket(kind: .sessionStop, sessionKey: sessionKey))
+                logger.info("watch workout stop sent sessionKey=\(sessionKey, privacy: .public)")
+            }
+        case .phoneHealthKit:
+            Task {
+                await phoneSessionManager.stop(discardHealthKitWorkout: true)
+            }
+            if let sessionKey {
+                logger.info("phone workout stop requested sessionKey=\(sessionKey, privacy: .public)")
+            }
+        case nil:
+            break
+        }
+
+        resetStreamingState()
+    }
+
+    func ingest(messageData: Data) {
+        do {
+            let packet = try LiveWorkoutTelemetryPacket.decode(from: messageData)
+            guard packet.kind == .heartRateBatch else { return }
+            if activeSessionKey == nil {
+                activeSessionKey = packet.sessionKey
+                isLiveHeartRateRequested = true
+                lockedHeartRateSource = .watch
+                logger.info(
+                    "live HR adopted sessionKey from watch sessionKey=\(packet.sessionKey, privacy: .public)"
+                )
+            }
+            guard lockedHeartRateSource == .watch || lockedHeartRateSource == nil else { return }
+            guard packet.sessionKey == activeSessionKey else {
+                logger.info(
+                    "live HR ignored stale sessionKey=\(packet.sessionKey, privacy: .public) active=\(self.activeSessionKey ?? "none", privacy: .public)"
+                )
+                return
+            }
+            guard let samples = packet.heartRateSamples, !samples.isEmpty else { return }
+            guard let bpm = LiveWorkoutTelemetryThrottle.coalescedBPM(from: samples) else { return }
+            latestHeartRateBPM = bpm
+            lastHeartRateAt = samples.last?.timestamp ?? packet.timestamp
+            logger.info(
+                "live HR bpm=\(bpm, privacy: .public) samples=\(samples.count, privacy: .public) source=watch"
+            )
+        } catch {
+            logger.error("live HR decode failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func ensureWatchSourceStarted(
+        for session: WorkoutSession,
+        sessionKey: String,
+        forceFullHandshake: Bool
+    ) async {
         if hasActiveWatchHandshake && !forceFullHandshake {
             retryPendingOutboundTelemetry()
             sendSessionStart(sessionKey: sessionKey, session: session, requestWatchApp: false)
@@ -66,53 +179,32 @@ final class LiveWorkoutWatchBridge {
         sendSessionStart(sessionKey: sessionKey, session: session, requestWatchApp: true)
     }
 
-    func retryPendingOutboundTelemetry() {
-        guard let packet = LiveWorkoutOutboundQueue.pending else { return }
-        send(packet: packet, isRetry: true)
+    private func ensurePhoneSourceStarted(
+        for session: WorkoutSession,
+        sessionKey: String,
+        forceFullHandshake: Bool
+    ) async {
+        if hasActivePhoneSession && !forceFullHandshake {
+            return
+        }
+
+        if forceFullHandshake || !hasActivePhoneSession {
+            latestHeartRateBPM = nil
+            lastHeartRateAt = nil
+        }
+
+        await phoneSessionManager.start(for: session, sessionKey: sessionKey) { [weak self] bpm, sampledAt in
+            self?.latestHeartRateBPM = bpm
+            self?.lastHeartRateAt = sampledAt
+        }
+        hasActivePhoneSession = phoneSessionManager.isWorkoutActive
     }
 
-    func heartRateUIState(now: Date = .now) -> LiveWatchHeartRateUIState {
-        LiveWatchHeartRateUIStateBuilder.make(
-            isWatchWorkoutRequested: isWatchWorkoutRequested,
-            latestHeartRateBPM: latestHeartRateBPM,
-            lastHeartRateAt: lastHeartRateAt,
-            now: now
-        )
-    }
-
-    func endWatchWorkout() {
-        guard let sessionKey = activeSessionKey else { return }
-        send(packet: LiveWorkoutTelemetryPacket(kind: .sessionStop, sessionKey: sessionKey))
-        logger.info("watch workout stop sent sessionKey=\(sessionKey, privacy: .public)")
-        resetStreamingState()
-    }
-
-    func ingest(messageData: Data) {
-        do {
-            let packet = try LiveWorkoutTelemetryPacket.decode(from: messageData)
-            guard packet.kind == .heartRateBatch else { return }
-            if activeSessionKey == nil {
-                activeSessionKey = packet.sessionKey
-                isWatchWorkoutRequested = true
-                logger.info(
-                    "live HR adopted sessionKey from watch sessionKey=\(packet.sessionKey, privacy: .public)"
-                )
-            }
-            guard packet.sessionKey == activeSessionKey else {
-                logger.info(
-                    "live HR ignored stale sessionKey=\(packet.sessionKey, privacy: .public) active=\(self.activeSessionKey ?? "none", privacy: .public)"
-                )
-                return
-            }
-            guard let samples = packet.heartRateSamples, !samples.isEmpty else { return }
-            guard let bpm = LiveWorkoutTelemetryThrottle.coalescedBPM(from: samples) else { return }
-            latestHeartRateBPM = bpm
-            lastHeartRateAt = samples.last?.timestamp ?? packet.timestamp
-            logger.info(
-                "live HR bpm=\(bpm, privacy: .public) samples=\(samples.count, privacy: .public)"
-            )
-        } catch {
-            logger.error("live HR decode failed: \(String(describing: error), privacy: .public)")
+    private var sourceLogLabel: String {
+        switch lockedHeartRateSource {
+        case .watch: "watch"
+        case .phoneHealthKit: "phone"
+        case nil: "none"
         }
     }
 
@@ -200,8 +292,10 @@ final class LiveWorkoutWatchBridge {
     private func resetStreamingState() {
         _ = LiveWorkoutOutboundQueue.takePending()
         activeSessionKey = nil
-        isWatchWorkoutRequested = false
+        isLiveHeartRateRequested = false
+        lockedHeartRateSource = nil
         hasActiveWatchHandshake = false
+        hasActivePhoneSession = false
         latestHeartRateBPM = nil
         lastHeartRateAt = nil
     }

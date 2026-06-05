@@ -24,6 +24,8 @@ struct ActiveWorkoutView: View {
     @State private var dynamicRestState = DynamicRestState()
     @State private var dynamicRestNotice: String?
     @State private var sessionRecoveryScore: RecoveryScore?
+    @State private var sessionPersonalReadiness: PersonalReadinessProfile?
+    @State private var deloadChipTitle: String?
 
     private var store: LiveWorkoutStore {
         LiveWorkoutStore(context: modelContext)
@@ -70,8 +72,18 @@ struct ActiveWorkoutView: View {
                 applyDynamicRestExtension(at: date)
             }
             .onChange(of: scenePhase) { _, phase in
-                guard phase == .background else { return }
-                try? modelContext.save()
+                if phase == .background {
+                    try? modelContext.save()
+                }
+                if phase == .active {
+                    reloadSessionRecoveryScore()
+                }
+                if TrainScenePhaseKeyboardPolicy.shouldReleaseSetFieldFocus(for: phase) {
+                    TrainKeyboard.dismiss()
+                }
+                if TrainScenePhaseKeyboardPolicy.shouldDismissKeyboardOnResume(for: phase) {
+                    TrainKeyboard.dismiss()
+                }
             }
             .onAppear {
                 coordinator.isViewingActiveWorkout = true
@@ -84,13 +96,28 @@ struct ActiveWorkoutView: View {
             .onDisappear { coordinator.isViewingActiveWorkout = false }
     }
 
-    private var lowRecoveryChipTitle: String? {
+    private var recoveryBandContext: RecoveryBandContext? {
         guard let sessionRecoveryScore else { return nil }
-        return LiveLoadCueEvaluator.sessionRecoveryChipTitle(for: sessionRecoveryScore)
+        return RecoveryBandContext(score: sessionRecoveryScore, profile: sessionPersonalReadiness)
+    }
+
+    private var lowRecoveryChipTitle: String? {
+        guard let recoveryBandContext else { return nil }
+        return LiveLoadCueEvaluator.sessionRecoveryChipTitle(for: recoveryBandContext)
     }
 
     private func reloadSessionRecoveryScore() {
-        sessionRecoveryScore = RecoveryEngine.todayRecoveryScore(in: modelContext)
+        let bundle = RecoveryEngine.todayReadinessBundle(in: modelContext)
+        sessionRecoveryScore = bundle.score
+        sessionPersonalReadiness = bundle.profile
+        deloadChipTitle = DeloadSuggestionReader.isDeloadActive(in: modelContext)
+            ? "High load week"
+            : nil
+        let context = RecoveryBandContext(score: bundle.score, profile: bundle.profile)
+        let chip = LiveLoadCueEvaluator.sessionRecoveryChipTitle(for: context) ?? "none"
+        Log.workout.info(
+            "workout session recovery score=\(bundle.score.value, format: .fixed(precision: 0), privacy: .public) chip=\(chip, privacy: .public)"
+        )
     }
 
     private var defaultSessionRecoveryScore: RecoveryScore {
@@ -131,6 +158,7 @@ struct ActiveWorkoutView: View {
                         summary: liveSummary,
                         formatter: formatter,
                         recoveryChipTitle: lowRecoveryChipTitle,
+                        deloadChipTitle: deloadChipTitle,
                         heartRateUI: watchBridge.heartRateUIState(now: tick)
                     )
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
@@ -145,6 +173,7 @@ struct ActiveWorkoutView: View {
                         formatter: formatter,
                         lastHint: lastHint(for: exercise),
                         recoveryScore: sessionRecoveryScore ?? defaultSessionRecoveryScore,
+                        personalReadiness: sessionPersonalReadiness,
                         store: store,
                         modelContext: modelContext,
                         onSupersetScroll: { id in
@@ -175,6 +204,7 @@ struct ActiveWorkoutView: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .scrollDismissesKeyboard(.interactively)
             .scrollContentBackground(.hidden)
             .onAppear {
                 if let target = coordinator.consumeScrollTarget() {

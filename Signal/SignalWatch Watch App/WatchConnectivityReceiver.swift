@@ -45,6 +45,7 @@ final class WatchConnectivityReceiver: NSObject {
             payload = try WatchPayload.decode(from: applicationContext)
             logger.info("watch loaded cached context score=\(self.payload?.scoreInt ?? -1, privacy: .public)")
             WatchComplicationRefresh.publish(context: applicationContext)
+            WatchComplicationRefreshScheduler.scheduleNextRefreshIfNeeded()
             logger.info("watch complication timeline reload requested")
         } catch {
             logger.error("watch cached context decode failed: \(String(describing: error), privacy: .public)")

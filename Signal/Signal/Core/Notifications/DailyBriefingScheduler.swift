@@ -54,24 +54,23 @@ final class DailyBriefingScheduler {
     ) -> DailyBriefingContent {
         let referenceStart = calendar.startOfDay(for: referenceDay)
         let metrics = fetchMetricSnapshots(in: context)
-        let score = RecoveryScoreCalculator.compute(
-            metrics: metrics,
-            referenceDay: referenceStart,
-            calendar: calendar
-        )
+        let bundle = RecoveryEngine.todayReadinessBundle(in: context)
         let flags = ReadinessFlagEvaluator.evaluate(
             ReadinessFlagInput(
                 metrics: metrics,
-                recoveryScore: score,
+                recoveryScore: bundle.score,
                 referenceDay: referenceStart,
                 calendar: calendar
             )
         )
         let insightLine = fetchPriorityInsightLine(in: context)
+        let deloadActive = DeloadSuggestionReader.hasActiveDeloadInsight(in: context)
         return DailyBriefingComposer.compose(
-            recoveryScore: score,
+            recoveryScore: bundle.score,
+            personalReadiness: bundle.profile,
             insight: insightLine,
-            flags: flags
+            flags: flags,
+            deloadActive: deloadActive
         )
     }
 

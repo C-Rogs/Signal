@@ -23,6 +23,7 @@ struct DashboardView: View {
     )
     private var completedWorkouts: [WorkoutSession]
     @State private var viewModel = DashboardViewModel()
+    @State private var calendarConfirmCandidate: CalendarDisruptorCandidate?
 
     private var unitFormatter: DisplayUnitFormatter {
         DisplayUnitFormatter(preferences: unitPreferences)
@@ -60,6 +61,18 @@ struct DashboardView: View {
         }
         .task(id: storeRefreshToken) {
             reloadViewModel()
+            await runCalendarDisruptorInference()
+        }
+        .sheet(item: $calendarConfirmCandidate) { candidate in
+            CalendarDisruptorConfirmSheet(
+                candidate: candidate,
+                onConfirm: {
+                    confirmCalendarDisruptor(candidate)
+                },
+                onDismiss: {
+                    dismissCalendarDisruptor(candidate)
+                }
+            )
         }
     }
 
@@ -89,7 +102,50 @@ struct DashboardView: View {
     }
 
     private func reloadViewModel() {
-        viewModel.reload(metrics: metrics, nutrition: nutritionRows)
+        viewModel.reload(metrics: metrics, nutrition: nutritionRows, modelContext: modelContext)
+    }
+
+    private var dashboardCalendar: Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = .current
+        return cal
+    }
+
+    private func runCalendarDisruptorInference() async {
+        _ = await CalendarEventStore.shared.requestAccessIfNeeded()
+        let metricSnapshots = metrics.map(DailyMetricSnapshot.init(metric:))
+        let derived = await DerivedMetricsService.shared.snapshot(modelContainer: modelContext.container)
+        await RecoveryDisruptorEngine.inferCalendarEpisodes(
+            in: modelContext,
+            metricSnapshots: metricSnapshots,
+            acwr: derived.acwr,
+            calendar: dashboardCalendar
+        )
+        await MainActor.run {
+            reloadViewModel()
+            calendarConfirmCandidate = RecoveryDisruptorEngine.pendingCalendarConfirmCandidate(
+                in: modelContext,
+                calendar: dashboardCalendar
+            )
+        }
+    }
+
+    private func confirmCalendarDisruptor(_ candidate: CalendarDisruptorCandidate) {
+        do {
+            try RecoveryDisruptorEngine.tagAlcoholLastNight(in: modelContext, calendar: dashboardCalendar)
+            calendarConfirmCandidate = nil
+            reloadViewModel()
+        } catch {
+            Log.recovery.error("calendar confirm tag failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func dismissCalendarDisruptor(_ candidate: CalendarDisruptorCandidate) {
+        RecoveryDisruptorEngine.dismissCalendarConfirm(
+            for: candidate.eveningStartDay,
+            calendar: dashboardCalendar
+        )
+        calendarConfirmCandidate = nil
     }
 
     private func fillHeightScroll<Content: View>(_ content: Content) -> some View {
@@ -174,9 +230,12 @@ struct DashboardView: View {
 
         DashboardRecoveryCard(
             score: viewModel.recoveryScore,
+            personalReadiness: viewModel.personalReadiness,
             rollingMeans: viewModel.rollingMeans,
             window: viewModel.selectedWindow,
-            hrvChartRange: viewModel.hrvChartRange
+            hrvChartRange: viewModel.hrvChartRange,
+            showStrainFootnote: viewModel.showStrainFootnote,
+            onDisruptorTagged: reloadViewModel
         )
 
         if let strain = viewModel.readinessFlags {

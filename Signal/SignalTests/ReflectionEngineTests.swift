@@ -212,7 +212,12 @@ final class ReflectionEngineTests: XCTestCase {
                 topPR: nil,
                 acwrZone: acwr?.zone,
                 averageSleepHours: nil
-            )
+            ),
+            activeDisruptors: [],
+            personalReadiness: nil,
+            exertionDebt: nil,
+            todayExertion: nil,
+            deloadSuggested: false
         )
     }
 

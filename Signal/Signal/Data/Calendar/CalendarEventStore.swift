@@ -54,7 +54,8 @@ actor CalendarEventStore {
                 title: event.title ?? "Untitled",
                 startDate: event.startDate,
                 endDate: event.endDate,
-                isAllDay: event.isAllDay
+                isAllDay: event.isAllDay,
+                notes: event.notes
             )
         }
     }

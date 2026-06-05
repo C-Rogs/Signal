@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import os
+import SwiftData
 
 struct DailyNutritionSnapshot: Sendable, Equatable {
     let date: Date
@@ -40,6 +41,9 @@ final class DashboardViewModel {
     var nutritionEnergyPoints: [DashboardChartPoint] = []
     var latestNutrition: DailyNutritionSnapshot?
     var readinessFlags: ReadinessFlagsAssessment?
+    var personalReadiness: PersonalReadinessProfile?
+    var showStrainFootnote = false
+    var deloadSuggested = false
 
     private var metricSnapshots: [DailyMetricSnapshot] = []
     private var nutritionSnapshots: [DailyNutritionSnapshot] = []
@@ -57,7 +61,7 @@ final class DashboardViewModel {
         self.referenceDay = self.calendar.startOfDay(for: referenceDay)
     }
 
-    func reload(metrics: [DailyMetric], nutrition: [DailyNutrition]) {
+    func reload(metrics: [DailyMetric], nutrition: [DailyNutrition], modelContext: ModelContext?) {
         metricSnapshots = metrics.map(DailyMetricSnapshot.init(metric:))
         nutritionSnapshots = nutrition.map {
             DailyNutritionSnapshot(
@@ -68,7 +72,7 @@ final class DashboardViewModel {
                 fatTotalG: $0.fatTotalG
             )
         }
-        recompute()
+        recompute(modelContext: modelContext)
         Log.ui.info(
             "dashboard reloaded metrics=\(self.metricSnapshots.count, privacy: .public) nutrition=\(self.nutritionSnapshots.count, privacy: .public) window=\(self.selectedWindow.rawValue, privacy: .public)"
         )
@@ -81,7 +85,7 @@ final class DashboardViewModel {
         )
     }
 
-    private func recompute() {
+    private func recompute(modelContext: ModelContext?) {
         rollingMeans = RecoveryEngine.rollingMeans(
             metrics: metricSnapshots,
             referenceDay: referenceDay,
@@ -92,6 +96,38 @@ final class DashboardViewModel {
             referenceDay: referenceDay,
             calendar: calendar
         )
+
+        if let modelContext {
+            let episodes = RecoveryDisruptorEngine.activeEpisodes(
+                in: modelContext,
+                referenceDay: referenceDay,
+                calendar: calendar
+            )
+            let exertionContext = ExertionContextBuilder.build(
+                in: modelContext,
+                referenceDay: referenceDay,
+                calendar: calendar
+            )
+            personalReadiness = PersonalReadinessCalculator.compute(
+                metrics: metricSnapshots,
+                todayScore: recoveryScore,
+                activeEpisodes: episodes,
+                referenceDay: referenceDay,
+                calendar: calendar,
+                exertionDebtNormalized: exertionContext.exertionDebt.isCalibrated
+                    ? exertionContext.exertionDebt.exertionDebtNormalized
+                    : nil
+            )
+            deloadSuggested = exertionContext.deloadSuggested
+                || DeloadSuggestionReader.hasActiveDeloadInsight(in: modelContext)
+            showStrainFootnote = deloadSuggested
+                || (exertionContext.exertionDebt.exertionDebtNormalized >= ExertionHeuristics.exertionDebtHighThreshold)
+        } else {
+            personalReadiness = nil
+            showStrainFootnote = false
+            deloadSuggested = false
+        }
+
         readinessFlags = ReadinessFlagEvaluator.evaluate(
             ReadinessFlagInput(
                 metrics: metricSnapshots,
@@ -100,7 +136,10 @@ final class DashboardViewModel {
                 calendar: calendar
             )
         )
-        WatchConnectivityService.shared.push(score: recoveryScore)
+        WatchConnectivityService.shared.push(
+            score: recoveryScore,
+            personalReadiness: personalReadiness
+        )
         recomputeSeries()
     }
 

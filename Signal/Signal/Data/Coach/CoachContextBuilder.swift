@@ -4,25 +4,39 @@ import os
 
 actor CoachContextBuilder {
     func buildContext(for query: String, modelContainer: ModelContainer) async throws -> CoachContext {
-        let ragSummaries = try await RAGRetriever.retrieve(
+        let referenceDate = Date()
+        let calendar = SchedulingCalendar.make()
+        let ragSummaries = try await HealthVectorRetriever.retrieve(
             query: query,
             k: 4,
-            boostDaysWithin: 30,
-            modelContainer: modelContainer
+            modelContainer: modelContainer,
+            referenceDate: referenceDate,
+            calendar: calendar
         )
         let metricsSnapshot = await DerivedMetricsService.shared.snapshot(modelContainer: modelContainer)
-        let calendarSummary = await CalendarContextBuilder().buildSummary() ?? ""
+        let calendarSummary: String
+        if CoachQueryIntent.isScheduleFocused(query) {
+            calendarSummary = await CalendarContextBuilder().buildSummary(referenceDate: referenceDate) ?? ""
+        } else {
+            calendarSummary = ""
+        }
 
         return await MainActor.run {
             let userSummary = Self.buildUserSummary(modelContainer: modelContainer)
             let activeInsights = Self.fetchActiveInsights(modelContainer: modelContainer)
-            let derivedMetricsSummary = Self.formatDerivedMetrics(snapshot: metricsSnapshot)
+            let derivedMetricsSummary = Self.formatDerivedMetrics(
+                snapshot: metricsSnapshot,
+                referenceDate: referenceDate,
+                calendar: calendar
+            )
+            let personalReadinessSummary = Self.formatPersonalReadiness(modelContainer: modelContainer)
             let recentWorkouts = Self.buildRecentWorkouts(modelContainer: modelContainer)
 
             var context = CoachContext(
                 userSummary: userSummary,
                 activeInsights: activeInsights,
                 derivedMetricsSummary: derivedMetricsSummary,
+                personalReadinessSummary: personalReadinessSummary,
                 ragSummaries: ragSummaries,
                 recentWorkouts: recentWorkouts,
                 calendarSummary: calendarSummary
@@ -69,7 +83,11 @@ actor CoachContextBuilder {
     }
 
     @MainActor
-    private static func formatDerivedMetrics(snapshot: DerivedMetricsSnapshot) -> String {
+    private static func formatDerivedMetrics(
+        snapshot: DerivedMetricsSnapshot,
+        referenceDate: Date,
+        calendar: Calendar
+    ) -> String {
         var lines: [String] = []
 
         if let acwr = snapshot.acwr {
@@ -91,6 +109,19 @@ actor CoachContextBuilder {
             lines.append("Volume this week: \(volumeParts.joined(separator: "; ")).")
         }
 
+        let clockDayKey = Summarizer.dayKey(for: referenceDate, calendar: calendar)
+        if let latestSync = snapshot.healthSyncLatestDayKey,
+           latestSync != clockDayKey,
+           let dayGap = CoachClockFormatter.calendarDaysBetween(
+               earlierDayKey: latestSync,
+               laterDayKey: clockDayKey,
+               calendar: calendar
+           ),
+           dayGap > 1
+        {
+            lines.append("Health sync latest: \(latestSync).")
+        }
+
         if let protein = snapshot.proteinTarget,
            let actual = protein.actualGrams,
            actual < protein.targetMinGrams
@@ -103,7 +134,68 @@ actor CoachContextBuilder {
             )
         }
 
+        if let exertion = snapshot.todayExertion, exertion.isCalibrated {
+            let scoreInt = Int(exertion.value.rounded())
+            lines.append("Exertion today: \(scoreInt)/100 (\(exertion.source.rawValue)).")
+        }
+        if let debt = snapshot.exertionDebt, debt.isCalibrated {
+            let debtText = String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), debt.exertionDebtNormalized)
+            let sumInt = Int(debt.rolling7dSum.rounded())
+            let deloadLabel = snapshot.deloadSuggested ? "yes" : "no"
+            lines.append("Strain debt: \(debtText) (7d sum \(sumInt)). Deload suggested: \(deloadLabel).")
+        }
+
         return lines.joined(separator: " ")
+    }
+
+    @MainActor
+    private static func formatPersonalReadiness(modelContainer: ModelContainer) -> String {
+        let context = ModelContext(modelContainer)
+        let bundle = RecoveryEngine.todayReadinessBundle(in: context)
+        let profile = bundle.profile
+        let scoreInt = Int(bundle.score.value.rounded())
+
+        if profile.isCalibrated {
+            let norm = Int(profile.personalMedian.rounded())
+            let delta = Int(profile.readinessDelta.rounded())
+            let sign = delta > 0 ? "+" : ""
+            var line = "Recovery norm ~\(norm); today \(scoreInt) (\(sign)\(delta))."
+            if profile.activeDisruptors.isEmpty {
+                line += " No active disruptors."
+            } else if let top = profile.activeDisruptors.first {
+                line += " Active: \(top.userFacingLabel)."
+            }
+            if let calendarLine = calendarRecoveryContextLine(modelContainer: modelContainer) {
+                line += " \(calendarLine)"
+            }
+            return line
+        }
+
+        if profile.activeDisruptors.isEmpty {
+            var line = "Recovery score \(scoreInt)/100. Personal norm still calibrating."
+            if let calendarLine = calendarRecoveryContextLine(modelContainer: modelContainer) {
+                line += " \(calendarLine)"
+            }
+            return line
+        }
+        let disruptor = profile.activeDisruptors.first?.userFacingLabel ?? "Recovery disrupted"
+        var line = "Recovery score \(scoreInt)/100. \(disruptor)."
+        if let calendarLine = calendarRecoveryContextLine(modelContainer: modelContainer) {
+            line += " \(calendarLine)"
+        }
+        return line
+    }
+
+    @MainActor
+    private static func calendarRecoveryContextLine(modelContainer: ModelContainer) -> String? {
+        let context = ModelContext(modelContainer)
+        let calendar = SchedulingCalendar.make()
+        let referenceDay = calendar.startOfDay(for: Date())
+        return RecoveryDisruptorEngine.calendarRecoveryContextLine(
+            in: context,
+            referenceDay: referenceDay,
+            calendar: calendar
+        )
     }
 
     @MainActor

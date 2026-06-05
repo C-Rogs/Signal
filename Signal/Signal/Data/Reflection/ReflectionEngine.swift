@@ -18,10 +18,40 @@ actor ReflectionEngine {
     }
 
     func runReflection(in context: ModelContext, referenceDate: Date? = nil) async {
+        let ref = referenceDate ?? Date()
+        let snapshot = await MainActor.run {
+            ReflectionSnapshotBuilder.build(in: context, calendar: calendar, referenceDate: ref)
+        }
+        await MainActor.run {
+            RecoveryDisruptorEngine.inferEpisodes(in: context, snapshot: snapshot, calendar: calendar)
+        }
+        let metricSnapshots = snapshot.dailyMetrics.map { sample in
+            DailyMetricSnapshot(
+                date: sample.date,
+                hrvSDNN: sample.hrvSDNN_ms,
+                restingHR: sample.restingHR,
+                activeEnergy: nil,
+                sleepHours: sample.sleepHours,
+                bodyMassKg: nil,
+                stepCount: nil,
+                appleExerciseMinutes: nil,
+                wristTemperatureDeltaC: sample.wristTemperatureDeltaC
+            )
+        }
+        await RecoveryDisruptorEngine.inferCalendarEpisodes(
+            in: context,
+            metricSnapshots: metricSnapshots,
+            acwr: snapshot.acwr,
+            referenceDate: ref,
+            calendar: calendar
+        )
         let specCount = await MainActor.run { () -> Int in
-            let ref = referenceDate ?? Date()
-            let snapshot = ReflectionSnapshotBuilder.build(in: context, calendar: calendar, referenceDate: ref)
-            let specs = ReflectionRules.evaluate(snapshot: snapshot, calendar: calendar)
+            let enriched = ReflectionSnapshotBuilder.enrichWithRecoveryContext(
+                snapshot,
+                in: context,
+                calendar: calendar
+            )
+            let specs = ReflectionRules.evaluate(snapshot: enriched, calendar: calendar)
             apply(specs: specs, snapshot: snapshot, in: context)
             ReflectionSchedule.markReflectionCompleted()
             Log.recovery.info("reflection finished specs=\(specs.count, privacy: .public)")
@@ -142,11 +172,14 @@ extension InsightType {
         .volumeBelowMEV,
         .volumeAboveMRV,
         .acwrOverreach,
+        .acwrDeloadSuggested,
         .acwrUnderloading,
         .e1RMPlateau,
         .hrvSuppressed,
         .sleepDeficit,
         .proteinGap,
         .recoveryStrain,
+        .recoveryDisruptorActive,
+        .personalReadinessLow,
     ]
 }

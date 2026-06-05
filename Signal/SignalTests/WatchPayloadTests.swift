@@ -133,6 +133,30 @@ struct WatchPayloadTests {
         #expect(snapshot.gaugeProgress == 0.82)
     }
 
+    @Test func complicationTimelinePolicyRefreshIntervals() {
+        let now = Date(timeIntervalSince1970: 0)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let waiting = WatchComplicationTimelinePolicy.nextReloadDate(
+            after: now,
+            isWaiting: true,
+            calendar: calendar
+        )
+        #expect(waiting == now.addingTimeInterval(5 * 60))
+        let active = WatchComplicationTimelinePolicy.nextReloadDate(
+            after: now,
+            isWaiting: false,
+            calendar: calendar
+        )
+        #expect(active == now.addingTimeInterval(15 * 60))
+    }
+
+    @Test func bodyBatterySnapshotUsesPercentAndBatterySymbol() {
+        let snapshot = RecoveryWidgetSnapshot.bodyBatteryPreview
+        #expect(snapshot.bodyBatteryPercentText == "72%")
+        #expect(snapshot.batterySymbolName == "battery.75percent")
+    }
+
     @Test func recoveryWidgetSnapshotWaitingWhenNil() {
         let snapshot = RecoveryWidgetSnapshot.make(from: nil)
         #expect(snapshot == .waiting)
@@ -189,6 +213,48 @@ struct WatchPayloadTests {
         #expect(snapshot.hrvLabel == "Within Range")
         #expect(snapshot.colorToken == "Warning")
         #expect(snapshot != .waiting)
+    }
+
+    @Test func scoreColorUsesPersonalBandsWhenCalibrated() {
+        let payload = WatchPayload(
+            recoveryScore: 52,
+            hrvClassification: HRVBandClassification.withinBand.rawValue,
+            confidence: RecoveryConfidence.high.rawValue,
+            todayHRV: nil,
+            todayRestingHR: nil,
+            lastUpdated: Date(),
+            personalP25: 45,
+            personalP75: 55,
+            isCalibrated: true
+        )
+        #expect(payload.scoreColor == "Warning")
+
+        let aboveNorm = WatchPayload(
+            recoveryScore: 58,
+            hrvClassification: HRVBandClassification.withinBand.rawValue,
+            confidence: RecoveryConfidence.high.rawValue,
+            todayHRV: nil,
+            todayRestingHR: nil,
+            lastUpdated: Date(),
+            personalP25: 45,
+            personalP75: 55,
+            isCalibrated: true
+        )
+        #expect(aboveNorm.scoreColor == "Positive")
+    }
+
+    @Test func decodeBackwardCompatibleWithoutPersonalBands() throws {
+        let original = Date(timeIntervalSince1970: 1_700_000_000)
+        let context: [String: Any] = [
+            "recoveryScore": 55.0,
+            "hrvClassification": HRVBandClassification.withinBand.rawValue,
+            "confidence": RecoveryConfidence.medium.rawValue,
+            "lastUpdated": ISO8601DateFormatter().string(from: original),
+        ]
+        let decoded = try WatchPayload.decode(from: context)
+        #expect(decoded.personalP25 == nil)
+        #expect(decoded.isCalibrated == nil)
+        #expect(decoded.scoreColor == "Warning")
     }
 
     @Test func watchPayloadHRVBandDisplayLabel() {

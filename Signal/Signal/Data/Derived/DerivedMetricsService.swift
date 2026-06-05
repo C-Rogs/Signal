@@ -13,7 +13,11 @@ struct DerivedMetricsSnapshot: Sendable {
     var acwr: ACWRResult?
     var recentE1RM: [(exerciseID: String, e1RMKg: Double, sessionDate: Date)]
     var proteinTarget: ProteinTarget?
+    var healthSyncLatestDayKey: String?
     var dataQualityFlagCount: Int
+    var todayExertion: ExertionScore?
+    var exertionDebt: ExertionDebtSummary?
+    var deloadSuggested: Bool
 }
 
 actor DerivedMetricsService {
@@ -65,16 +69,29 @@ actor DerivedMetricsService {
     }
 
     func proteinTarget(modelContainer: ModelContainer) async -> ProteinTarget? {
-        await onMainContext(modelContainer) { computeProteinTarget(in: $0) }
+        await onMainContext(modelContainer) {
+            let calendar = SchedulingCalendar.make()
+            let referenceDay = calendar.startOfDay(for: Date())
+            return computeProteinTarget(in: $0, referenceDay: referenceDay, calendar: calendar)
+        }
     }
 
     func snapshot(modelContainer: ModelContainer) async -> DerivedMetricsSnapshot {
         if let cachedSnapshot {
             return cachedSnapshot
         }
-        let built = await onMainContext(modelContainer) { buildSnapshot(in: $0) }
+        let built = await buildSnapshot(modelContainer: modelContainer)
         cachedSnapshot = built
         return built
+    }
+
+    private func buildSnapshot(modelContainer: ModelContainer) async -> DerivedMetricsSnapshot {
+        await snapshotOnMainActor(modelContainer: modelContainer)
+    }
+
+    @MainActor
+    private func snapshotOnMainActor(modelContainer: ModelContainer) -> DerivedMetricsSnapshot {
+        buildSnapshot(in: ModelContext(modelContainer))
     }
 
     private func onMainContext<T: Sendable>(
@@ -132,13 +149,26 @@ actor DerivedMetricsService {
         }
 
         let flagCount = (try? context.fetchCount(FetchDescriptor<DataQualityFlag>())) ?? 0
+        let acwr = computeACWR(for: nil, in: context)
+        let calendar = SchedulingCalendar.make()
+        let referenceDay = calendar.startOfDay(for: Date())
+        let exertionContext = ExertionContextBuilder.build(
+            in: context,
+            referenceDay: referenceDay,
+            calendar: calendar,
+            acwr: acwr
+        )
 
         return DerivedMetricsSnapshot(
             weeklyVolume: weeklyVolume,
-            acwr: computeACWR(for: nil, in: context),
+            acwr: acwr,
             recentE1RM: recentE1RM,
-            proteinTarget: computeProteinTarget(in: context),
-            dataQualityFlagCount: flagCount
+            proteinTarget: computeProteinTarget(in: context, referenceDay: referenceDay, calendar: calendar),
+            healthSyncLatestDayKey: latestDailyMetricDayKey(in: context, calendar: calendar),
+            dataQualityFlagCount: flagCount,
+            todayExertion: exertionContext.exertionDebt.todayExertion,
+            exertionDebt: exertionContext.exertionDebt,
+            deloadSuggested: exertionContext.deloadSuggested
         )
     }
 
@@ -209,18 +239,35 @@ actor DerivedMetricsService {
     }
 
     @MainActor
-    private func computeProteinTarget(in context: ModelContext) -> ProteinTarget? {
+    private func latestDailyMetricDayKey(in context: ModelContext, calendar: Calendar) -> String? {
+        var descriptor = FetchDescriptor<DailyMetric>(
+            sortBy: [SortDescriptor(\.date, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+        guard let latest = try? context.fetch(descriptor).first else { return nil }
+        return Summarizer.dayKey(for: latest.date, calendar: calendar)
+    }
+
+    @MainActor
+    private func computeProteinTarget(
+        in context: ModelContext,
+        referenceDay: Date,
+        calendar: Calendar
+    ) -> ProteinTarget? {
         let profileDescriptor = FetchDescriptor<UserProfile>()
         let profile = try? context.fetch(profileDescriptor).first
         guard let bodyweight = profile?.bodyweightKg else { return nil }
 
+        let day = referenceDay
         let nutritionDescriptor = FetchDescriptor<DailyNutrition>(
-            sortBy: [SortDescriptor(\.date, order: .reverse)]
+            predicate: #Predicate { nutrition in
+                nutrition.date == day
+            }
         )
-        let latestProtein = try? context.fetch(nutritionDescriptor)
-            .first(where: { $0.proteinG != nil })?
-            .proteinG
+        guard let proteinG = try? context.fetch(nutritionDescriptor).first?.proteinG else {
+            return nil
+        }
 
-        return ProteinTarget(bodyweightKg: bodyweight, actualGrams: latestProtein)
+        return ProteinTarget(bodyweightKg: bodyweight, actualGrams: proteinG)
     }
 }

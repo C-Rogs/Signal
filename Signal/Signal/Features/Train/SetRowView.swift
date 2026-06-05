@@ -108,8 +108,19 @@ struct SetRowView: View {
             }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background {
+            if TrainScenePhaseKeyboardPolicy.shouldReleaseSetFieldFocus(for: phase) {
                 commitFields()
+                focusedField = nil
+            } else if phase == .active, focusedField != nil {
+                focusedField = nil
+            }
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") {
+                    focusedField = nil
+                }
             }
         }
     }

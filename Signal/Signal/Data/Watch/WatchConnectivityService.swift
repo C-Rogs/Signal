@@ -13,6 +13,7 @@ final class WatchConnectivityService: NSObject {
     )
 
     private var pendingScore: RecoveryScore?
+    private var pendingPersonalReadiness: PersonalReadinessProfile?
 
     private override init() {
         super.init()
@@ -29,14 +30,15 @@ final class WatchConnectivityService: NSObject {
         logger.info("WCSession activation requested")
     }
 
-    func push(score: RecoveryScore) {
+    func push(score: RecoveryScore, personalReadiness: PersonalReadinessProfile? = nil) {
         pendingScore = score
-        cacheForLocalWidgets(score: score)
+        pendingPersonalReadiness = personalReadiness
+        cacheForLocalWidgets(score: score, personalReadiness: personalReadiness)
         retryPendingPush()
     }
 
-    private func cacheForLocalWidgets(score: RecoveryScore) {
-        let payload = WatchPayload(score: score)
+    private func cacheForLocalWidgets(score: RecoveryScore, personalReadiness: PersonalReadinessProfile?) {
+        let payload = WatchPayload(score: score, personalReadiness: personalReadiness)
         guard let context = try? payload.encodeToApplicationContext() else { return }
         let cached = WatchPayloadCache.write(context: context)
         WidgetCenter.shared.reloadTimelines(ofKind: WatchPayloadCache.iosWidgetKind)
@@ -70,7 +72,7 @@ final class WatchConnectivityService: NSObject {
             logger.info("watch push attempting isWatchAppInstalled=false")
         }
 
-        let payload = WatchPayload(score: score)
+        let payload = WatchPayload(score: score, personalReadiness: pendingPersonalReadiness)
         do {
             let context = try payload.encodeToApplicationContext()
             try session.updateApplicationContext(context)

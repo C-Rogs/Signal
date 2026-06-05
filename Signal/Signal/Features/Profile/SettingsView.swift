@@ -8,6 +8,7 @@ struct SettingsView: View {
     @Environment(UnitPreferences.self) private var unitPreferences
     @Environment(TrainPreferences.self) private var trainPreferences
     @Environment(NotificationPreferences.self) private var notificationPreferences
+    @Environment(RecoveryPreferences.self) private var recoveryPreferences
     @Bindable private var downloadState = EmbeddingDownloadState.shared
     @State private var backupViewModel: SettingsBackupViewModel?
 
@@ -30,6 +31,27 @@ struct SettingsView: View {
                                 .foregroundStyle(Color("TextSecondary"))
                         }
                     }
+                }
+
+                Section {
+                    NavigationLink {
+                        RecoveryCalendarHintsSettingsView()
+                    } label: {
+                        HStack {
+                            Text("Calendar hints")
+                                .foregroundStyle(Color("TextPrimary"))
+                            Spacer()
+                            Text(recoveryCalendarHintsDetail)
+                                .font(.metadataCaption)
+                                .foregroundStyle(Color("TextSecondary"))
+                        }
+                    }
+                } header: {
+                    Text("Recovery")
+                } footer: {
+                    Text(
+                        "Optional phrases help Signal infer social drinking from last night's calendar events. All matching stays on device."
+                    )
                 }
 
                 Section {
@@ -276,6 +298,12 @@ struct SettingsView: View {
         colorScheme == .dark ? .black : Color("Background")
     }
 
+    private var recoveryCalendarHintsDetail: String {
+        let count = recoveryPreferences.calendarHintPhrases.count
+        if count == 0 { return "None" }
+        return "\(count) phrase\(count == 1 ? "" : "s")"
+    }
+
     private var embeddingStatusLabel: String {
         if EmbeddingBackend.useNLContextualEmbeddingFallback {
             return "System embeddings (fallback)"
@@ -334,5 +362,6 @@ struct SettingsView: View {
     .environment(UnitPreferences.shared)
     .environment(TrainPreferences.shared)
     .environment(NotificationPreferences.shared)
+    .environment(RecoveryPreferences.shared)
     .modelContainer(try! SignalModelContainer.make(inMemoryOnly: true))
 }

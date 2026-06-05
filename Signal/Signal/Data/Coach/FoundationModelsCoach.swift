@@ -30,6 +30,10 @@ actor FoundationModelsCoach: LLMCoach {
         guard !responding else {
             throw CoachError.busy
         }
+        guard await FoundationModelsInferenceGate.shared.tryAcquire() else {
+            throw CoachError.busy
+        }
+
         responding = true
 
         var workingContext = context
@@ -43,12 +47,18 @@ actor FoundationModelsCoach: LLMCoach {
                 var didRetryAfterOverflow = false
 
                 defer {
-                    Task { await self.clearResponding() }
+                    Task {
+                        await FoundationModelsInferenceGate.shared.release()
+                        await self.clearResponding()
+                    }
                 }
 
                 while true {
                     do {
-                        let session = CoachSessionFactory.makeSession(modelContainer: container)
+                        let session = CoachSessionFactory.makeSession(
+                            modelContainer: container,
+                            referenceDate: Date()
+                        )
                         guard !session.isResponding else {
                             throw CoachError.busy
                         }

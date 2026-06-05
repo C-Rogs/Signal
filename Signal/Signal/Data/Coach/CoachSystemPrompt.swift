@@ -3,7 +3,7 @@ import FoundationModels
 import SwiftData
 
 enum CoachSystemPrompt: Sendable {
-    nonisolated static let instructions = """
+    nonisolated static let personaRules = """
         You are Signal, an elite sports physiologist and strength coach. You have access to the user's real training and health data shown below. Your rules:
         - Reference actual numbers from context (e1RM, volume sets, HRV, sleep hours, ACWR).
         - Be direct and specific. No generic advice.
@@ -17,22 +17,42 @@ enum CoachSystemPrompt: Sendable {
         - Do not produce multi-day training plans unless the user explicitly asks for programming help.
         - Use light markdown when it helps: ### for section headings, **bold** for key numbers, blank lines between paragraphs, one list item per line.
         """
+
+    nonisolated static let temporalSemantics = """
+        Clock is the current device time. Health day YYYY-MM-DD lines describe that calendar day's data; they may include today when dayKey matches Clock. Only Clock and getDeviceClock define the current moment. Compare Health day prefixes to Clock dayKey: match means today's health data; mismatch means a different day or stale sync.
+        """
 }
 
 enum CoachSessionFactory {
+    nonisolated static func makeInstructions(
+        referenceDate: Date,
+        calendar: Calendar = SchedulingCalendar.make()
+    ) -> String {
+        let clockLine = CoachClockFormatter.format(referenceDate: referenceDate, calendar: calendar)
+        return [
+            clockLine,
+            CoachSystemPrompt.temporalSemantics,
+            CoachSystemPrompt.personaRules,
+        ].joined(separator: "\n")
+    }
+
     nonisolated static func makeTools(modelContainer: ModelContainer) -> [any Tool] {
         [
+            DeviceClockTool(),
+            CalendarScheduleTool(),
             ExerciseHistoryTool(modelContainer: modelContainer),
             MuscleVolumeTool(modelContainer: modelContainer),
-            CalendarScheduleTool(),
         ]
     }
 
-    nonisolated static func makeSession(modelContainer: ModelContainer) -> LanguageModelSession {
+    nonisolated static func makeSession(
+        modelContainer: ModelContainer,
+        referenceDate: Date = Date()
+    ) -> LanguageModelSession {
         LanguageModelSession(
             model: .default,
             tools: makeTools(modelContainer: modelContainer),
-            instructions: CoachSystemPrompt.instructions
+            instructions: makeInstructions(referenceDate: referenceDate)
         )
     }
 }

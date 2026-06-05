@@ -51,6 +51,11 @@ struct ReflectionSnapshot: Sendable {
     let proteinSamples: [DailyProteinSample]
     let proteinTargetMinGrams: Double?
     let weeklyProgress: WeeklyProgressInputs
+    let activeDisruptors: [RecoveryDisruptorEpisodeSnapshot]
+    let personalReadiness: PersonalReadinessProfile?
+    let exertionDebt: ExertionDebtSummary?
+    let todayExertion: ExertionScore?
+    let deloadSuggested: Bool
 }
 
 extension MuscleGroup {

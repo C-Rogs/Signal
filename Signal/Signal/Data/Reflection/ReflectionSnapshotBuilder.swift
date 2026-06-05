@@ -22,7 +22,8 @@ enum ReflectionSnapshotBuilder {
     let exerciseProgress = fetchExerciseProgress(in: context)
     let dailyMetrics = fetchRecentDailyMetrics(in: context, calendar: calendar, referenceDate: referenceDate)
     let proteinSamples = fetchRecentProtein(in: context, calendar: calendar, referenceDate: referenceDate)
-    let proteinTarget = computeProteinTarget(in: context)
+    let referenceDay = calendar.startOfDay(for: referenceDate)
+    let proteinTarget = computeProteinTarget(in: context, referenceDay: referenceDay)
     let weeklyProgress = buildWeeklyProgress(
       in: context,
       calendar: calendar,
@@ -40,7 +41,76 @@ enum ReflectionSnapshotBuilder {
       dailyMetrics: dailyMetrics,
       proteinSamples: proteinSamples,
       proteinTargetMinGrams: proteinTarget?.targetMinGrams,
-      weeklyProgress: weeklyProgress
+      weeklyProgress: weeklyProgress,
+      activeDisruptors: [],
+      personalReadiness: nil,
+      exertionDebt: nil,
+      todayExertion: nil,
+      deloadSuggested: false
+    )
+  }
+
+  @MainActor
+  static func enrichWithRecoveryContext(
+    _ snapshot: ReflectionSnapshot,
+    in context: ModelContext,
+    calendar: Calendar
+  ) -> ReflectionSnapshot {
+    let referenceDay = calendar.startOfDay(for: snapshot.referenceDate)
+    let metricSnapshots = snapshot.dailyMetrics.map { sample in
+      DailyMetricSnapshot(
+        date: sample.date,
+        hrvSDNN: sample.hrvSDNN_ms,
+        restingHR: sample.restingHR,
+        activeEnergy: nil,
+        sleepHours: sample.sleepHours,
+        bodyMassKg: nil,
+        stepCount: nil,
+        appleExerciseMinutes: nil,
+        wristTemperatureDeltaC: sample.wristTemperatureDeltaC
+      )
+    }
+    let score = RecoveryScoreCalculator.compute(
+      metrics: metricSnapshots,
+      referenceDay: referenceDay,
+      calendar: calendar
+    )
+    let episodes = RecoveryDisruptorEngine.activeEpisodes(
+      in: context,
+      referenceDay: referenceDay,
+      calendar: calendar
+    )
+    let exertionContext = ExertionContextBuilder.build(
+      in: context,
+      referenceDay: referenceDay,
+      calendar: calendar,
+      acwr: snapshot.acwr
+    )
+    let profile = PersonalReadinessCalculator.compute(
+      metrics: metricSnapshots,
+      todayScore: score,
+      activeEpisodes: episodes,
+      referenceDay: referenceDay,
+      calendar: calendar,
+      exertionDebtNormalized: exertionContext.exertionDebt.isCalibrated
+        ? exertionContext.exertionDebt.exertionDebtNormalized
+        : nil
+    )
+    return ReflectionSnapshot(
+      referenceDate: snapshot.referenceDate,
+      isoWeek: snapshot.isoWeek,
+      volumeRows: snapshot.volumeRows,
+      acwr: snapshot.acwr,
+      exerciseProgress: snapshot.exerciseProgress,
+      dailyMetrics: snapshot.dailyMetrics,
+      proteinSamples: snapshot.proteinSamples,
+      proteinTargetMinGrams: snapshot.proteinTargetMinGrams,
+      weeklyProgress: snapshot.weeklyProgress,
+      activeDisruptors: episodes,
+      personalReadiness: profile,
+      exertionDebt: exertionContext.exertionDebt,
+      todayExertion: exertionContext.exertionDebt.todayExertion,
+      deloadSuggested: exertionContext.deloadSuggested
     )
   }
 
@@ -131,17 +201,20 @@ enum ReflectionSnapshotBuilder {
   }
 
   @MainActor
-  private static func computeProteinTarget(in context: ModelContext) -> ProteinTarget? {
+  private static func computeProteinTarget(in context: ModelContext, referenceDay: Date) -> ProteinTarget? {
     let profileDescriptor = FetchDescriptor<UserProfile>()
     let profile = try? context.fetch(profileDescriptor).first
     guard let bodyweight = profile?.bodyweightKg else { return nil }
+    let day = referenceDay
     let nutritionDescriptor = FetchDescriptor<DailyNutrition>(
-      sortBy: [SortDescriptor(\.date, order: .reverse)]
+      predicate: #Predicate { nutrition in
+        nutrition.date == day
+      }
     )
-    let latestProtein = try? context.fetch(nutritionDescriptor)
-      .first(where: { $0.proteinG != nil })?
-      .proteinG
-    return ProteinTarget(bodyweightKg: bodyweight, actualGrams: latestProtein)
+    guard let proteinG = try? context.fetch(nutritionDescriptor).first?.proteinG else {
+      return nil
+    }
+    return ProteinTarget(bodyweightKg: bodyweight, actualGrams: proteinG)
   }
 
   @MainActor

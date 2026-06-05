@@ -2,9 +2,12 @@ import SwiftUI
 
 struct DashboardRecoveryCard: View {
     let score: RecoveryScore
+    let personalReadiness: PersonalReadinessProfile?
     let rollingMeans: MetricRollingMeans
     let window: RecoveryWindow
     let hrvChartRange: ClosedRange<Double>?
+    var showStrainFootnote = false
+    let onDisruptorTagged: () -> Void
 
     private var windowMean: WindowMean {
         rollingMeans.mean(for: window)
@@ -26,10 +29,26 @@ struct DashboardRecoveryCard: View {
                 .font(.metricValue)
                 .foregroundStyle(scoreColor)
 
+            if let personalReadiness, personalReadiness.isCalibrated {
+                personalNormLines(for: personalReadiness)
+            }
+
             Text(classificationSubtitle)
                 .font(.metadataCaption)
                 .fontWeight(.medium)
                 .foregroundStyle(classificationColor)
+
+            if let disruptorSubtitle {
+                Text(disruptorSubtitle)
+                    .font(.metadataCaption)
+                    .foregroundStyle(Color("Warning"))
+            }
+
+            if showStrainFootnote {
+                Text("Strain this week: high vs your norm")
+                    .font(.metadataCaption)
+                    .foregroundStyle(Color("Warning"))
+            }
 
             if let analysis = score.hrvAnalysis,
                score.hrvClassification != .insufficientData,
@@ -52,11 +71,38 @@ struct DashboardRecoveryCard: View {
                     baseline: baselineRHRText
                 )
             }
+
+            RecoveryDisruptorTagButton(onTagged: onDisruptorTagged)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color("Surface"))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func personalNormLines(for profile: PersonalReadinessProfile) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Your norm: ~\(Int(profile.personalMedian.rounded()))")
+                .font(.metadataCaption)
+                .foregroundStyle(Color("TextSecondary"))
+            Text(normDeltaText(for: profile))
+                .font(.metadataCaption.weight(.medium))
+                .foregroundStyle(Color("TextPrimary"))
+        }
+    }
+
+    private func normDeltaText(for profile: PersonalReadinessProfile) -> String {
+        let delta = Int(profile.readinessDelta.rounded())
+        if delta == 0 {
+            return "At your norm today"
+        }
+        let sign = delta > 0 ? "+" : ""
+        return "\(sign)\(delta) vs your norm"
+    }
+
+    private var disruptorSubtitle: String? {
+        guard let profile = personalReadiness else { return nil }
+        return profile.activeDisruptors.first?.userFacingLabel
     }
 
     private var statusBadge: some View {
@@ -71,18 +117,28 @@ struct DashboardRecoveryCard: View {
     }
 
     private var statusTitle: String {
+        if let profile = personalReadiness, profile.isCalibrated {
+            if score.value >= profile.personalP75 { return "Recovered" }
+            if score.value >= profile.personalP25 { return "Steady" }
+            return "Fatigued"
+        }
         switch score.value {
-        case 70...: "Recovered"
-        case 45..<70: "Steady"
-        default: "Fatigued"
+        case 70...: return "Recovered"
+        case 45..<70: return "Steady"
+        default: return "Fatigued"
         }
     }
 
     private var scoreColor: Color {
+        if let profile = personalReadiness, profile.isCalibrated {
+            if score.value >= profile.personalP75 { return Color("Positive") }
+            if score.value >= profile.personalP25 { return Color("Primary") }
+            return Color("Warning")
+        }
         switch score.value {
-        case 70...: Color("Positive")
-        case 45..<70: Color("Primary")
-        default: Color("Warning")
+        case 70...: return Color("Positive")
+        case 45..<70: return Color("Primary")
+        default: return Color("Warning")
         }
     }
 

@@ -1,14 +1,17 @@
 import Foundation
 
 extension WatchPayload {
-    init(score: RecoveryScore, lastUpdated: Date = Date()) {
+    init(score: RecoveryScore, personalReadiness: PersonalReadinessProfile? = nil, lastUpdated: Date = Date()) {
         self.init(
             recoveryScore: score.value,
             hrvClassification: score.hrvClassification.rawValue,
             confidence: score.confidence.rawValue,
             todayHRV: score.todayHRV,
             todayRestingHR: score.todayRestingHR,
-            lastUpdated: lastUpdated
+            lastUpdated: lastUpdated,
+            personalP25: personalReadiness?.isCalibrated == true ? personalReadiness?.personalP25 : nil,
+            personalP75: personalReadiness?.isCalibrated == true ? personalReadiness?.personalP75 : nil,
+            isCalibrated: personalReadiness?.isCalibrated
         )
     }
 
@@ -30,6 +33,15 @@ extension WatchPayload {
         }
         if let todayRestingHR {
             dictionary["todayRestingHR"] = todayRestingHR
+        }
+        if let personalP25 {
+            dictionary["personalP25"] = personalP25
+        }
+        if let personalP75 {
+            dictionary["personalP75"] = personalP75
+        }
+        if let isCalibrated {
+            dictionary["isCalibrated"] = isCalibrated
         }
         return dictionary
     }

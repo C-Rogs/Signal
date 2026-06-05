@@ -4,6 +4,7 @@ struct WorkoutLiveSummaryBar: View {
     let summary: WorkoutLiveSummary
     let formatter: DisplayUnitFormatter
     var recoveryChipTitle: String?
+    var deloadChipTitle: String?
     var heartRateUI: LiveWatchHeartRateUIState = LiveWatchHeartRateUIState(
         showsHeartRateSlot: false,
         bpm: nil,
@@ -22,6 +23,16 @@ struct WorkoutLiveSummaryBar: View {
                     .background(Color("Warning").opacity(0.15))
                     .clipShape(Capsule())
                     .accessibilityIdentifier("lowRecoveryChip")
+            }
+            if let deloadChipTitle {
+                Text(deloadChipTitle)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color("Warning"))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color("Warning").opacity(0.15))
+                    .clipShape(Capsule())
+                    .accessibilityIdentifier("deloadSuggestedChip")
             }
             if let statusChipTitle = heartRateUI.statusChipTitle {
                 Text(statusChipTitle)
@@ -73,6 +84,9 @@ struct WorkoutLiveSummaryBar: View {
         var parts: [String] = []
         if let recoveryChipTitle {
             parts.append(recoveryChipTitle)
+        }
+        if let deloadChipTitle {
+            parts.append(deloadChipTitle)
         }
         if let statusChipTitle = heartRateUI.statusChipTitle {
             parts.append(statusChipTitle)

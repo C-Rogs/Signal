@@ -25,6 +25,7 @@ struct DiagnosticsView: View {
                         importSummarySection
                         ragSmokeTestSection(viewModel: viewModel)
                         askCoachSection(viewModel: viewModel)
+                        fmHealthCheckSection(viewModel: viewModel)
                         dayDumpSection(viewModel: viewModel)
                         retrievalUATSection(viewModel: viewModel)
                     } else {
@@ -382,6 +383,7 @@ struct DiagnosticsView: View {
                 .disabled(
                     viewModel.coachIsBuildingContext
                         || viewModel.coachIsResponding
+                        || viewModel.isRunningFMHealthCheck
                         || viewModel.coachQueryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 )
 
@@ -393,6 +395,8 @@ struct DiagnosticsView: View {
                 .disabled(
                     viewModel.coachIsResponding
                         || viewModel.coachIsBuildingContext
+                        || viewModel.isRunningFMHealthCheck
+                        || !viewModel.coachCanAsk
                         || viewModel.coachQueryText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 )
             }
@@ -447,6 +451,103 @@ struct DiagnosticsView: View {
                         .textSelection(.enabled)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func fmHealthCheckSection(viewModel: DiagnosticsViewModel) -> some View {
+        elevatedCard {
+            Text("Apple Intelligence health check")
+                .font(.cardLabel)
+                .foregroundStyle(Color("TextPrimary"))
+
+            Text(
+                "Runs a sequential on-device check across availability, generation, structured output, coach streaming, and tool use. Requires Apple Intelligence ready on this iPhone."
+            )
+            .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Text("Foundation model")
+                Spacer()
+                Text(viewModel.coachModelStatusLabel)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(viewModel.coachCanAsk ? Color("Primary") : .orange)
+            }
+
+            Button("Run health check") {
+                Task {
+                    await viewModel.runFMHealthCheck()
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color("Primary"))
+            .disabled(viewModel.isRunningFMHealthCheck || !viewModel.coachCanAsk)
+
+            HStack(spacing: 12) {
+                Button("Copy report (\(viewModel.fmHealthReportCharacterCount) chars)") {
+                    viewModel.copyFMHealthReportToPasteboard()
+                }
+                .buttonStyle(.bordered)
+                .tint(Color("Primary"))
+                .disabled(!viewModel.canCopyFMHealthReport)
+
+                ShareLink(item: viewModel.fmHealthReportText) {
+                    Text("Share report (\(viewModel.fmHealthReportCharacterCount) chars)")
+                }
+                .buttonStyle(.bordered)
+                .tint(Color("Primary"))
+                .disabled(!viewModel.canCopyFMHealthReport)
+            }
+
+            if viewModel.isRunningFMHealthCheck {
+                if let runningID = viewModel.fmHealthRunningProbeID,
+                   let label = FoundationModelsHealthCatalog.definition(id: runningID)?.label {
+                    ProgressView("Running \(label)...")
+                        .tint(Color("Primary"))
+                } else {
+                    ProgressView("Running health check...")
+                        .tint(Color("Primary"))
+                }
+            }
+
+            if let error = viewModel.fmHealthError {
+                Text(error)
+                    .foregroundStyle(.orange)
+            }
+
+            if !viewModel.fmHealthSummaryLine.isEmpty {
+                Text(viewModel.fmHealthSummaryLine)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(Color("TextPrimary"))
+            }
+
+            if !viewModel.fmHealthOutcomes.isEmpty {
+                ForEach(viewModel.fmHealthOutcomes, id: \.probeID) { outcome in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("[\(outcome.verdict.rawValue)] \(outcome.label)")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(verdictColor(outcome.verdict))
+                        if let detail = outcome.detail, !detail.isEmpty {
+                            Text(detail)
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(Color("TextSecondary"))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func verdictColor(_ verdict: FoundationModelsHealthVerdict) -> Color {
+        switch verdict {
+        case .pass:
+            return Color("Primary")
+        case .review:
+            return .orange
+        case .fail:
+            return .red
+        case .skip:
+            return Color("TextSecondary")
         }
     }
 

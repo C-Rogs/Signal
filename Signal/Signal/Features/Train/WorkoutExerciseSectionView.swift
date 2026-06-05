@@ -9,6 +9,7 @@ struct WorkoutExerciseSectionView: View {
     let formatter: DisplayUnitFormatter
     let lastHint: String?
     let recoveryScore: RecoveryScore
+    let personalReadiness: PersonalReadinessProfile?
     let store: LiveWorkoutStore
     let modelContext: ModelContext
     let onSupersetScroll: (PersistentIdentifier) -> Void
@@ -202,17 +203,34 @@ struct WorkoutExerciseSectionView: View {
                 in: modelContext
             )
             let loadNudge = loadNudgeAfterSet(set)
+            let now = Date()
+            let heartRateBPM = watchBridge.latestHeartRateBPM
+            let heartRateSampledAt = watchBridge.lastHeartRateAt
             if let message = LiveSetCueComposer.compose(
                 tierMessage: tierMessage,
                 loadNudge: loadNudge,
-                heartRateBPM: watchBridge.latestHeartRateBPM,
-                heartRateSampledAt: watchBridge.lastHeartRateAt,
-                now: Date()
+                heartRateBPM: heartRateBPM,
+                heartRateSampledAt: heartRateSampledAt,
+                now: now
             ) {
                 if let loadNudge {
                     Log.workout.info("load autoregulation nudge=\(loadNudge, privacy: .public)")
                 }
+                if let hrNudge = LiveHRCueEvaluator.restNudgeAfterSet(
+                    bpm: heartRateBPM,
+                    sampledAt: heartRateSampledAt,
+                    now: now
+                ) {
+                    Log.workout.info("live HR set cue nudge=\(hrNudge, privacy: .public)")
+                }
                 showCue(message, for: set)
+            } else if WorkoutSetType(storageValue: set.setType) != .warmup,
+                      let heartRateBPM
+            {
+                let ageSeconds = heartRateSampledAt.map { now.timeIntervalSince($0) }
+                Log.workout.info(
+                    "live HR set cue suppressed bpm=\(heartRateBPM, privacy: .public) ageSeconds=\(ageSeconds ?? -1, privacy: .public)"
+                )
             }
             if let partner = supersetPartner {
                 onSupersetScroll(partner.persistentModelID)
@@ -264,6 +282,7 @@ struct WorkoutExerciseSectionView: View {
         let lastSessionSet = lastTemplate.map(SetCueSnapshot.init(template:))
         let input = LiveLoadCueInput(
             recoveryScore: recoveryScore,
+            personalReadiness: personalReadiness,
             completedSet: snapshot,
             targetRIR: targetRIR,
             targetReps: CueEngine.targetReps(lastSessionSet: lastSessionSet)

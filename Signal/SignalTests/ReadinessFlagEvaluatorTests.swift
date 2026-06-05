@@ -198,7 +198,12 @@ struct ReadinessFlagEvaluatorTests {
                 topPR: nil,
                 acwrZone: nil,
                 averageSleepHours: nil
-            )
+            ),
+            activeDisruptors: [],
+            personalReadiness: nil,
+            exertionDebt: nil,
+            todayExertion: nil,
+            deloadSuggested: false
         )
         let rules = ReflectionRules.recoveryStrainRules(
             snapshot: snapshot,

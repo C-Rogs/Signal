@@ -64,7 +64,11 @@ final class DiagnosticsViewModel {
         acwr: nil,
         recentE1RM: [],
         proteinTarget: nil,
-        dataQualityFlagCount: 0
+        healthSyncLatestDayKey: nil,
+        dataQualityFlagCount: 0,
+        todayExertion: nil,
+        exertionDebt: nil,
+        deloadSuggested: false
     )
     var dataQualityFlagRows: [DataQualityFlagRow] = []
     var isLoadingDerivedMetrics = false
@@ -79,6 +83,12 @@ final class DiagnosticsViewModel {
     var coachIsBuildingContext = false
     var coachError: String?
     var coachIsResponding = false
+    var fmHealthOutcomes: [FoundationModelsHealthProbeOutcome] = []
+    var fmHealthReportText = ""
+    var fmHealthSummaryLine = ""
+    var isRunningFMHealthCheck = false
+    var fmHealthRunningProbeID: String?
+    var fmHealthError: String?
     var recoveryDiagnostics: RecoveryDiagnosticsSnapshot?
     var hrAttributionDiagnostics = HRAttributionDiagnosticsSnapshot(
         totalRows: 0,
@@ -95,6 +105,12 @@ final class DiagnosticsViewModel {
 
     var canCopyUATReport: Bool {
         !isRunningUAT && !uatReportText.isEmpty
+    }
+
+    var fmHealthReportCharacterCount: Int { fmHealthReportText.count }
+
+    var canCopyFMHealthReport: Bool {
+        !isRunningFMHealthCheck && !fmHealthReportText.isEmpty
     }
 
     private let modelContainer: ModelContainer
@@ -156,9 +172,58 @@ final class DiagnosticsViewModel {
         }
     }
 
+    func runFMHealthCheck() async {
+        guard !isRunningFMHealthCheck else { return }
+
+        refreshCoachModelStatus()
+        isRunningFMHealthCheck = true
+        fmHealthError = nil
+        fmHealthOutcomes = []
+        fmHealthReportText = ""
+        fmHealthSummaryLine = ""
+        fmHealthRunningProbeID = nil
+        defer {
+            isRunningFMHealthCheck = false
+            fmHealthRunningProbeID = nil
+        }
+
+        let report = await FoundationModelsHealthRunner.run(
+            modelContainer: modelContainer,
+            onProbeStart: { [weak self] definition in
+                Task { @MainActor in
+                    self?.fmHealthRunningProbeID = definition.id
+                }
+            },
+            onProbeComplete: { [weak self] outcome in
+                Task { @MainActor in
+                    guard let self else { return }
+                    if let index = self.fmHealthOutcomes.firstIndex(where: { $0.probeID == outcome.probeID }) {
+                        self.fmHealthOutcomes[index] = outcome
+                    } else {
+                        self.fmHealthOutcomes.append(outcome)
+                    }
+                }
+            }
+        )
+
+        fmHealthOutcomes = report.outcomes
+        fmHealthSummaryLine = report.summaryLine
+        fmHealthReportText = FoundationModelsHealthShareReport.build(report: report)
+        Log.coach.info(
+            "fm_health_check finished summary=\(report.summaryLine, privacy: .public) probes=\(report.outcomes.count, privacy: .public)"
+        )
+    }
+
+    func copyFMHealthReportToPasteboard() {
+        guard canCopyFMHealthReport else { return }
+        UIPasteboard.general.string = fmHealthReportText
+        Log.ui.info("diagnostics FM health report copied chars=\(self.fmHealthReportText.count, privacy: .public)")
+    }
+
     func askCoach() {
         let trimmed = coachQueryText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        guard !isRunningFMHealthCheck else { return }
 
         refreshCoachModelStatus()
         guard coachCanAsk else {

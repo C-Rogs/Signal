@@ -24,6 +24,31 @@ struct DailyMetricSnapshot: Sendable, Equatable {
     let stepCount: Double?
     let appleExerciseMinutes: Double?
     let wristTemperatureDeltaC: Double?
+    let heartRateMax: Double?
+
+    init(
+        date: Date,
+        hrvSDNN: Double?,
+        restingHR: Double?,
+        activeEnergy: Double?,
+        sleepHours: Double?,
+        bodyMassKg: Double?,
+        stepCount: Double?,
+        appleExerciseMinutes: Double?,
+        wristTemperatureDeltaC: Double?,
+        heartRateMax: Double? = nil
+    ) {
+        self.date = date
+        self.hrvSDNN = hrvSDNN
+        self.restingHR = restingHR
+        self.activeEnergy = activeEnergy
+        self.sleepHours = sleepHours
+        self.bodyMassKg = bodyMassKg
+        self.stepCount = stepCount
+        self.appleExerciseMinutes = appleExerciseMinutes
+        self.wristTemperatureDeltaC = wristTemperatureDeltaC
+        self.heartRateMax = heartRateMax
+    }
 }
 
 struct WindowMean: Sendable, Equatable {
@@ -57,6 +82,11 @@ actor RecoveryEngine {
 
     @MainActor
     static func todayRecoveryScore(in context: ModelContext) -> RecoveryScore {
+        todayReadinessBundle(in: context).score
+    }
+
+    @MainActor
+    static func todayReadinessBundle(in context: ModelContext) -> (score: RecoveryScore, profile: PersonalReadinessProfile) {
         let metrics = fetchMetricSnapshots(in: context)
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current
@@ -66,10 +96,30 @@ actor RecoveryEngine {
             referenceDay: referenceDay,
             calendar: calendar
         )
+        let episodes = RecoveryDisruptorEngine.activeEpisodes(
+            in: context,
+            referenceDay: referenceDay,
+            calendar: calendar
+        )
+        let exertionContext = ExertionContextBuilder.build(
+            in: context,
+            referenceDay: referenceDay,
+            calendar: calendar
+        )
+        let profile = PersonalReadinessCalculator.compute(
+            metrics: metrics,
+            todayScore: score,
+            activeEpisodes: episodes,
+            referenceDay: referenceDay,
+            calendar: calendar,
+            exertionDebtNormalized: exertionContext.exertionDebt.isCalibrated
+                ? exertionContext.exertionDebt.exertionDebtNormalized
+                : nil
+        )
         Log.recovery.info(
             "recovery score=\(score.value, format: .fixed(precision: 0), privacy: .public) classification=\(score.hrvClassification.rawValue, privacy: .public) confidence=\(score.confidence.rawValue, privacy: .public)"
         )
-        return score
+        return (score, profile)
     }
 
     nonisolated static func rollingMeans(
@@ -152,5 +202,6 @@ extension DailyMetricSnapshot {
         stepCount = metric.stepCount
         appleExerciseMinutes = metric.appleExerciseMinutes
         wristTemperatureDeltaC = metric.wristTemperatureDeltaC
+        heartRateMax = metric.heartRateMax
     }
 }

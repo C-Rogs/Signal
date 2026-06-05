@@ -25,6 +25,7 @@ enum SignalModelContainer {
         DataQualityFlag.self,
         Insight.self,
         ChatFeedback.self,
+        RecoveryDisruptorEpisode.self,
     ])
 
     static func make(inMemoryOnly: Bool = false) throws -> ModelContainer {

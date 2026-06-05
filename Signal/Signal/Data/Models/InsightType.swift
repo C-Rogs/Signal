@@ -4,12 +4,15 @@ enum InsightType: String, Codable, CaseIterable, Sendable {
     case volumeBelowMEV
     case volumeAboveMRV
     case acwrOverreach
+    case acwrDeloadSuggested
     case acwrUnderloading
     case e1RMPlateau
     case hrvSuppressed
     case sleepDeficit
     case proteinGap
     case recoveryStrain
+    case recoveryDisruptorActive
+    case personalReadinessLow
     case weeklyProgressNote
 }
 

@@ -7,6 +7,12 @@ enum ReflectionRules {
         var specs: [InsightSpec] = []
         specs.append(contentsOf: volumeRules(snapshot: snapshot, calendar: calendar))
         specs.append(contentsOf: acwrRules(snapshot: snapshot, referenceDate: snapshot.referenceDate))
+        specs.append(
+            contentsOf: acwrDeloadRules(
+                snapshot: snapshot,
+                referenceDate: snapshot.referenceDate
+            )
+        )
         specs.append(contentsOf: e1RMPlateauRules(snapshot: snapshot, calendar: calendar))
         specs.append(
             contentsOf: hrvSuppressedRules(
@@ -15,21 +21,51 @@ enum ReflectionRules {
                 calendar: calendar
             )
         )
-        specs.append(
-            contentsOf: sleepDeficitRules(
-                snapshot: snapshot,
-                referenceDate: snapshot.referenceDate,
-                calendar: calendar
-            )
+
+        let disruptorSpecs = recoveryDisruptorActiveRules(
+            snapshot: snapshot,
+            referenceDate: snapshot.referenceDate,
+            calendar: calendar
         )
+        specs.append(contentsOf: disruptorSpecs)
+
+        let suppressSleepDeficit = disruptorSpecs.contains {
+            $0.type == .recoveryDisruptorActive && $0.relatedEntity == "Sleep"
+        }
+        let suppressRecoveryStrain = disruptorSpecs.contains {
+            $0.type == .recoveryDisruptorActive && $0.relatedEntity == "Illness"
+        }
+
+        if !suppressSleepDeficit {
+            specs.append(
+                contentsOf: sleepDeficitRules(
+                    snapshot: snapshot,
+                    referenceDate: snapshot.referenceDate,
+                    calendar: calendar
+                )
+            )
+        }
+
         specs.append(contentsOf: proteinGapRules(snapshot: snapshot, referenceDate: snapshot.referenceDate))
+
+        if !suppressRecoveryStrain {
+            specs.append(
+                contentsOf: recoveryStrainRules(
+                    snapshot: snapshot,
+                    referenceDate: snapshot.referenceDate,
+                    calendar: calendar
+                )
+            )
+        }
+
         specs.append(
-            contentsOf: recoveryStrainRules(
+            contentsOf: personalReadinessLowRules(
                 snapshot: snapshot,
                 referenceDate: snapshot.referenceDate,
                 calendar: calendar
             )
         )
+
         if let weekly = weeklyProgressNote(snapshot: snapshot, calendar: calendar) {
             specs.append(weekly)
         }
@@ -175,6 +211,24 @@ enum ReflectionRules {
         case .optimal, .caution:
             return []
         }
+    }
+
+    static func acwrDeloadRules(
+        snapshot: ReflectionSnapshot,
+        referenceDate: Date
+    ) -> [InsightSpec] {
+        guard snapshot.deloadSuggested else { return [] }
+        let isoWeek = snapshot.isoWeek
+        return [
+            InsightSpec(
+                dedupeKey: isoWeek.dedupeKey(type: .acwrDeloadSuggested, entity: "total"),
+                type: .acwrDeloadSuggested,
+                severity: .warning,
+                bodyText: "Load is above your recent norm. Consider a deload session: fewer working sets or RPE cap ~7.",
+                relatedEntity: "Training load",
+                expiresAt: referenceDate.addingTimeInterval(3 * 24 * 3600)
+            ),
+        ]
     }
 
     static func e1RMPlateauRules(snapshot: ReflectionSnapshot, calendar: Calendar) -> [InsightSpec] {
@@ -370,6 +424,124 @@ enum ReflectionRules {
             relatedEntity: nil,
             expiresAt: snapshot.referenceDate.addingTimeInterval(8 * 24 * 3600)
         )
+    }
+
+    static func recoveryDisruptorActiveRules(
+        snapshot: ReflectionSnapshot,
+        referenceDate: Date,
+        calendar: Calendar
+    ) -> [InsightSpec] {
+        let ref = calendar.startOfDay(for: referenceDate)
+        var specs: [InsightSpec] = []
+
+        for episode in snapshot.activeDisruptors {
+            let daysSinceStart = calendar.dateComponents(
+                [.day],
+                from: calendar.startOfDay(for: episode.startDay),
+                to: ref
+            ).day ?? 0
+            guard daysSinceStart < 3 else { continue }
+
+            let summary = ActiveDisruptorSummary(
+                kind: episode.kind,
+                source: episode.source,
+                confidence: episode.confidence,
+                daysSinceStart: daysSinceStart,
+                recoveryDebt: PersonalReadinessCalculator.recoveryDebt(
+                    daysSinceStart: daysSinceStart,
+                    halfLifeDays: PersonalReadinessCalculator.halfLifeDays(
+                        for: episode.kind,
+                        learnedAlcoholHalfLife: nil
+                    )
+                ),
+                userFacingLabel: PersonalReadinessCalculator.userFacingLabel(for: episode)
+            )
+
+            let relatedEntity: String = {
+                switch episode.kind {
+                case .sleepDebt: return "Sleep"
+                case .illnessLike: return "Illness"
+                case .alcohol: return "Alcohol"
+                case .trainingLoad: return "Training"
+                case .unknown: return "Recovery"
+                }
+            }()
+
+            specs.append(
+                InsightSpec(
+                    dedupeKey: "recoveryDisruptor.\(episode.kind.rawValue).\(snapshot.isoWeek.keySegment)",
+                    type: .recoveryDisruptorActive,
+                    severity: .warning,
+                    bodyText: disruptorInsightBody(for: summary),
+                    relatedEntity: relatedEntity,
+                    expiresAt: referenceDate.addingTimeInterval(3 * 24 * 3600)
+                )
+            )
+        }
+        return specs
+    }
+
+    static func personalReadinessLowRules(
+        snapshot: ReflectionSnapshot,
+        referenceDate: Date,
+        calendar: Calendar
+    ) -> [InsightSpec] {
+        guard let profile = snapshot.personalReadiness, profile.isCalibrated else { return [] }
+
+        let metricSnapshots = snapshot.dailyMetrics.map { sample in
+            DailyMetricSnapshot(
+                date: sample.date,
+                hrvSDNN: sample.hrvSDNN_ms,
+                restingHR: sample.restingHR,
+                activeEnergy: nil,
+                sleepHours: sample.sleepHours,
+                bodyMassKg: nil,
+                stepCount: nil,
+                appleExerciseMinutes: nil,
+                wristTemperatureDeltaC: sample.wristTemperatureDeltaC
+            )
+        }
+
+        let ref = calendar.startOfDay(for: referenceDate)
+        guard let yesterday = calendar.date(byAdding: .day, value: -1, to: ref) else { return [] }
+
+        let yesterdayScore = RecoveryScoreCalculator.compute(
+            metrics: metricSnapshots,
+            referenceDay: yesterday,
+            calendar: calendar
+        )
+
+        guard profile.todayScore <= profile.personalP25,
+              yesterdayScore.value <= profile.personalP25
+        else { return [] }
+
+        return [
+            InsightSpec(
+                dedupeKey: "personalReadinessLow.\(snapshot.isoWeek.keySegment)",
+                type: .personalReadinessLow,
+                severity: .warning,
+                bodyText: "Recovery has been below your norm for 2 days.",
+                relatedEntity: "Recovery",
+                expiresAt: referenceDate.addingTimeInterval(2 * 24 * 3600)
+            ),
+        ]
+    }
+
+    private static func disruptorInsightBody(for summary: ActiveDisruptorSummary) -> String {
+        switch summary.kind {
+        case .alcohol where summary.source == .userTag:
+            return "You tagged alcohol last night. Recovery may take a day or two to return to your norm."
+        case .alcohol:
+            return summary.userFacingLabel
+        case .trainingLoad:
+            return "Training load is elevated. Consider holding intensity until recovery debt clears."
+        case .sleepDebt:
+            return "Short sleep is stacking. Prioritise rest before adding load."
+        case .illnessLike:
+            return "Several recovery signals look strained. Ease intensity and monitor how you feel."
+        case .unknown:
+            return summary.userFacingLabel
+        }
     }
 
     private static func acwrZonePhrase(_ zone: ACWRZone) -> String {

@@ -6,6 +6,21 @@ struct CalendarEventSnapshot: Sendable, Equatable {
     let startDate: Date
     let endDate: Date
     let isAllDay: Bool
+    let notes: String?
+
+    init(
+        title: String,
+        startDate: Date,
+        endDate: Date,
+        isAllDay: Bool,
+        notes: String? = nil
+    ) {
+        self.title = title
+        self.startDate = startDate
+        self.endDate = endDate
+        self.isAllDay = isAllDay
+        self.notes = notes
+    }
 }
 
 enum CalendarAccessState: Equatable, Sendable {
@@ -100,10 +115,26 @@ enum CalendarSummaryFormatter {
         calendar: Calendar
     ) -> String {
         let window = CalendarLookahead.window(referenceDate: referenceDate, calendar: calendar)
+        return assembleSummary(
+            events: events,
+            window: window,
+            referenceDate: referenceDate,
+            calendar: calendar,
+            emptyMessage: "No calendar events in the next \(CalendarLookahead.daysAfterToday + 1) days."
+        )
+    }
+
+    static func assembleSummary(
+        events: [CalendarEventSnapshot],
+        window: DateInterval,
+        referenceDate: Date,
+        calendar: Calendar,
+        emptyMessage: String = "No calendar events in that date range."
+    ) -> String {
         let filtered = CalendarEventFilter.events(in: window, from: events)
 
         if filtered.isEmpty {
-            return "No calendar events in the next \(CalendarLookahead.daysAfterToday + 1) days."
+            return emptyMessage
         }
 
         var dayStart = window.start
@@ -121,6 +152,10 @@ enum CalendarSummaryFormatter {
             }
             guard let nextDay = calendar.date(byAdding: .day, value: 1, to: dayStart) else { break }
             dayStart = nextDay
+        }
+
+        if parts.isEmpty {
+            return emptyMessage
         }
 
         return parts.joined(separator: ". ") + "."

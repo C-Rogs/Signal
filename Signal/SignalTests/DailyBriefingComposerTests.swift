@@ -20,6 +20,7 @@ struct DailyBriefingComposerTests {
     @Test func composeUsesRecoverySummaryNotRawHRV() {
         let content = DailyBriefingComposer.compose(
             recoveryScore: sampleScore(value: 72, classification: .withinBand),
+            personalReadiness: nil,
             insight: nil,
             flags: nil
         )
@@ -40,6 +41,7 @@ struct DailyBriefingComposerTests {
         )
         let content = DailyBriefingComposer.compose(
             recoveryScore: sampleScore(value: 40, classification: .belowLowerBand),
+            personalReadiness: nil,
             insight: DailyBriefingInsightLine(
                 bodyText: "Chest volume is low this week.",
                 severity: .warning
@@ -53,6 +55,7 @@ struct DailyBriefingComposerTests {
     @Test func composeIncludesInsightWhenNoStrainFlags() {
         let content = DailyBriefingComposer.compose(
             recoveryScore: sampleScore(value: 55, classification: .withinBand),
+            personalReadiness: nil,
             insight: DailyBriefingInsightLine(
                 bodyText: "Training load is below your optimal zone.",
                 severity: .warning
@@ -77,6 +80,7 @@ struct DailyBriefingComposerTests {
         )
         let content = DailyBriefingComposer.compose(
             recoveryScore: sampleScore(value: 58, classification: .withinBand),
+            personalReadiness: nil,
             insight: DailyBriefingInsightLine(bodyText: "Volume is low.", severity: .warning),
             flags: flags
         )

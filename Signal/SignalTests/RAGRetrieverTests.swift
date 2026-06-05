@@ -14,31 +14,36 @@ final class RAGRetrieverTests: XCTestCase {
         super.tearDown()
     }
 
-    func testRecencyBoostPrefersRecentEquallySimilarNeighbor() async throws {
+    func testTemporalWindowViaRetrieverShim() async throws {
         let container = try SignalModelContainer.make(inMemoryOnly: true)
         let context = ModelContext(container)
         let store = SwiftDataVectorStore(context: context)
         let dimensions = HealthVectorDimension.embeddingGemma
         let vector = unitVector(dimensions: dimensions, axis: 0)
 
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        let recentKey = Summarizer.dayKey(for: today, calendar: calendar)
-        let oldDate = calendar.date(byAdding: .day, value: -60, to: today)!
-        let oldKey = Summarizer.dayKey(for: oldDate, calendar: calendar)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let reference = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 6, day: 5, hour: 12))
+        )
+        let inWindow = try XCTUnwrap(calendar.date(byAdding: .day, value: -2, to: reference))
+        let outOfWindow = try XCTUnwrap(calendar.date(byAdding: .day, value: -30, to: reference))
+        let inKey = Summarizer.dayKey(for: inWindow, calendar: calendar)
+        let outKey = Summarizer.dayKey(for: outOfWindow, calendar: calendar)
 
-        try store.insert(dayKey: recentKey, metricKind: "daily_summary", summaryText: "recent-doc", vector: vector)
-        try store.insert(dayKey: oldKey, metricKind: "daily_summary", summaryText: "old-doc", vector: vector)
+        try store.insert(dayKey: inKey, metricKind: "daily_summary", summaryText: "in-window-doc", vector: vector)
+        try store.insert(dayKey: outKey, metricKind: "daily_summary", summaryText: "old-doc", vector: vector)
 
         let results = try await RAGRetriever.retrieve(
-            query: "recovery sleep HRV",
-            k: 1,
-            boostDaysWithin: 30,
-            modelContainer: container
+            query: "sleep last week",
+            k: 4,
+            modelContainer: container,
+            referenceDate: reference,
+            calendar: calendar
         )
 
-        XCTAssertEqual(results.count, 1)
-        XCTAssertEqual(results.first, "recent-doc")
+        XCTAssertTrue(results.contains { $0.contains("in-window-doc") })
+        XCTAssertFalse(results.contains { $0.contains("old-doc") })
     }
 
     func testRetrieveReturnsAtMostK() async throws {

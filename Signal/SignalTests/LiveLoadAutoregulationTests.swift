@@ -25,13 +25,39 @@ final class LiveLoadAutoregulationTests: XCTestCase {
         rpe: Double,
         targetRIR: Int = 2,
         targetReps: Int? = 10,
-        reps: Int = 10
+        reps: Int = 10,
+        personalReadiness: PersonalReadinessProfile? = nil
     ) -> LiveLoadCueInput {
         LiveLoadCueInput(
             recoveryScore: recoveryScore(value: recoveryValue),
+            personalReadiness: personalReadiness,
             completedSet: workingSet(rpe: rpe, reps: reps),
             targetRIR: targetRIR,
             targetReps: targetReps
+        )
+    }
+
+    private func calibratedProfile(
+        today: Double,
+        p25: Double,
+        median: Double,
+        p75: Double,
+        recoveryDebt: Double = 0,
+        activeDisruptors: [ActiveDisruptorSummary] = []
+    ) -> PersonalReadinessProfile {
+        PersonalReadinessProfile(
+            personalMedian: median,
+            personalP25: p25,
+            personalP75: p75,
+            daysOfHistory: 30,
+            isCalibrated: true,
+            readinessDelta: today - median,
+            readinessPercentile: 50,
+            adjustedReadinessPercentile: 50,
+            exertionDebtNormalized: nil,
+            recoveryDebt: recoveryDebt,
+            activeDisruptors: activeDisruptors,
+            todayScore: today
         )
     }
 
@@ -67,6 +93,7 @@ final class LiveLoadAutoregulationTests: XCTestCase {
         let warmup = SetCueSnapshot(setIndex: 0, weightKg: 40, reps: 10, rpe: 5, isWarmup: true)
         let cueInput = LiveLoadCueInput(
             recoveryScore: recoveryScore(value: 35),
+            personalReadiness: nil,
             completedSet: warmup,
             targetRIR: 2,
             targetReps: 10
@@ -89,6 +116,72 @@ final class LiveLoadAutoregulationTests: XCTestCase {
         XCTAssertEqual(RecoveryLoadBand.band(for: recoveryScore(value: 69)), .moderate)
         XCTAssertEqual(RecoveryLoadBand.band(for: recoveryScore(value: 40)), .moderate)
         XCTAssertEqual(RecoveryLoadBand.band(for: recoveryScore(value: 39)), .low)
+    }
+
+    func testCalibratedScoreAtPersonalP75IsHighBand() {
+        let profile = PersonalReadinessProfile(
+            personalMedian: 50,
+            personalP25: 44,
+            personalP75: 55,
+            daysOfHistory: 30,
+            isCalibrated: true,
+            readinessDelta: 6,
+            readinessPercentile: 80,
+            adjustedReadinessPercentile: 80,
+            exertionDebtNormalized: nil,
+            recoveryDebt: 0,
+            activeDisruptors: [],
+            todayScore: 56
+        )
+        let context = RecoveryBandContext(score: recoveryScore(value: 56), profile: profile)
+        XCTAssertEqual(RecoveryLoadBand.band(for: context), .high)
+    }
+
+    func testCalibratedScoreBelowPersonalP25IsLowBand() {
+        let profile = calibratedProfile(today: 42, p25: 45, median: 50, p75: 55)
+        let context = RecoveryBandContext(score: recoveryScore(value: 42), profile: profile)
+        XCTAssertEqual(RecoveryLoadBand.band(for: context), .low)
+    }
+
+    func testCalibratedChipUsesPersonalNormCopy() {
+        let profile = calibratedProfile(today: 42, p25: 45, median: 50, p75: 55)
+        let context = RecoveryBandContext(score: recoveryScore(value: 42), profile: profile)
+        XCTAssertEqual(
+            LiveLoadCueEvaluator.sessionRecoveryChipTitle(for: context),
+            "Recovery below your norm"
+        )
+    }
+
+    func testCalibratedAlcoholChipPrefersRecoveringCopy() {
+        let disruptor = ActiveDisruptorSummary(
+            kind: .alcohol,
+            source: .userTag,
+            confidence: 1.0,
+            daysSinceStart: 1,
+            recoveryDebt: 0.7,
+            userFacingLabel: "Alcohol (tagged)"
+        )
+        let profile = calibratedProfile(
+            today: 42,
+            p25: 45,
+            median: 50,
+            p75: 55,
+            recoveryDebt: 0.7,
+            activeDisruptors: [disruptor]
+        )
+        let context = RecoveryBandContext(score: recoveryScore(value: 42), profile: profile)
+        XCTAssertEqual(
+            LiveLoadCueEvaluator.sessionRecoveryChipTitle(for: context),
+            "Recovering from last night"
+        )
+    }
+
+    func testCalibratedLowRecoveryHoldMessage() {
+        let profile = calibratedProfile(today: 42, p25: 45, median: 50, p75: 55)
+        let message = LiveLoadCueEvaluator.nudge(
+            for: input(recoveryValue: 42, rpe: 5, personalReadiness: profile)
+        )
+        XCTAssertEqual(message, "Recovery below your norm. Hold weight.")
     }
 
     // MARK: - Composed cue order
