@@ -114,6 +114,7 @@ extension WatchConnectivityService: WCSessionDelegate {
             )
             if activationState == .activated {
                 deliverPendingScoreIfNeeded(using: session)
+                LiveWorkoutWatchBridge.shared.retryPendingOutboundTelemetry()
             }
         }
     }
@@ -138,13 +139,35 @@ extension WatchConnectivityService: WCSessionDelegate {
             )
             if session.activationState == .activated {
                 deliverPendingScoreIfNeeded(using: session)
+                LiveWorkoutWatchBridge.shared.retryPendingOutboundTelemetry()
             }
         }
     }
 
     nonisolated func session(_ session: WCSession, didReceiveMessageData messageData: Data) {
         Task { @MainActor in
-            LiveWorkoutWatchBridge.shared.ingest(messageData: messageData)
+            ingestLiveTelemetryIfNeeded(messageData, transport: "messageData")
         }
+    }
+
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        Task { @MainActor in
+            guard let data = userInfo[LiveWorkoutTelemetryUserInfoKey.payloadData] as? Data else { return }
+            ingestLiveTelemetryIfNeeded(data, transport: "userInfo")
+        }
+    }
+
+    private func ingestLiveTelemetryIfNeeded(_ messageData: Data, transport: String) {
+        do {
+            let packet = try LiveWorkoutTelemetryPacket.decode(from: messageData)
+            guard packet.kind == .heartRateBatch else { return }
+            logger.info(
+                "live HR received via \(transport, privacy: .public) sessionKey=\(packet.sessionKey, privacy: .public)"
+            )
+        } catch {
+            logger.debug("live telemetry userInfo decode skipped: \(String(describing: error), privacy: .public)")
+            return
+        }
+        LiveWorkoutWatchBridge.shared.ingest(messageData: messageData)
     }
 }

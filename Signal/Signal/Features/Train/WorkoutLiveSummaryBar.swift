@@ -45,11 +45,7 @@ struct WorkoutLiveSummaryBar: View {
             )
             if let heartRateBPM = summary.heartRateBPM {
                 statDivider
-                statColumn(
-                    title: "HR",
-                    value: "\(heartRateBPM)",
-                    emphasize: true
-                )
+                liveHeartRateColumn(bpm: heartRateBPM)
             }
         }
     }
@@ -81,6 +77,30 @@ struct WorkoutLiveSummaryBar: View {
         Rectangle()
             .fill(Color("TextSecondary").opacity(0.25))
             .frame(width: 1, height: 36)
+    }
+
+    private func liveHeartRateColumn(bpm: Int) -> some View {
+        ZStack {
+            LiveHeartRateDecor()
+                .frame(height: 40)
+            VStack(spacing: 4) {
+                HStack(spacing: 3) {
+                    Image(systemName: LiveHeartRateIcon.liveSymbol)
+                        .font(.caption2)
+                        .symbolRenderingMode(.hierarchical)
+                    Text("BPM")
+                        .font(.caption)
+                }
+                .foregroundStyle(Color("Primary"))
+                Text("\(bpm)")
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(Color("TextPrimary"))
+                    .minimumScaleFactor(0.8)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityIdentifier("liveHeartRateColumn")
     }
 
     private func statColumn(title: String, value: String, emphasize: Bool) -> some View {

@@ -62,4 +62,45 @@ struct LiveWorkoutTelemetryTests {
         #expect(trimmed.count == 5)
         #expect(trimmed.map(\.bpm) == [104, 105, 106, 107, 108])
     }
+
+}
+
+@Suite(.serialized)
+struct LiveWorkoutOutboundQueueTests {
+    @Test func enqueuesSessionControlOnly() {
+        _ = LiveWorkoutOutboundQueue.takePending()
+
+        let start = LiveWorkoutTelemetryPacket(kind: .sessionStart, sessionKey: "session-a")
+        LiveWorkoutOutboundQueue.enqueue(start)
+        #expect(LiveWorkoutOutboundQueue.pending?.kind == .sessionStart)
+        #expect(LiveWorkoutOutboundQueue.pending?.sessionKey == "session-a")
+
+        let batch = LiveWorkoutTelemetryPacket(
+            kind: .heartRateBatch,
+            sessionKey: "session-a",
+            heartRateSamples: [LiveWorkoutHeartRateSample(bpm: 120, timestamp: Date())]
+        )
+        LiveWorkoutOutboundQueue.enqueue(batch)
+        #expect(LiveWorkoutOutboundQueue.pending?.kind == .sessionStart)
+
+        _ = LiveWorkoutOutboundQueue.takePending()
+        #expect(LiveWorkoutOutboundQueue.pending == nil)
+    }
+
+    @Test func lastWinsForSessionStop() {
+        _ = LiveWorkoutOutboundQueue.takePending()
+
+        let start = LiveWorkoutTelemetryPacket(kind: .sessionStart, sessionKey: "session-a")
+        let stop = LiveWorkoutTelemetryPacket(kind: .sessionStop, sessionKey: "session-a")
+        LiveWorkoutOutboundQueue.enqueue(start)
+        LiveWorkoutOutboundQueue.enqueue(stop)
+        #expect(LiveWorkoutOutboundQueue.pending?.kind == .sessionStop)
+        #expect(LiveWorkoutOutboundQueue.pending?.sessionKey == "session-a")
+
+        LiveWorkoutOutboundQueue.clearIfMatching(start)
+        #expect(LiveWorkoutOutboundQueue.pending?.kind == .sessionStop)
+
+        LiveWorkoutOutboundQueue.clearIfMatching(stop)
+        #expect(LiveWorkoutOutboundQueue.pending == nil)
+    }
 }

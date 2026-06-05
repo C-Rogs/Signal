@@ -76,6 +76,10 @@ struct ActiveWorkoutView: View {
             .onAppear {
                 coordinator.isViewingActiveWorkout = true
                 reloadSessionRecoveryScore()
+                watchBridge.prepareLiveSession(for: session, modelContext: modelContext)
+                Task {
+                    await watchBridge.ensureWatchWorkoutStarted(for: session, modelContext: modelContext)
+                }
             }
             .onDisappear { coordinator.isViewingActiveWorkout = false }
     }

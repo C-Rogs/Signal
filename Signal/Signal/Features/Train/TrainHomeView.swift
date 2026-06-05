@@ -253,6 +253,7 @@ struct TrainHomeView: View {
     private func startOrResumeWorkout() {
         do {
             if let session = inProgressSession {
+                watchBridge.prepareLiveSession(for: session, modelContext: modelContext)
                 Task {
                     await watchBridge.beginWatchWorkout(for: session, modelContext: modelContext)
                 }
@@ -260,6 +261,7 @@ struct TrainHomeView: View {
             } else {
                 let session = try store.startEmpty()
                 coordinator.refresh()
+                watchBridge.prepareLiveSession(for: session, modelContext: modelContext)
                 Task {
                     await watchBridge.beginWatchWorkout(for: session, modelContext: modelContext)
                 }
@@ -273,6 +275,7 @@ struct TrainHomeView: View {
     private func startRoutine(_ routine: Routine) {
         do {
             if let session = inProgressSession {
+                watchBridge.prepareLiveSession(for: session, modelContext: modelContext)
                 Task {
                     await watchBridge.beginWatchWorkout(for: session, modelContext: modelContext)
                 }
@@ -281,6 +284,7 @@ struct TrainHomeView: View {
             }
             let session = try store.start(from: routine)
             coordinator.refresh()
+            watchBridge.prepareLiveSession(for: session, modelContext: modelContext)
             Task {
                 await watchBridge.beginWatchWorkout(for: session, modelContext: modelContext)
             }

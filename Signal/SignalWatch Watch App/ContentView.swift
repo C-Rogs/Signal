@@ -24,26 +24,39 @@ struct ContentView: View {
     }
 
     private var activeWorkoutContent: some View {
-        VStack(spacing: 6) {
-            Text("Train")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            if let bpm = workoutManager.latestHeartRateBPM {
-                Text("\(bpm)")
-                    .font(.system(size: 52, weight: .bold, design: .rounded))
-                    .foregroundStyle(Color.red)
-                    .minimumScaleFactor(0.7)
-                    .lineLimit(1)
-                Text("BPM")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                ProgressView()
-                    .padding(.vertical, 8)
-                Text("Reading heart rate")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+        ZStack {
+            LiveHeartRateDecor(accent: Color("Primary"))
+                .frame(width: 110, height: 88)
+            VStack(spacing: 6) {
+                HStack(spacing: 4) {
+                    Image(systemName: LiveHeartRateIcon.liveSymbol)
+                        .font(.caption2)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(Color("Primary"))
+                    Text("Train")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if let bpm = workoutManager.latestHeartRateBPM {
+                    Text("\(bpm)")
+                        .font(.system(size: 52, weight: .bold, design: .rounded))
+                        .foregroundStyle(Color("TextPrimary"))
+                        .minimumScaleFactor(0.7)
+                        .lineLimit(1)
+                    Text("BPM")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Image(systemName: LiveHeartRateIcon.liveSymbol)
+                        .font(.title3)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(Color("Primary").opacity(0.5))
+                        .symbolEffect(.pulse, options: .repeating)
+                    Text("Reading heart rate")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
             }
         }
         .accessibilityElement(children: .combine)

@@ -31,6 +31,7 @@ struct RootView: View {
                 healthKitManager.refreshAccessState()
                 healthKitManager.syncOnForegroundIfReady()
                 WatchConnectivityService.shared.retryPendingPush()
+                LiveWorkoutWatchBridge.shared.retryPendingOutboundTelemetry()
                 runReflectionIfForegroundDue()
                 refreshDailyBriefingSchedule()
             }

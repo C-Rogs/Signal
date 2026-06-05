@@ -414,3 +414,105 @@ Ensure existing shared files remain on the extension target: `RecoveryWidgetSnap
 | Train | `TrainHomeView.swift` |
 | Notifications | `DailyBriefingComposer.swift` |
 | Tests | `CalendarContextBuilderTests.swift`, `CoachContextBuilderTests.swift`, `CoachMessageFormattingTests.swift` |
+
+---
+
+## 2026-06-05 — Watch deploy path, complication data fix, inline designs
+
+### Shipped
+
+- **Deploy checklist** in `scripts/install-watch-app.sh` header (USB iPhone, watch tunnel up, build Signal, devicectl to watch, iPhone Dashboard refresh, open SignalWatch once).
+- **Picker vs live fix:** widget timelines call `WatchPayloadCache.readPayloadHydratingFromSession()` so complications read App Group or last `WCSession.receivedApplicationContext` (picker preview still uses `.preview`; live uses real data).
+- **Utility large (accessoryInline):** Recovery supports inline; new **Recovery Battery** inline complication (battery SF Symbol + score).
+- **Body Battery** remains circular gauge only (corners / ring slots). Utility large cannot render a gauge arc in WidgetKit inline family.
+- **Watch app:** `SignalWatchApp` calls `receiver.activate()` on appear (WCSession on watch).
+
+### Gate A (agent)
+
+- `xcodebuild` Signal to iPhone **passed**.
+- `./scripts/install-watch-app.sh` **passed** (watch `com.cameronro.Signal.watchkitapp` installed).
+
+### Gate B (human)
+
+1. Xcode Devices: watch tunnel **connected** before install.
+2. iPhone Signal → Dashboard pull refresh.
+3. Open SignalWatch on wrist once.
+4. Utility face: large bottom slot → **Recovery** (score + HRV text) or **Recovery Battery** (icon + score). Corner circles → **Body Battery** for ring gauge.
+5. Confirm live complication matches Dashboard (not "Waiting for Signal") after steps 2–3.
+
+### Human Xcode
+
+- None if `RecoveryInlineComplicationWidgets.swift` syncs via widget extension folder (file system synchronized group).
+
+### Out of scope
+
+- AppIntent style picker for inline designs (separate widget kinds instead)
+- True gauge in Utility large inline slot (platform limitation)
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Scripts | `install-watch-app.sh` |
+| Shared | `WatchPayloadCache.swift`, `WatchComplicationRefresh.swift` |
+| Watch widget | `RecoveryComplicationWidget.swift`, `RecoveryGaugeComplicationView.swift`, `RecoveryInlineComplicationWidgets.swift` (new) |
+| Watch app | `SignalWatchApp.swift` |
+
+---
+
+## 2026-06-05 — V4 M1 live Train HR repair
+
+### Shipped
+
+- **iPhone pending telemetry:** `LiveWorkoutOutboundQueue` stores `sessionStart` / `sessionStop` when WCSession is not ready or watch unavailable; `retryPendingOutboundTelemetry()` flushes on activation, watch state change, and app foreground (mirrors recovery `pendingScore` pattern).
+- **Idempotent watch kickoff:** `ensureWatchWorkoutStarted` on `ActiveWorkoutView.onAppear` and from `beginWatchWorkout` (Train home still uses full handshake via `forceFullHandshake`).
+- **HK-first race:** Watch flushes buffered HR when `sessionKey` binds after `startWatchApp` or on `sessionStart` if session already running.
+- **Logging:** `live HR bpm=` promoted to **info** for Gate B Console filter `category:workout`.
+
+### Root cause (agent)
+
+1. `LiveWorkoutWatchBridge.send` logged "deferred" but **dropped** `sessionStart` when WCSession was not `.activated` (no queue; recovery had `pendingScore`).
+2. `beginWatchWorkout` only from `TrainHomeView`; banner resume and re-entering active workout skipped watch handshake.
+3. Watch `flushPendingHeartRate` required `sessionKey`; HK from `startWatchApp` could run first with `sessionKey: nil` and never flush buffered samples when `sessionStart` arrived.
+
+### Gate A (agent)
+
+- `test_sim`: `LiveWorkoutTelemetryTests` (5) + `LiveWorkoutOutboundQueueTests` (2) passed (7 total).
+- `build_device` (iPhone 16 Pro `00008140-001E34E10A01801C`) succeeded.
+- `./scripts/build-watch-sim.sh` succeeded (watch target compiles with session manager changes).
+
+### Gate B (human, paired iPhone + Watch)
+
+1. `./scripts/install-watch-app.sh`
+2. Both devices unlocked. Test **fresh start** (Train → Start Workout) and **banner resume** into active workout.
+3. Console: subsystem `com.cameronro.Signal`, `category:workout` and `category:watch`.
+4. **D2:** Within ~30 s, iPhone summary bar shows BPM; logs include `live HR bpm=` (info).
+5. **D3:** Watch shows **Train** + BPM (not recovery-only).
+6. **D8:** Finish on iPhone; watch session ends; single HK workout on phone.
+
+### Human Xcode
+
+- None. `LiveWorkoutOutboundQueue` lives in `LiveWorkoutWatchBridge.swift` (folder sync; no separate file to add to target).
+
+### Follow-up fix (2026-06-05) — "Health access not set up on watch"
+
+**Root cause:** `WatchApp-Info.plist` existed on disk but was **not** set as `INFOPLIST_FILE` on the SignalWatch Watch App target (`GENERATE_INFOPLIST_FILE` only). `WatchHealthKitAuthorization.isConfiguredForHealthKit` read empty usage strings from the built bundle.
+
+**Fix:** `INFOPLIST_FILE = "SignalWatch Watch App/WatchApp-Info.plist"` on watch Debug/Release in `project.pbxproj`. Rebuilt and reinstalled via `./scripts/install-watch-app.sh`.
+
+**After install:** Open SignalWatch on wrist; accept Health prompt when Train starts. If no prompt, delete watch app and reinstall script once.
+
+### Out of scope
+
+- V4 M2+ cues, workout complications, cloud
+- `transferUserInfo` fallback for watch `heartRateBatch` (retry only if D2 fails with both apps foreground)
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| iPhone bridge | `LiveWorkoutWatchBridge.swift` (`LiveWorkoutOutboundQueue` enum) |
+| WCSession | `WatchConnectivityService.swift`, `RootView.swift` |
+| Train UI | `ActiveWorkoutView.swift` |
+| Watch session | `WatchLiveWorkoutSessionManager.swift` |
+| Tests | `LiveWorkoutTelemetryTests.swift` |

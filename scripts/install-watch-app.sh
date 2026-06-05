@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Reliable watch deploy (tested 2026-06-05):
+# 1. iPhone on USB, watch on wrist, unlocked, tunnel connected in Xcode Devices.
+# 2. Build Signal to iPhone (embeds watch app + widget extension); this script does that.
+# 3. devicectl install to WATCH_ID (not Xcode Run on watch scheme alone).
+# 4. On iPhone: open Signal, Dashboard pull-to-refresh (pushes recovery to watch).
+# 5. On watch: open SignalWatch once (activates WCSession + complication cache).
+# 6. Add complication from face editor. Utility large slot = Recovery or Recovery Battery.
+#
+# Full phone + watch reinstall: ./scripts/reinstall-signal-device.sh
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROJECT_DIR="$ROOT/Signal"
 IPHONE_ID="${SIGNAL_IPHONE_DEVICE_ID:-3E68EF63-F6E7-555E-8A58-71D2DBAF88C9}"

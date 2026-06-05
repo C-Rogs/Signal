@@ -15,6 +15,8 @@ final class LiveWorkoutWatchBridge {
     private(set) var activeSessionKey: String?
     private(set) var isWatchWorkoutRequested = false
 
+    private var hasActiveWatchHandshake = false
+
     private let healthStore = HKHealthStore()
     private let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? SignalIdentifiers.iosApp,
@@ -24,38 +26,49 @@ final class LiveWorkoutWatchBridge {
     private init() {}
 
     func beginWatchWorkout(for session: WorkoutSession, modelContext: ModelContext) async {
-        guard session.source == WorkoutSessionSource.live, session.endTime == nil else { return }
+        await ensureWatchWorkoutStarted(for: session, modelContext: modelContext, forceFullHandshake: true)
+    }
+
+    @discardableResult
+    func prepareLiveSession(for session: WorkoutSession, modelContext: ModelContext) -> String? {
+        guard session.source == WorkoutSessionSource.live, session.endTime == nil else { return nil }
         guard HKHealthStore.isHealthDataAvailable() else {
             logger.info("live watch workout skipped HealthKit unavailable")
+            return nil
+        }
+        let sessionKey = LiveWorkoutSessionKey.ensure(on: session, in: modelContext)
+        activeSessionKey = sessionKey
+        isWatchWorkoutRequested = true
+        logger.info("live sessionKey prepared sessionKey=\(sessionKey, privacy: .public)")
+        return sessionKey
+    }
+
+    func ensureWatchWorkoutStarted(
+        for session: WorkoutSession,
+        modelContext: ModelContext,
+        forceFullHandshake: Bool = false
+    ) async {
+        guard let sessionKey = prepareLiveSession(for: session, modelContext: modelContext) else { return }
+
+        if hasActiveWatchHandshake && !forceFullHandshake {
+            retryPendingOutboundTelemetry()
+            sendSessionStart(sessionKey: sessionKey, session: session, requestWatchApp: false)
             return
         }
 
-        let sessionKey = LiveWorkoutSessionKey.ensure(on: session, in: modelContext)
-        activeSessionKey = sessionKey
-        latestHeartRateBPM = nil
-        lastHeartRateAt = nil
-        isWatchWorkoutRequested = true
-
-        let configuration = TrainWorkoutHealthKitConfiguration.make(for: session)
-        do {
-            try await healthStore.startWatchApp(toHandle: configuration)
-            logger.info(
-                "watch workout app launch requested sessionKey=\(sessionKey, privacy: .public) activity=\(configuration.activityType.rawValue, privacy: .public)"
-            )
-        } catch {
-            logger.error(
-                "watch workout app launch failed sessionKey=\(sessionKey, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
-            )
+        if forceFullHandshake || !hasActiveWatchHandshake {
+            latestHeartRateBPM = nil
+            lastHeartRateAt = nil
         }
 
-        let activityRaw = TrainWorkoutHealthKitConfiguration.activityType(for: session).rawValue
-        send(
-            packet: LiveWorkoutTelemetryPacket(
-                kind: .sessionStart,
-                sessionKey: sessionKey,
-                activityTypeRawValue: activityRaw
-            )
-        )
+        hasActiveWatchHandshake = true
+        await requestWatchAppLaunch(for: session, sessionKey: sessionKey)
+        sendSessionStart(sessionKey: sessionKey, session: session, requestWatchApp: true)
+    }
+
+    func retryPendingOutboundTelemetry() {
+        guard let packet = LiveWorkoutOutboundQueue.pending else { return }
+        send(packet: packet, isRetry: true)
     }
 
     func endWatchWorkout() {
@@ -69,8 +82,15 @@ final class LiveWorkoutWatchBridge {
         do {
             let packet = try LiveWorkoutTelemetryPacket.decode(from: messageData)
             guard packet.kind == .heartRateBatch else { return }
+            if activeSessionKey == nil {
+                activeSessionKey = packet.sessionKey
+                isWatchWorkoutRequested = true
+                logger.info(
+                    "live HR adopted sessionKey from watch sessionKey=\(packet.sessionKey, privacy: .public)"
+                )
+            }
             guard packet.sessionKey == activeSessionKey else {
-                logger.debug(
+                logger.info(
                     "live HR ignored stale sessionKey=\(packet.sessionKey, privacy: .public) active=\(self.activeSessionKey ?? "none", privacy: .public)"
                 )
                 return
@@ -79,7 +99,7 @@ final class LiveWorkoutWatchBridge {
             guard let bpm = LiveWorkoutTelemetryThrottle.coalescedBPM(from: samples) else { return }
             latestHeartRateBPM = bpm
             lastHeartRateAt = samples.last?.timestamp ?? packet.timestamp
-            logger.debug(
+            logger.info(
                 "live HR bpm=\(bpm, privacy: .public) samples=\(samples.count, privacy: .public)"
             )
         } catch {
@@ -87,30 +107,76 @@ final class LiveWorkoutWatchBridge {
         }
     }
 
-    private func send(packet: LiveWorkoutTelemetryPacket) {
+    private func requestWatchAppLaunch(for session: WorkoutSession, sessionKey: String) async {
+        let configuration = TrainWorkoutHealthKitConfiguration.make(for: session)
+        do {
+            try await healthStore.startWatchApp(toHandle: configuration)
+            logger.info(
+                "watch workout app launch requested sessionKey=\(sessionKey, privacy: .public) activity=\(configuration.activityType.rawValue, privacy: .public)"
+            )
+        } catch {
+            logger.error(
+                "watch workout app launch failed sessionKey=\(sessionKey, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+
+    private func sendSessionStart(sessionKey: String, session: WorkoutSession, requestWatchApp: Bool) {
+        if requestWatchApp {
+            logger.info(
+                "live sessionStart sending after watch launch sessionKey=\(sessionKey, privacy: .public)"
+            )
+        } else {
+            logger.info(
+                "live sessionStart re-sent sessionKey=\(sessionKey, privacy: .public)"
+            )
+        }
+        let activityRaw = TrainWorkoutHealthKitConfiguration.activityType(for: session).rawValue
+        send(
+            packet: LiveWorkoutTelemetryPacket(
+                kind: .sessionStart,
+                sessionKey: sessionKey,
+                activityTypeRawValue: activityRaw
+            )
+        )
+    }
+
+    private func send(packet: LiveWorkoutTelemetryPacket, isRetry: Bool = false) {
         guard WCSession.isSupported() else { return }
-        let session = WCSession.default
-        guard session.activationState == .activated else {
-            logger.info("live telemetry deferred until WCSession activates")
+        let wcSession = WCSession.default
+
+        guard wcSession.activationState == .activated else {
+            LiveWorkoutOutboundQueue.enqueue(packet)
+            logger.info(
+                "live telemetry queued until WCSession activates kind=\(packet.kind.rawValue, privacy: .public) sessionKey=\(packet.sessionKey, privacy: .public)"
+            )
             return
         }
-        guard session.isPaired, session.isWatchAppInstalled else {
-            logger.info("live telemetry skipped watch unavailable")
+        guard wcSession.isPaired, wcSession.isWatchAppInstalled else {
+            LiveWorkoutOutboundQueue.enqueue(packet)
+            logger.info(
+                "live telemetry queued until watch available kind=\(packet.kind.rawValue, privacy: .public) sessionKey=\(packet.sessionKey, privacy: .public)"
+            )
             return
         }
 
         do {
             let data = try packet.encode()
-            if session.isReachable {
-                session.sendMessageData(data, replyHandler: nil) { [logger] error in
+            if wcSession.isReachable {
+                wcSession.sendMessageData(data, replyHandler: nil) { [logger] error in
                     logger.error(
                         "live telemetry send failed kind=\(packet.kind.rawValue, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
                     )
                 }
-            } else if packet.kind == .sessionStart || packet.kind == .sessionStop {
-                session.transferUserInfo([LiveWorkoutTelemetryUserInfoKey.payloadData: data])
+                LiveWorkoutOutboundQueue.clearIfMatching(packet)
                 logger.info(
-                    "live telemetry queued via userInfo kind=\(packet.kind.rawValue, privacy: .public)"
+                    "live telemetry sent kind=\(packet.kind.rawValue, privacy: .public) sessionKey=\(packet.sessionKey, privacy: .public) retry=\(isRetry, privacy: .public)"
+                )
+            } else if packet.kind == .sessionStart || packet.kind == .sessionStop {
+                wcSession.transferUserInfo([LiveWorkoutTelemetryUserInfoKey.payloadData: data])
+                LiveWorkoutOutboundQueue.clearIfMatching(packet)
+                logger.info(
+                    "live telemetry queued via userInfo kind=\(packet.kind.rawValue, privacy: .public) sessionKey=\(packet.sessionKey, privacy: .public) retry=\(isRetry, privacy: .public)"
                 )
             } else {
                 logger.info(
@@ -123,10 +189,31 @@ final class LiveWorkoutWatchBridge {
     }
 
     private func resetStreamingState() {
+        _ = LiveWorkoutOutboundQueue.takePending()
         activeSessionKey = nil
         isWatchWorkoutRequested = false
+        hasActiveWatchHandshake = false
         latestHeartRateBPM = nil
         lastHeartRateAt = nil
+    }
+}
+
+enum LiveWorkoutOutboundQueue {
+    private(set) static var pending: LiveWorkoutTelemetryPacket?
+
+    static func enqueue(_ packet: LiveWorkoutTelemetryPacket) {
+        guard packet.kind == .sessionStart || packet.kind == .sessionStop else { return }
+        pending = packet
+    }
+
+    static func clearIfMatching(_ packet: LiveWorkoutTelemetryPacket) {
+        guard pending == packet else { return }
+        pending = nil
+    }
+
+    static func takePending() -> LiveWorkoutTelemetryPacket? {
+        defer { pending = nil }
+        return pending
     }
 }
 

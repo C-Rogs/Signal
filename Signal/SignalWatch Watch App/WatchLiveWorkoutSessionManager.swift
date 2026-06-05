@@ -33,7 +33,11 @@ final class WatchLiveWorkoutSessionManager: NSObject {
         if let sessionKey {
             self.sessionKey = sessionKey
         }
+        let wasActive = session != nil
         await start(configuration: configuration)
+        if wasActive, self.sessionKey != nil {
+            flushPendingHeartRate(force: true)
+        }
     }
 
     func handleCommand(_ packet: LiveWorkoutTelemetryPacket) async {
@@ -46,6 +50,9 @@ final class WatchLiveWorkoutSessionManager: NSObject {
                     activityTypeRawValue: packet.activityTypeRawValue
                 )
                 await start(configuration: configuration)
+                flushPendingHeartRate(force: true)
+            } else {
+                flushPendingHeartRate(force: true)
             }
         case .sessionStop:
             guard packet.sessionKey == sessionKey else { return }
@@ -179,6 +186,9 @@ final class WatchLiveWorkoutSessionManager: NSObject {
         )
         send(packet: packet)
         lastSentAt = now
+        logger.info(
+            "live HR batch sent sessionKey=\(sessionKey, privacy: .public) samples=\(batch.count, privacy: .public)"
+        )
     }
 
     private func send(packet: LiveWorkoutTelemetryPacket) {
@@ -194,8 +204,12 @@ final class WatchLiveWorkoutSessionManager: NSObject {
                         "live HR send failed error=\(error.localizedDescription, privacy: .public)"
                     )
                 }
+                logger.info("live HR sent via messageData sessionKey=\(packet.sessionKey, privacy: .public)")
             } else if packet.kind == .heartRateBatch {
-                logger.debug("live HR send skipped watch session not reachable")
+                wcSession.transferUserInfo([LiveWorkoutTelemetryUserInfoKey.payloadData: data])
+                logger.info(
+                    "live HR queued via userInfo sessionKey=\(packet.sessionKey, privacy: .public)"
+                )
             }
         } catch {
             logger.error("live HR encode failed: \(String(describing: error), privacy: .public)")
