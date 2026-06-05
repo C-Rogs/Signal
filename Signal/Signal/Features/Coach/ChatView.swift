@@ -73,7 +73,10 @@ struct ChatView: View {
                     }
 
                     if !viewModel.streamingText.isEmpty {
-                        ChatAssistantBubble(text: viewModel.streamingText)
+                        ChatAssistantBubble(
+                            text: viewModel.streamingText,
+                            renderMarkdown: false
+                        )
                     }
 
                     Color.clear
@@ -130,7 +133,7 @@ struct ChatView: View {
     }
 
     private var thinkingBubble: some View {
-        ChatAssistantBubble(text: "Thinking...")
+        ChatAssistantBubble(text: "Thinking...", renderMarkdown: false)
             .opacity(thinkingPulse ? 0.45 : 1)
     }
 
@@ -254,20 +257,25 @@ private struct ChatUserBubble: View {
 
 private struct ChatAssistantBubble: View {
     let text: String
+    var renderMarkdown = true
 
     var body: some View {
-        Text(displayText)
-            .font(.body)
-            .foregroundStyle(Color("TextPrimary"))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(Color("Surface"))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var displayText: AttributedString {
-        CoachMessageFormatting.attributedMarkdown(text)
+        Group {
+            if renderMarkdown {
+                Text(CoachMessageFormatting.attributedMarkdown(text))
+                    .foregroundStyle(Color("TextPrimary"))
+                    .textSelection(.enabled)
+            } else {
+                Text(CoachMessageFormatting.plainStreamingText(text))
+                    .font(.body)
+                    .foregroundStyle(Color("TextPrimary"))
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Color("Surface"))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

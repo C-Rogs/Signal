@@ -2,10 +2,57 @@ import XCTest
 @testable import Signal
 
 final class CoachMessageFormattingTests: XCTestCase {
-    func testHeadingMarkdownRenders() {
-        let rendered = CoachMessageFormatting.attributedMarkdown("### Tomorrow\n\nOne event at 2pm.")
+    func testHeadingMarkdownRendersWithoutHashMarkers() {
+        let source = "### Tomorrow\n\nOne event at 2pm."
+        let rendered = CoachMessageFormatting.attributedMarkdown(source)
         let plain = String(rendered.characters)
+
         XCTAssertTrue(plain.contains("Tomorrow"))
         XCTAssertTrue(plain.contains("One event at 2pm."))
+        XCTAssertFalse(plain.contains("###"))
+        XCTAssertEqual(CoachMessageFormatting.headerLevel(for: "Tomorrow", in: rendered), 3)
+    }
+
+    func testBoldNumbersRetainEmphasis() {
+        let source = "Squat e1RM is **140 kg** today."
+        let rendered = CoachMessageFormatting.attributedMarkdown(source)
+
+        XCTAssertTrue(CoachMessageFormatting.hasStrongEmphasis(for: "140 kg", in: rendered))
+        XCTAssertFalse(String(rendered.characters).contains("**"))
+    }
+
+    func testBulletListRendersItems() {
+        let source = """
+        ### Recovery
+        - Sleep: 7.2 h
+        - HRV: 62 ms
+        """
+        let rendered = CoachMessageFormatting.attributedMarkdown(source)
+        let plain = String(rendered.characters)
+
+        XCTAssertTrue(plain.contains("Sleep: 7.2 h"))
+        XCTAssertTrue(plain.contains("HRV: 62 ms"))
+        XCTAssertTrue(CoachMessageFormatting.containsListItem(for: "Sleep: 7.2 h", in: rendered))
+        XCTAssertTrue(CoachMessageFormatting.containsListItem(for: "HRV: 62 ms", in: rendered))
+    }
+
+    func testNumberedListRendersItems() {
+        let source = "1. Warm up\n2. Working sets"
+        let rendered = CoachMessageFormatting.attributedMarkdown(source)
+        let plain = String(rendered.characters)
+
+        XCTAssertTrue(plain.contains("Warm up"))
+        XCTAssertTrue(plain.contains("Working sets"))
+        XCTAssertTrue(CoachMessageFormatting.containsListItem(for: "Warm up", in: rendered))
+    }
+
+    func testInlineCodeUsesMonospace() {
+        let source = "Use `RPE 8` on the top set."
+        let rendered = CoachMessageFormatting.attributedMarkdown(source)
+        let plain = String(rendered.characters)
+
+        XCTAssertTrue(plain.contains("RPE 8"))
+        XCTAssertFalse(plain.contains("`"))
+        XCTAssertTrue(CoachMessageFormatting.hasInlineCode(for: "RPE 8", in: rendered))
     }
 }
