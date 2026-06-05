@@ -73,9 +73,10 @@ enum ExerciseCatalogSeeder {
             extraAliases.append(contentsOf: CatalogAliasGenerator.simplifiedHevyAliases(from: hevy))
         }
         extraAliases.append(contentsOf: pluralVariants(of: record.name))
-        if record.name == "Side Lateral Raise" {
-            extraAliases.append("Lateral Raise (Dumbbell)")
-        }
+        extraAliases.append(contentsOf: CatalogAliasGenerator.geminiStyleAliases(
+            canonicalName: record.name,
+            equipment: equipment
+        ))
         return MappedRecord(
             canonicalName: record.name,
             extraAliases: extraAliases,

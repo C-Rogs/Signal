@@ -34,6 +34,15 @@ struct CatalogMatchReport: Sendable {
 
 @MainActor
 enum CatalogMatchReporter {
+    static let geminiImportSampleTitles: [String] = [
+        "Wide-Grip Lat Pulldown (Upper Lat Flush)",
+        "Dumbbell Bicep Curl",
+        "Machine Chest Press (Supported Pectoral Drive)",
+        "Dumbbell Lateral Raise",
+        "Cable Triceps Extension",
+        "Lat Pulldown",
+    ]
+
     static func buildReport(for titles: [String], catalog: [ExerciseCatalog]) -> CatalogMatchReport {
         let unique = Array(Set(titles.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }))
             .filter { !$0.isEmpty }

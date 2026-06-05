@@ -16,8 +16,74 @@ enum CatalogAliasGenerator {
         let compactPullUpAliases = pullUpAliases(canonicalName: entry.canonicalName)
         result.append(contentsOf: compactPullUpAliases.map(ExerciseTitleNormalizer.normalize))
 
+        result.append(contentsOf: geminiStyleAliases(
+            canonicalName: entry.canonicalName,
+            equipment: entry.equipment
+        ).map(ExerciseTitleNormalizer.normalize))
+
         var seen = Set<String>()
         return result.filter { seen.insert($0).inserted && !$0.isEmpty }
+    }
+
+    static func geminiStyleAliases(canonicalName: String, equipment: ExerciseEquipment) -> [String] {
+        var aliases: [String] = []
+        let canonicalLower = canonicalName.lowercased()
+
+        if canonicalLower == "side lateral raise" {
+            aliases.append(contentsOf: [
+                "Dumbbell Lateral Raise",
+                "Lateral Raise (Dumbbell)",
+                "DB Lateral Raise",
+            ])
+        }
+        if canonicalLower == "machine bench press" || canonicalLower == "leverage chest press" {
+            aliases.append(contentsOf: [
+                "Machine Chest Press",
+                "Chest Press (Machine)",
+                "Press Machine",
+            ])
+        }
+        if canonicalLower == "triceps pushdown"
+            || canonicalLower == "low cable triceps extension"
+            || canonicalLower == "cable one arm tricep extension" {
+            aliases.append(contentsOf: [
+                "Cable Triceps Extension",
+                "Cable Tricep Extension",
+                "Cable Triceps Pushdown",
+                "Triceps Extension (Cable)",
+            ])
+        }
+        if canonicalLower == "dumbbell bicep curl" {
+            aliases.append(contentsOf: [
+                "Dumbbell Biceps Curl",
+                "DB Bicep Curl",
+                "Bicep Curl (Dumbbell)",
+            ])
+        }
+        if canonicalLower.contains("lat pulldown") {
+            aliases.append(contentsOf: [
+                "Lat Pulldown",
+                "Lat Pulldown (Wide Grip)",
+                "Wide Grip Lat Pulldown",
+                "Wide-Grip Lat Pulldown",
+            ])
+        }
+
+        if let hevyStyle = hevyStyleTitle(canonicalName: canonicalName, equipment: equipment) {
+            let display = ExerciseEquipmentMapper.hevyDisplayName(for: equipment)
+            let base = canonicalName
+            let prefixes = ["Barbell ", "Dumbbell ", "Cable ", "Machine ", "Kettlebell ", "Band ", "Smith Machine "]
+            var stripped = base
+            for prefix in prefixes where stripped.hasPrefix(prefix) {
+                stripped = String(stripped.dropFirst(prefix.count))
+                break
+            }
+            if !stripped.isEmpty {
+                aliases.append("\(display) \(stripped)")
+            }
+        }
+
+        return aliases
     }
 
     static func hevyStyleTitle(canonicalName: String, equipment: ExerciseEquipment) -> String? {

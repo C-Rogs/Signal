@@ -103,6 +103,48 @@ struct ExerciseCatalogTests {
         #expect(exercise.catalogMatch == .unmatched)
     }
 
+    @Test func geminiImportStapleTitlesMatchCatalog() throws {
+        let container = try seededContainer()
+        let catalog = try fetchCatalog(in: container)
+        let index = ExerciseCatalogMatcher.buildAliasIndex(catalog: catalog)
+
+        let sampleTitles = CatalogMatchReporter.geminiImportSampleTitles
+        for title in sampleTitles {
+            let matchTitle = ParsedWorkoutTitle.catalogMatchTitle(from: title)
+            let result = ExerciseCatalogMatcher.match(
+                importedTitle: matchTitle,
+                catalog: catalog,
+                aliasIndex: index
+            )
+            #expect(result.entry != nil, "Expected catalog entry for \(title)")
+            #expect(result.flag != .unmatched, "Expected match or review for \(title)")
+            #expect(result.confidence >= 0.7, "Expected confidence >= 0.7 for \(title)")
+        }
+
+        let lateral = ExerciseCatalogMatcher.match(
+            importedTitle: "Dumbbell Lateral Raise",
+            catalog: catalog,
+            aliasIndex: index
+        )
+        #expect(lateral.entry?.canonicalName.lowercased().contains("lateral raise") == true)
+
+        let chestPress = ExerciseCatalogMatcher.match(
+            importedTitle: "Machine Chest Press",
+            catalog: catalog,
+            aliasIndex: index
+        )
+        #expect(chestPress.entry?.equipment == .machine)
+        #expect(chestPress.entry?.primaryMuscles.contains(.chest) == true)
+
+        let triceps = ExerciseCatalogMatcher.match(
+            importedTitle: "Cable Triceps Extension",
+            catalog: catalog,
+            aliasIndex: index
+        )
+        #expect(triceps.entry?.equipment == .cable)
+        #expect(triceps.entry?.primaryMuscles.contains(.triceps) == true)
+    }
+
     @Test func hevyFixtureMatchReportCoversDistinctTitles() throws {
         let container = try seededContainer()
         let context = ModelContext(container)
