@@ -15,13 +15,14 @@ struct MainTabView: View {
     @Environment(HealthKitManager.self) private var healthKitManager
     @Environment(LiveWorkoutCoordinator.self) private var coordinator
     @State private var selectedTab: AppTab = .dashboard
+    @State private var isLaunchShellReady = false
 
     private var showsWorkoutBanner: Bool {
         coordinator.activeSession != nil && !coordinator.isViewingActiveWorkout
     }
 
-    private var tabBottomAccessoryEnabled: Bool {
-        showsWorkoutBanner && scenePhase == .active
+    private var tabBottomAccessoryVisible: Bool {
+        isLaunchShellReady && showsWorkoutBanner && scenePhase == .active
     }
 
     var body: some View {
@@ -33,10 +34,15 @@ struct MainTabView: View {
             }
             .onAppear {
                 coordinator.configure(modelContext: modelContext)
+                guard !isLaunchShellReady else { return }
+                Task { @MainActor in
+                    await Task.yield()
+                    isLaunchShellReady = true
+                }
             }
             .onChange(of: scenePhase) { _, phase in
                 TrainWorkoutDiagnostics.record(
-                    "mainTab scenePhase=\(phase) viewingWorkout=\(coordinator.isViewingActiveWorkout) banner=\(showsWorkoutBanner) accessory=\(tabBottomAccessoryEnabled)"
+                    "mainTab scenePhase=\(phase) viewingWorkout=\(coordinator.isViewingActiveWorkout) banner=\(showsWorkoutBanner) accessoryVisible=\(tabBottomAccessoryVisible)"
                 )
                 if phase == .active {
                     coordinator.configure(modelContext: modelContext)
@@ -78,13 +84,18 @@ struct MainTabView: View {
     @ViewBuilder
     private var tabShell: some View {
         let tabs = tabViewCore
-        if #available(iOS 26.1, *) {
-            tabs.tabViewBottomAccessory(isEnabled: tabBottomAccessoryEnabled) {
-                LiveWorkoutBanner(selectedTab: $selectedTab)
-            }
-        } else if tabBottomAccessoryEnabled {
-            tabs.tabViewBottomAccessory {
-                LiveWorkoutBanner(selectedTab: $selectedTab)
+        if isLaunchShellReady, showsWorkoutBanner {
+            if #available(iOS 26.1, *) {
+                tabs.tabViewBottomAccessory(isEnabled: tabBottomAccessoryVisible) {
+                    LiveWorkoutBanner(selectedTab: $selectedTab)
+                }
+            } else {
+                tabs.tabViewBottomAccessory {
+                    LiveWorkoutBanner(selectedTab: $selectedTab)
+                        .opacity(tabBottomAccessoryVisible ? 1 : 0)
+                        .allowsHitTesting(tabBottomAccessoryVisible)
+                        .accessibilityHidden(!tabBottomAccessoryVisible)
+                }
             }
         } else {
             tabs

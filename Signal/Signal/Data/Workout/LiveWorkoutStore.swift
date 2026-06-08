@@ -87,18 +87,32 @@ final class LiveWorkoutStore {
         )
         context.insert(session)
 
+        let templateStore = RoutineTemplateStore(context: context)
         let slots = routine.exercises.sorted { $0.order < $1.order }
+        var presetSetCount = 0
         for (index, slot) in slots.enumerated() {
             let catalog = slot.catalogEntry
             let title = catalog?.canonicalName ?? slot.exerciseTitleFallback ?? "Exercise"
-            _ = try addExercise(
+            let templates = slot.presetSets.isEmpty
+                ? nil
+                : templateStore.presetTemplates(for: slot)
+            let exercise = try addExercise(
                 to: session,
                 catalogEntry: catalog,
                 exerciseTitle: title,
-                order: index
+                order: index,
+                presetSets: templates,
+                restDurationSeconds: slot.presetSets.isEmpty ? nil : slot.restDurationSeconds
             )
+            if !slot.presetSets.isEmpty {
+                exercise.autoStartRestOnSetComplete = slot.autoStartRestOnSetComplete
+                presetSetCount += slot.presetSetCount
+            }
         }
         try save("startRoutine")
+        Log.workout.info(
+            "started workout from routine exercises=\(slots.count, privacy: .public) presetSets=\(presetSetCount, privacy: .public) title=\(routine.name, privacy: .public)"
+        )
         return session
     }
 

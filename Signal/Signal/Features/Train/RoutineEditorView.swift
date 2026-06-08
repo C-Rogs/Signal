@@ -36,7 +36,11 @@ struct RoutineEditorView: View {
                             .foregroundStyle(.secondary)
                     }
                     ForEach(slots, id: \.persistentModelID) { slot in
-                        Text(slot.catalogEntry?.canonicalName ?? slot.exerciseTitleFallback ?? "Exercise")
+                        NavigationLink {
+                            RoutineExerciseEditorView(slot: slot)
+                        } label: {
+                            exerciseRowLabel(slot)
+                        }
                     }
                     .onDelete(perform: deleteSlots)
                     .onMove(perform: moveSlots)
@@ -46,6 +50,7 @@ struct RoutineEditorView: View {
                     } label: {
                         Label("Add exercise", systemImage: "plus")
                     }
+                    .frame(minHeight: 44)
                 }
 
                 if let errorMessage {
@@ -77,8 +82,21 @@ struct RoutineEditorView: View {
         }
     }
 
+    @ViewBuilder
+    private func exerciseRowLabel(_ slot: RoutineExercise) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(slot.catalogEntry?.canonicalName ?? slot.exerciseTitleFallback ?? "Exercise")
+                .font(.body)
+            if slot.hasPresets {
+                Text("\(slot.presetSetCount) sets · \(slot.restDurationSeconds)s rest")
+                    .font(.metadataCaption)
+                    .foregroundStyle(Color("TextSecondary"))
+            }
+        }
+    }
+
     private var screenBackground: Color {
-        colorScheme == .dark ? .black : Color("Background")
+        TrainChrome.screenBackground(colorScheme: colorScheme)
     }
 
     private func ensureRoutine() -> Routine {
@@ -116,7 +134,7 @@ struct RoutineEditorView: View {
     }
 
     private func moveSlots(from source: IndexSet, to destination: Int) {
-        guard let workingRoutine else { return }
+        guard workingRoutine != nil else { return }
         var ordered = slots
         ordered.move(fromOffsets: source, toOffset: destination)
         for (index, slot) in ordered.enumerated() {

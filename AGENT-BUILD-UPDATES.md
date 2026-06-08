@@ -1848,3 +1848,193 @@ Add to **Signal** target if not auto-synced:
 | Tabs | `MainTabView.swift` |
 | Workout UI | `ActiveWorkoutView.swift` |
 | Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-05 — P0 Train blank screen follow-up (stale nav + silent dismiss)
+
+### Shipped
+
+- Log2: `disappear presented=false` without `minimizeWorkout` means `resetTrainNavigation` ran. `banner=false` afterward means no live session (finished/discarded), not minimized.
+- Stale `TrainRoute.activeWorkout` pushed `EmptyView()` on Train nav stack (blank tab with no workout). Replaced with `StaleActiveWorkoutRouteView`.
+- Container resolve failure no longer silently dismisses overlay; shows Retry.
+- All dismiss paths log reason: `minimizeWorkout`, `resetTrainNavigation finishWorkout`, etc.
+- Foreground refresh only after `workoutViewDisappearedWhilePresented`.
+
+### Gate A (agent)
+
+- `build_run_device` iPhone 16 Pro: **pass** (~19s).
+
+### Gate B (human)
+
+1. Train tab with no workout: never blank pushed screen.
+2. Minimize/continue cycle shows Train home, not empty nav.
+3. Dismiss events in log always include a reason string.
+
+### Human Xcode
+
+- `StaleActiveWorkoutRouteView.swift` if not auto-synced.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Coordinator | `LiveWorkoutCoordinator.swift` |
+| Stale route | `StaleActiveWorkoutRouteView.swift`, `TrainHomeView.swift` |
+| Container / shell / workout | `ActiveWorkoutContainerView.swift`, `ActiveWorkoutShell.swift`, `ActiveWorkoutView.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-06 — Train M2 routine templates with prescribed sets
+
+### Shipped
+
+- `RoutinePresetSet` SwiftData model mirrors `SetAutofillTemplate` (weight, reps, warmup, RPE, rest, prescription note).
+- `RoutineExercise` extended with `restDurationSeconds`, `autoStartRestOnSetComplete`, `presetSets` relationship.
+- `RoutineTemplateStore`: `createRoutine(name:from:)`, `presetTemplates(for:)`, `totalPresetSetCount(for:)`.
+- `LiveWorkoutStore.start(from:)` uses routine presets when present; empty presets keep last-session autofill.
+- `RoutineExerciseEditorView`: per-exercise sheet for rest + set editing (add/delete/reindex).
+- `RoutineEditorView`: navigation to exercise editor, set count subtitle on rows.
+- Gemini import preview: **Save as Routine** secondary CTA (name prompt, haptic, dismiss without starting workout).
+- `TrainHomeView` routine rows show `N exercises · M sets` when presets exist.
+
+### Gate A (agent)
+
+- `build_device` iPhone 16 Pro `00008140-001E34E10A01801C`: **pass** (~18s).
+- `install_app_device` + `launch_app_device`: **pass** (PID 9658).
+- `RoutineTemplateStoreTests` (4 tests via `test_sim`): **pass**.
+
+### Gate B (human)
+
+- Agent verified build/install/launch on device.
+- Human spot checks: paste Gemini sample → Save as Routine → start routine with prefilled sets; edit routine add set → start reflects change; P0 app switcher + keyboard resume on active workout from routine.
+
+### Human Xcode
+
+- Empty (synchronized root groups auto-include new Swift files; `RoutinePresetSet` registered in `ModelContainer+Signal.swift`).
+
+### Out of scope
+
+- Finished workout → routine, Coach integration, backup/export of routines, watch changes, P0 stability policy edits.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Models | `RoutinePresetSet.swift` (new), `Routine.swift` |
+| Schema | `ModelContainer+Signal.swift` |
+| Store | `RoutineTemplateStore.swift` (new), `LiveWorkoutStore.swift` |
+| Editor | `RoutineExerciseEditorView.swift` (new), `RoutineEditorView.swift` |
+| Import | `GeminiWorkoutImportPreviewView.swift`, `GeminiWorkoutImportView.swift` |
+| Home | `TrainHomeView.swift` |
+| Tests | `RoutineTemplateStoreTests.swift` (new) |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-08 — P0 Train blank screen (Notification Centre + inactive return)
+
+### Shipped
+
+- Restored `SetRowView` keyboard policy: release `@FocusState` on `.background` only via `TrainScenePhaseKeyboardPolicy` (regression from overlay commit removed this handler).
+- `LiveWorkoutCoordinator.handleRootScenePhaseChange`: remount workout surface on return to `.active` from `.inactive` or `.background`, plus `onDisappear` flag; logs `refreshWorkoutSurface reason=inactiveReturn|backgroundReturn|disappear|blankBodyDetected`.
+- `ActiveWorkoutView.detectAndRecoverBlankBodyIfNeeded`: safety net when session has exercises but rendered list is empty.
+- `MainTabView`: keep `tabViewBottomAccessory` branch stable when minimized workout banner applies; hide banner on `.inactive` via `isEnabled` / zero-height placeholder instead of removing accessory slot.
+- Unit tests: `LiveWorkoutCoordinatorScenePhaseTests` (6 cases) + existing `TrainScenePhaseKeyboardPolicyTests`.
+
+### Gate A (agent)
+
+- `test_sim` `LiveWorkoutCoordinatorScenePhaseTests` + `TrainScenePhaseKeyboardPolicyTests`: **pass** (8/8, ~69s).
+- `build_device` iPhone 16 Pro `00008140-001E34E10A01801C`: **pass** (~13s).
+- `launch_app_device`: **pass** (PID 20859).
+
+### Gate B (human, physical iPhone 16 Pro)
+
+1. Active workout 15+ min with numpad use → pull Notification Centre ×5 → exercises visible each return.
+2. App switcher ×3 and lock/unlock with numpad open: no blank body.
+3. Profile → copy workout debug log: expect `refreshWorkoutSurface reason=inactiveReturn` after Notification Centre; `setRow releaseFocus` only on background.
+
+### Human Xcode
+
+- Empty if synchronized root groups picked up `LiveWorkoutCoordinatorScenePhaseTests.swift`.
+
+### Out of scope
+
+- Coach/Dashboard blank screens; launch-after-background crash noted in prior handover.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Keyboard | `SetRowView.swift` |
+| Coordinator | `LiveWorkoutCoordinator.swift` |
+| Root lifecycle | `RootView.swift` |
+| Active workout | `ActiveWorkoutView.swift` |
+| Tabs | `MainTabView.swift` |
+| Tests | `LiveWorkoutCoordinatorScenePhaseTests.swift` (new) |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-08 — Production launch path (persisted store + upgrade install)
+
+### Shipped
+
+- **False positive:** Prior launch pass was after app delete (empty SwiftData). Upgrade install over existing data still hit scene-create watchdog.
+- **Async store bootstrap:** `SignalApp` shows `AppLaunchShellView` on first frame, then loads `ModelContainer` in `.task` after scene exists. Preserved data survives; no `fatalError` on load failure (retry UI via `AppLaunchFailureView`).
+- **Removed `tabViewBottomAccessory`:** Live workout banner uses `safeAreaInset` on all OS versions. Banner attaches only after `isLaunchShellReady` (post-first-frame) and when an active session exists.
+- **Deferred data-quality migration:** `DataQualityMigration.scheduleIfNeeded` runs after yield, not during store open.
+
+### Gate A (agent)
+
+- `build_device` iPhone 16 Pro: **pass** (~11s).
+- `install_app_device` over existing install (no delete): **pass**.
+- `launch_app_device`: **pass** (PID 20965; alive and interactive after 28s; no watchdog).
+- `test_sim` scene-phase tests: **pass** (8/8).
+
+### Gate B (human)
+
+- Cold launch with real workout history + optional in-progress session: dashboard or embedding gate, not immediate kill.
+- Start workout, minimize, confirm banner above tab bar still works.
+
+### Human Xcode
+
+- Empty if synchronized groups picked up `AppLaunchShellView.swift`, `AppLaunchFailureView.swift`.
+
+### Out of scope
+
+- Explicit `SchemaMigrationPlan` for `RoutinePresetSet` (SwiftData lightweight migration only).
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Bootstrap | `SignalApp.swift`, `AppLaunchShellView.swift` (new), `AppLaunchFailureView.swift` (new) |
+| Tabs / banner | `MainTabView.swift` |
+| Migration | `DataQualityMigration.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+
+### Shipped
+
+- **Root cause:** On iOS 26.1+, `MainTabView` always attached `tabViewBottomAccessory(isEnabled:)` even when no live workout banner was needed. Scene creation blocked the main thread ~20s; SpringBoard killed the process with `0x8BADF00D` (`scene-create watchdog transgression`). Reproduced on committed HEAD, not only blank-screen WIP.
+- **Fix:** Only wrap `TabView` with `tabViewBottomAccessory` when `showsWorkoutBanner` is true (iOS 26.1+ matches pre-26.1 gating). When a banner is shown, still freeze visibility on `.inactive` via `isEnabled: tabBottomAccessoryVisible`.
+
+### Gate A (agent)
+
+- `build_device` iPhone 16 Pro `00008140-001E34E10A01801C`: **pass** (~12s).
+- `install_app_device` + `launch_app_device`: **pass** (PID 20951; process still alive after 60s+; no watchdog in syslog).
+- Prior launches (pre-fix): watchdog kill before `appLaunch` diagnostic.
+
+### Gate B (human)
+
+- Agent verified launch no longer dies immediately.
+- Human spot check: cold launch from home screen; confirm dashboard loads; start workout and verify banner still appears above tab bar.
+
+### Human Xcode
+
+- Empty.
+
+### Out of scope
+
+- Blank-screen Gate B matrix (Notification Centre ×5) pending human pass on this build.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Tabs | `MainTabView.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |

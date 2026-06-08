@@ -27,6 +27,7 @@ struct RootView: View {
         }
         .onAppear {
             paintHostWindowForScheme()
+            workoutCoordinator.markReadyForScenePhaseRefresh()
             TrainWorkoutDiagnostics.record("appLaunch")
             Log.ui.info("Root view appeared")
             healthKitManager.refreshAccessState()
@@ -39,8 +40,8 @@ struct RootView: View {
             if phase == .background {
                 try? modelContext.save()
             }
+            workoutCoordinator.handleRootScenePhaseChange(to: phase)
             if phase == .active {
-                workoutCoordinator.refreshWorkoutSurfaceAfterForeground()
                 EmbeddingRunPolicy.applicationDidBecomeActive()
                 paintHostWindowForScheme()
                 healthKitManager.refreshAccessState()

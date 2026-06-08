@@ -10,6 +10,7 @@ struct ActiveWorkoutContainerView: View {
 
     @State private var session: WorkoutSession?
     @State private var loadFailed = false
+    @State private var resolveAttempt = 0
 
     var body: some View {
         Group {
@@ -21,6 +22,10 @@ struct ActiveWorkoutContainerView: View {
                 } description: {
                     Text("This session is no longer in progress.")
                 } actions: {
+                    Button("Retry") {
+                        resolveAttempt += 1
+                        resolveSessionIfNeeded()
+                    }
                     Button("Back to Train") {
                         coordinator.minimizeWorkout()
                     }
@@ -33,6 +38,12 @@ struct ActiveWorkoutContainerView: View {
         }
         .background(screenBackground.ignoresSafeArea())
         .onAppear {
+            resolveSessionIfNeeded()
+        }
+        .onChange(of: resolveAttempt) { _, _ in
+            resolveSessionIfNeeded()
+        }
+        .onChange(of: coordinator.workoutSurfaceGeneration) { _, _ in
             resolveSessionIfNeeded()
         }
     }
@@ -61,9 +72,10 @@ struct ActiveWorkoutContainerView: View {
 
         session = nil
         loadFailed = true
-        TrainWorkoutDiagnostics.record("container FAILED resolve sessionID=\(sessionID)")
+        TrainWorkoutDiagnostics.record(
+            "container FAILED resolve sessionID=\(sessionID) presented=\(coordinator.presentedWorkoutSessionID != nil)"
+        )
         Log.workout.error("active workout container could not resolve session")
-        coordinator.resetTrainNavigation()
     }
 
     private func resolveSession() -> WorkoutSession? {

@@ -5,9 +5,11 @@ import UserNotifications
 
 @main
 struct SignalApp: App {
-    private let modelContainer: ModelContainer
-    private let briefingNotificationDelegate: DailyBriefingNotificationDelegate
-    @State private var healthKitManager: HealthKitManager
+    @State private var modelContainer: ModelContainer?
+    @State private var healthKitManager: HealthKitManager?
+    @State private var briefingNotificationDelegate: DailyBriefingNotificationDelegate?
+    @State private var bootstrapErrorMessage: String?
+    @State private var bootstrapAttempt = 0
     @State private var unitPreferences = UnitPreferences.shared
     @State private var appPreferences = AppPreferences.shared
     @State private var trainPreferences = TrainPreferences.shared
@@ -21,28 +23,23 @@ struct SignalApp: App {
         Self.applyDarkNavigationChrome()
         DailyBriefingScheduler.registerCategories()
         LiveWorkoutCoordinatorLaunchState.markProcessLaunched()
-        do {
-            let container = try SignalModelContainer.make()
-            modelContainer = container
-            CatalogBootstrap.runIfNeeded(modelContainer: container)
-            DataQualityMigration.runIfNeeded(modelContainer: container)
-            _ = DerivedMetricsService.shared
-            _ = ReflectionEngine.shared
-            _ = SetHRAttributionTrigger.shared
-            WatchConnectivityService.shared.activate()
-            WatchRecoveryPushCoordinator.shared.start()
-            _healthKitManager = State(
-                wrappedValue: HealthKitManager(modelContainer: container)
-            )
-            briefingNotificationDelegate = DailyBriefingNotificationDelegate(modelContainer: container)
-            UNUserNotificationCenter.current().delegate = briefingNotificationDelegate
-        } catch {
-            fatalError("Failed to create ModelContainer: \(error)")
-        }
+        _ = DerivedMetricsService.shared
+        WatchConnectivityService.shared.activate()
+        WatchRecoveryPushCoordinator.shared.start()
     }
 
     var body: some Scene {
         WindowGroup {
+            bootstrapRoot
+                .task(id: bootstrapAttempt) {
+                    await loadPersistedStoreIfNeeded()
+                }
+        }
+    }
+
+    @ViewBuilder
+    private var bootstrapRoot: some View {
+        if let modelContainer, let healthKitManager {
             RootView()
                 .environment(healthKitManager)
                 .environment(unitPreferences)
@@ -53,8 +50,37 @@ struct SignalApp: App {
                 .environment(coachPreferences)
                 .environment(liveWorkoutCoordinator)
                 .environment(liveWorkoutWatchBridge)
+                .modelContainer(modelContainer)
+        } else if let bootstrapErrorMessage {
+            AppLaunchFailureView(message: bootstrapErrorMessage) {
+                self.bootstrapErrorMessage = nil
+                bootstrapAttempt += 1
+            }
+        } else {
+            AppLaunchShellView()
         }
-        .modelContainer(modelContainer)
+    }
+
+    @MainActor
+    private func loadPersistedStoreIfNeeded() async {
+        guard modelContainer == nil, bootstrapErrorMessage == nil else { return }
+        await Task.yield()
+        do {
+            let container = try SignalModelContainer.make()
+            CatalogBootstrap.runIfNeeded(modelContainer: container)
+            DataQualityMigration.scheduleIfNeeded(modelContainer: container)
+            _ = ReflectionEngine.shared
+            _ = SetHRAttributionTrigger.shared
+            let healthKit = HealthKitManager(modelContainer: container)
+            let briefingDelegate = DailyBriefingNotificationDelegate(modelContainer: container)
+            UNUserNotificationCenter.current().delegate = briefingDelegate
+            liveWorkoutCoordinator.configure(modelContext: ModelContext(container))
+            modelContainer = container
+            healthKitManager = healthKit
+            briefingNotificationDelegate = briefingDelegate
+        } catch {
+            bootstrapErrorMessage = error.localizedDescription
+        }
     }
 
     private static func applyDarkNavigationChrome() {

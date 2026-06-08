@@ -10,8 +10,8 @@ struct ActiveWorkoutShell: View {
     var body: some View {
         NavigationStack {
             ActiveWorkoutContainerView(sessionID: sessionID)
+                .id("\(sessionID)-\(coordinator.workoutSurfaceGeneration)")
         }
-        .id(coordinator.workoutSurfaceGeneration)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(TrainChrome.screenBackground(colorScheme: colorScheme).ignoresSafeArea())
     }

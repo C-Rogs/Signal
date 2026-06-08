@@ -76,6 +76,9 @@ struct TrainHomeView: View {
         .onChange(of: coordinator.trainNavigationResetToken) { _, _ in
             path.removeAll()
         }
+        .onChange(of: coordinator.stripActiveWorkoutRouteToken) { _, _ in
+            stripStaleActiveWorkoutRoutes()
+        }
         .onChange(of: liveSessions) { _, sessions in
             coordinator.refresh()
             guard sessions.isEmpty else { return }
@@ -248,9 +251,16 @@ struct TrainHomeView: View {
             startRoutine(routine)
         } label: {
             HStack(spacing: 12) {
-                Text(routine.name)
-                    .font(.body)
-                    .foregroundStyle(Color("TextPrimary"))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(routine.name)
+                        .font(.body)
+                        .foregroundStyle(Color("TextPrimary"))
+                    if let subtitle = routineSubtitle(for: routine) {
+                        Text(subtitle)
+                            .font(.metadataCaption)
+                            .foregroundStyle(Color("TextSecondary"))
+                    }
+                }
                 Spacer(minLength: 8)
                 Image(systemName: "play.circle.fill")
                     .font(.title3)
@@ -329,8 +339,8 @@ struct TrainHomeView: View {
     @ViewBuilder
     private func routeDestination(_ route: TrainRoute) -> some View {
         switch route {
-        case .activeWorkout:
-            EmptyView()
+        case .activeWorkout(let sessionID):
+            StaleActiveWorkoutRouteView(sessionID: sessionID)
         case .history(let id):
             if let session = resolveSession(id: id) {
                 WorkoutHistoryDetailView(session: session)
@@ -428,6 +438,15 @@ struct TrainHomeView: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func routineSubtitle(for routine: Routine) -> String? {
+        let exerciseCount = routine.exercises.count
+        guard exerciseCount > 0 else { return nil }
+        if routine.hasPresets {
+            return "\(exerciseCount) exercises · \(routine.totalPresetSetCount) sets"
+        }
+        return "\(exerciseCount) exercises"
     }
 
     private func deleteRoutine(_ routine: Routine) {

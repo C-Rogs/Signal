@@ -2,6 +2,7 @@ import Foundation
 import os
 import Observation
 import SwiftData
+import SwiftUI
 
 struct ExerciseDetailRoute: Hashable, Identifiable {
     var catalogID: PersistentIdentifier?
@@ -49,13 +50,18 @@ final class LiveWorkoutCoordinator {
     var pendingTrainRoute: TrainRoute?
     var presentedWorkoutSessionID: PersistentIdentifier?
     var workoutSurfaceGeneration = 0
+    var workoutSurfaceNeedsRefresh = false
     var scrollToExerciseID: PersistentIdentifier?
     var collapseWorkoutNavigationOnNextTrainAppear = true
     var isViewingActiveWorkout = false
     var trainNavigationResetToken = 0
+    var stripActiveWorkoutRouteToken = 0
     var pendingHealthKitWriteNote: String?
     var pendingWellnessSessionID: PersistentIdentifier?
     var pendingWellnessMuscles: [Muscle] = []
+
+    @ObservationIgnored private var lastRecordedScenePhase: ScenePhase = .active
+    @ObservationIgnored private var isReadyForScenePhaseRefresh = false
 
     private var modelContext: ModelContext?
     private var store: LiveWorkoutStore?
@@ -93,22 +99,80 @@ final class LiveWorkoutCoordinator {
         presentedWorkoutSessionID = sessionID
         isViewingActiveWorkout = true
         pendingTrainRoute = nil
+        workoutSurfaceNeedsRefresh = false
         workoutSurfaceGeneration += 1
+        requestStripActiveWorkoutRoute()
         TrainWorkoutDiagnostics.record(
             "presentWorkout session=\(String(describing: sessionID)) gen=\(workoutSurfaceGeneration)"
         )
     }
 
     func minimizeWorkout() {
-        presentedWorkoutSessionID = nil
-        isViewingActiveWorkout = false
-        TrainWorkoutDiagnostics.record("minimizeWorkout")
+        dismissWorkoutOverlay(reason: "minimizeWorkout")
     }
 
-    func refreshWorkoutSurfaceAfterForeground() {
+    func noteWorkoutViewDisappearedWhilePresented(scenePhase: ScenePhase) {
         guard presentedWorkoutSessionID != nil else { return }
+        workoutSurfaceNeedsRefresh = true
+        TrainWorkoutDiagnostics.record(
+            "workoutViewDisappearedWhilePresented scenePhase=\(scenePhase) needsRefresh=true"
+        )
+    }
+
+    func markReadyForScenePhaseRefresh() {
+        isReadyForScenePhaseRefresh = true
+    }
+
+    func handleRootScenePhaseChange(to phase: ScenePhase) {
+        let previous = lastRecordedScenePhase
+        lastRecordedScenePhase = phase
+        guard isReadyForScenePhaseRefresh else { return }
+        guard phase == .active else { return }
+        refreshWorkoutSurfaceAfterSceneActivation(from: previous)
+    }
+
+    func requestWorkoutSurfaceRefresh(reason: String) {
+        guard presentedWorkoutSessionID != nil else { return }
+        bumpWorkoutSurfaceGeneration(reason: reason, previousPhase: lastRecordedScenePhase)
+    }
+
+    private func refreshWorkoutSurfaceAfterSceneActivation(from previousPhase: ScenePhase) {
+        guard presentedWorkoutSessionID != nil else { return }
+
+        let reason: String?
+        if workoutSurfaceNeedsRefresh {
+            reason = "disappear"
+        } else if previousPhase == .inactive {
+            reason = "inactiveReturn"
+        } else if previousPhase == .background {
+            reason = "backgroundReturn"
+        } else {
+            reason = nil
+        }
+
+        guard let reason else { return }
+        bumpWorkoutSurfaceGeneration(reason: reason, previousPhase: previousPhase)
+    }
+
+    private func bumpWorkoutSurfaceGeneration(reason: String, previousPhase: ScenePhase) {
+        workoutSurfaceNeedsRefresh = false
         workoutSurfaceGeneration += 1
-        TrainWorkoutDiagnostics.record("refreshWorkoutSurface gen=\(workoutSurfaceGeneration)")
+        TrainWorkoutDiagnostics.record(
+            "refreshWorkoutSurface reason=\(reason) prevPhase=\(previousPhase) gen=\(workoutSurfaceGeneration)"
+        )
+    }
+
+    func requestStripActiveWorkoutRoute() {
+        stripActiveWorkoutRouteToken += 1
+    }
+
+    private func dismissWorkoutOverlay(reason: String) {
+        presentedWorkoutSessionID = nil
+        isViewingActiveWorkout = false
+        workoutSurfaceNeedsRefresh = false
+        requestStripActiveWorkoutRoute()
+        trainNavigationResetToken += 1
+        TrainWorkoutDiagnostics.record(reason)
     }
 
     func consumeCollapseWorkoutNavigationFlag() -> Bool {
@@ -131,11 +195,9 @@ final class LiveWorkoutCoordinator {
         store
     }
 
-    func resetTrainNavigation() {
-        presentedWorkoutSessionID = nil
-        isViewingActiveWorkout = false
+    func resetTrainNavigation(reason: String) {
+        dismissWorkoutOverlay(reason: "resetTrainNavigation \(reason)")
         pendingTrainRoute = nil
-        trainNavigationResetToken += 1
     }
 
     func publishHealthKitWriteNote(_ note: String?) {

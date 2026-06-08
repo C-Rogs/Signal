@@ -85,6 +85,10 @@ struct GeminiWorkoutImportView: View {
                             dismiss()
                             onStarted(sessionID)
                         },
+                        onRoutineSaved: {
+                            showPreview = false
+                            dismiss()
+                        },
                         onCancel: {
                             showPreview = false
                         }

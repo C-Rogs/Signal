@@ -83,6 +83,7 @@ struct ActiveWorkoutView: View {
                 if phase == .active {
                     reloadSessionRecoveryScore()
                     refreshVolumeStats()
+                    detectAndRecoverBlankBodyIfNeeded()
                 }
             }
             .onAppear {
@@ -101,6 +102,7 @@ struct ActiveWorkoutView: View {
                 }
             }
             .onDisappear {
+                coordinator.noteWorkoutViewDisappearedWhilePresented(scenePhase: scenePhase)
                 TrainWorkoutDiagnostics.record(
                     "activeWorkout disappear exercises=\(orderedExercises.count) scenePhase=\(scenePhase) presented=\(coordinator.presentedWorkoutSessionID != nil)"
                 )
@@ -284,6 +286,17 @@ struct ActiveWorkoutView: View {
         completedSetCount = stats.completedSetCount
     }
 
+    private func detectAndRecoverBlankBodyIfNeeded() {
+        guard coordinator.presentedWorkoutSessionID != nil else { return }
+        let modelExerciseCount = session.exercises.count
+        let renderedExerciseCount = orderedExercises.count
+        guard modelExerciseCount > 0, renderedExerciseCount == 0 else { return }
+        TrainWorkoutDiagnostics.record(
+            "blankBodyDetected modelExercises=\(modelExerciseCount) rendered=0 session=\(session.persistentModelID)"
+        )
+        coordinator.requestWorkoutSurfaceRefresh(reason: "blankBodyDetected")
+    }
+
     private func attemptFinishWorkout() {
         let incomplete = WorkoutSessionCompletionSummary.incompleteExercises(in: session)
         if incomplete.isEmpty {
@@ -304,7 +317,7 @@ struct ActiveWorkoutView: View {
             hintCache.invalidate()
             coordinator.presentWellness(for: session)
             coordinator.refresh()
-            coordinator.resetTrainNavigation()
+            coordinator.resetTrainNavigation(reason: "finishWorkout")
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -316,7 +329,7 @@ struct ActiveWorkoutView: View {
         do {
             try store.discardSession(session)
             hintCache.invalidate()
-            coordinator.resetTrainNavigation()
+            coordinator.resetTrainNavigation(reason: "discardWorkout")
             coordinator.refresh()
         } catch {
             errorMessage = error.localizedDescription

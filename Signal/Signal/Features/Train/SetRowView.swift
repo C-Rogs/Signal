@@ -20,6 +20,7 @@ struct SetRowView: View {
     @State private var loggedRPE: Double?
     @State private var showRPESheet = false
     @State private var sheetRPE: Double = WorkoutRPEScale.defaultValue
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var focusedField: Field?
 
@@ -104,6 +105,13 @@ struct SetRowView: View {
             }
             if oldValue != nil, newValue == nil {
                 commitFields()
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if TrainScenePhaseKeyboardPolicy.shouldReleaseSetFieldFocus(for: phase) {
+                TrainWorkoutDiagnostics.record("setRow releaseFocus set=\(set.setIndex) phase=\(phase)")
+                commitFields()
+                focusedField = nil
             }
         }
         .contextMenu {

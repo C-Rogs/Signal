@@ -9,9 +9,12 @@ struct GeminiWorkoutImportPreviewView: View {
 
     let plan: ParsedWorkoutPlan
     let onStarted: (PersistentIdentifier) -> Void
+    let onRoutineSaved: () -> Void
     let onCancel: () -> Void
 
     @State private var workoutTitle: String
+    @State private var showSaveRoutineAlert = false
+    @State private var routineName = ""
     @State private var catalog: [ExerciseCatalog] = []
     @State private var aliasIndex: [String: ExerciseCatalog] = [:]
     @State private var overrides: [String: ExerciseCatalog] = [:]
@@ -21,16 +24,22 @@ struct GeminiWorkoutImportPreviewView: View {
     init(
         plan: ParsedWorkoutPlan,
         onStarted: @escaping (PersistentIdentifier) -> Void,
+        onRoutineSaved: @escaping () -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.plan = plan
         self.onStarted = onStarted
+        self.onRoutineSaved = onRoutineSaved
         self.onCancel = onCancel
         _workoutTitle = State(initialValue: plan.title)
     }
 
     private var store: LiveWorkoutStore {
         LiveWorkoutStore(context: modelContext)
+    }
+
+    private var templateStore: RoutineTemplateStore {
+        RoutineTemplateStore(context: modelContext)
     }
 
     var body: some View {
@@ -92,6 +101,18 @@ struct GeminiWorkoutImportPreviewView: View {
                     .tint(Color("Primary"))
                     .disabled(workoutTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .padding(.top, 4)
+
+                    Button {
+                        routineName = workoutTitle
+                        showSaveRoutineAlert = true
+                    } label: {
+                        Text("Save as Routine")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(workoutTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
                 .padding(TrainChrome.horizontalPadding)
                 .padding(.vertical, 8)
@@ -116,6 +137,15 @@ struct GeminiWorkoutImportPreviewView: View {
                 _ = try? ExerciseCatalogSeeder.seedIfNeeded(in: modelContext)
                 catalog = (try? modelContext.fetch(FetchDescriptor<ExerciseCatalog>())) ?? []
                 aliasIndex = ExerciseCatalogMatcher.buildAliasIndex(catalog: catalog)
+            }
+            .alert("Save as Routine", isPresented: $showSaveRoutineAlert) {
+                TextField("Routine name", text: $routineName)
+                Button("Save") {
+                    saveAsRoutine()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Save this workout as a reusable routine without starting a session.")
             }
         }
     }
@@ -260,13 +290,9 @@ struct GeminiWorkoutImportPreviewView: View {
         )
     }
 
-    private func startWorkout() {
-        errorMessage = nil
+    private func buildStartRequest() -> ParsedPlanStartRequest? {
         let trimmedTitle = workoutTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedTitle.isEmpty else {
-            errorMessage = "Workout title is required."
-            return
-        }
+        guard !trimmedTitle.isEmpty else { return nil }
 
         let exercises = plan.exercises.map { exercise in
             let match = resolvedMatch(for: exercise.exerciseTitle)
@@ -278,13 +304,18 @@ struct GeminiWorkoutImportPreviewView: View {
             )
         }
 
+        return ParsedPlanStartRequest(title: trimmedTitle, exercises: exercises)
+    }
+
+    private func startWorkout() {
+        errorMessage = nil
+        guard let request = buildStartRequest() else {
+            errorMessage = "Workout title is required."
+            return
+        }
+
         do {
-            let session = try store.start(
-                fromParsedPlan: ParsedPlanStartRequest(
-                    title: trimmedTitle,
-                    exercises: exercises
-                )
-            )
+            let session = try store.start(fromParsedPlan: request)
             coordinator.refresh()
             TrainFeedback.shared.play(.workoutStart)
             watchBridge.prepareLiveSession(for: session, modelContext: modelContext)
@@ -292,6 +323,27 @@ struct GeminiWorkoutImportPreviewView: View {
                 await watchBridge.beginWatchWorkout(for: session, modelContext: modelContext)
             }
             onStarted(session.persistentModelID)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func saveAsRoutine() {
+        errorMessage = nil
+        let trimmedName = routineName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            errorMessage = "Routine name is required."
+            return
+        }
+        guard let request = buildStartRequest() else {
+            errorMessage = "Workout title is required."
+            return
+        }
+
+        do {
+            _ = try templateStore.createRoutine(name: trimmedName, from: request)
+            TrainFeedback.shared.play(.selection)
+            onRoutineSaved()
         } catch {
             errorMessage = error.localizedDescription
         }

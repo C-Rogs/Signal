@@ -6,6 +6,15 @@ enum DataQualityMigration {
     static let userDefaultsKey = "dataQualityMigrationV1Done"
 
     @MainActor
+    static func scheduleIfNeeded(modelContainer: ModelContainer) {
+        guard !UserDefaults.standard.bool(forKey: userDefaultsKey) else { return }
+        Task { @MainActor in
+            await Task.yield()
+            runIfNeeded(modelContainer: modelContainer)
+        }
+    }
+
+    @MainActor
     static func runIfNeeded(modelContainer: ModelContainer) {
         guard !UserDefaults.standard.bool(forKey: userDefaultsKey) else { return }
         let context = ModelContext(modelContainer)
