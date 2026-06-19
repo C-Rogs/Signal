@@ -16,29 +16,54 @@ final class LiveWorkoutCoordinatorScenePhaseTests: XCTestCase {
         coordinator.configure(modelContext: context)
     }
 
-    func testInactiveReturnRefreshesPresentedWorkoutSurface() throws {
-        let session = try LiveWorkoutStore(context: context).startEmpty()
-        coordinator.presentWorkout(sessionID: session.persistentModelID)
-        let generationAfterPresent = coordinator.workoutSurfaceGeneration
-        coordinator.markReadyForScenePhaseRefresh()
-
-        coordinator.handleRootScenePhaseChange(to: .inactive)
-        coordinator.handleRootScenePhaseChange(to: .active)
-
-        XCTAssertEqual(coordinator.workoutSurfaceGeneration, generationAfterPresent + 1)
-        XCTAssertFalse(coordinator.workoutSurfaceNeedsRefresh)
+    override func tearDown() {
+        TrainApplicationLifecycle.testingIsInTrueBackground = nil
+        coordinator = nil
+        context = nil
+        container = nil
+        super.tearDown()
     }
 
-    func testBackgroundReturnRefreshesPresentedWorkoutSurface() throws {
+    func testInactiveDisappearSetsNeedsRefresh() throws {
+        let session = try LiveWorkoutStore(context: context).startEmpty()
+        coordinator.presentWorkout(sessionID: session.persistentModelID)
+
+        coordinator.noteWorkoutViewDisappearedWhilePresented(scenePhase: .inactive)
+
+        XCTAssertTrue(coordinator.workoutSurfaceNeedsRefresh)
+    }
+
+    func testBackgroundDisappearSetsNeedsRefresh() throws {
+        let session = try LiveWorkoutStore(context: context).startEmpty()
+        coordinator.presentWorkout(sessionID: session.persistentModelID)
+
+        coordinator.noteWorkoutViewDisappearedWhilePresented(scenePhase: .background)
+
+        XCTAssertTrue(coordinator.workoutSurfaceNeedsRefresh)
+    }
+
+    func testInactiveReturnDoesNotRemountWorkoutSurface() throws {
         let session = try LiveWorkoutStore(context: context).startEmpty()
         coordinator.presentWorkout(sessionID: session.persistentModelID)
         let generationAfterPresent = coordinator.workoutSurfaceGeneration
         coordinator.markReadyForScenePhaseRefresh()
 
-        coordinator.handleRootScenePhaseChange(to: .background)
-        coordinator.handleRootScenePhaseChange(to: .active)
+        coordinator.handleRootScenePhaseChange(from: .active, to: .inactive)
+        coordinator.handleRootScenePhaseChange(from: .inactive, to: .active)
 
-        XCTAssertEqual(coordinator.workoutSurfaceGeneration, generationAfterPresent + 1)
+        XCTAssertEqual(coordinator.workoutSurfaceGeneration, generationAfterPresent)
+    }
+
+    func testBackgroundReturnDoesNotRemountWithoutDisappearFlag() throws {
+        let session = try LiveWorkoutStore(context: context).startEmpty()
+        coordinator.presentWorkout(sessionID: session.persistentModelID)
+        let generationAfterPresent = coordinator.workoutSurfaceGeneration
+        coordinator.markReadyForScenePhaseRefresh()
+
+        coordinator.handleRootScenePhaseChange(from: .active, to: .background)
+        coordinator.handleRootScenePhaseChange(from: .background, to: .active)
+
+        XCTAssertEqual(coordinator.workoutSurfaceGeneration, generationAfterPresent)
     }
 
     func testActiveToActiveDoesNotRefreshAgain() throws {
@@ -47,40 +72,44 @@ final class LiveWorkoutCoordinatorScenePhaseTests: XCTestCase {
         let generationAfterPresent = coordinator.workoutSurfaceGeneration
         coordinator.markReadyForScenePhaseRefresh()
 
-        coordinator.handleRootScenePhaseChange(to: .active)
+        coordinator.handleRootScenePhaseChange(from: .active, to: .active)
 
         XCTAssertEqual(coordinator.workoutSurfaceGeneration, generationAfterPresent)
     }
 
-    func testDisappearFlagRefreshesOnceOnActive() throws {
+    func testDisappearFlagRefreshesOnBackgroundReturn() throws {
         let session = try LiveWorkoutStore(context: context).startEmpty()
         coordinator.presentWorkout(sessionID: session.persistentModelID)
-        coordinator.handleRootScenePhaseChange(to: .background)
         coordinator.noteWorkoutViewDisappearedWhilePresented(scenePhase: .background)
         let generationBeforeActive = coordinator.workoutSurfaceGeneration
         coordinator.markReadyForScenePhaseRefresh()
 
-        coordinator.handleRootScenePhaseChange(to: .active)
+        coordinator.handleRootScenePhaseChange(from: .background, to: .active)
 
-        XCTAssertTrue(coordinator.workoutSurfaceNeedsRefresh == false)
+        XCTAssertFalse(coordinator.workoutSurfaceNeedsRefresh)
         XCTAssertEqual(coordinator.workoutSurfaceGeneration, generationBeforeActive + 1)
     }
 
     func testNoRefreshWhenWorkoutNotPresented() {
         coordinator.markReadyForScenePhaseRefresh()
-        coordinator.handleRootScenePhaseChange(to: .inactive)
-        coordinator.handleRootScenePhaseChange(to: .active)
+        coordinator.handleRootScenePhaseChange(from: .inactive, to: .active)
 
+        XCTAssertEqual(coordinator.workoutSurfaceGeneration, 0)
+    }
+
+    func testPresentWorkoutDoesNotBumpSurfaceGeneration() throws {
+        let session = try LiveWorkoutStore(context: context).startEmpty()
+        coordinator.presentWorkout(sessionID: session.persistentModelID)
         XCTAssertEqual(coordinator.workoutSurfaceGeneration, 0)
     }
 
     func testRequestWorkoutSurfaceRefreshBumpsGeneration() throws {
         let session = try LiveWorkoutStore(context: context).startEmpty()
         coordinator.presentWorkout(sessionID: session.persistentModelID)
-        let generationAfterPresent = coordinator.workoutSurfaceGeneration
+        XCTAssertEqual(coordinator.workoutSurfaceGeneration, 0)
 
         coordinator.requestWorkoutSurfaceRefresh(reason: "blankBodyDetected")
 
-        XCTAssertEqual(coordinator.workoutSurfaceGeneration, generationAfterPresent + 1)
+        XCTAssertEqual(coordinator.workoutSurfaceGeneration, 1)
     }
 }

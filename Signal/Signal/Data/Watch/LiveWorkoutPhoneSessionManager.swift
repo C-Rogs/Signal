@@ -47,11 +47,8 @@ final class LiveWorkoutPhoneSessionManager: NSObject {
         onHeartRateUpdate = heartRateHandler
         statusMessage = nil
 
-        await requestWorkoutAccessIfNeeded()
-
-        let configuration = TrainWorkoutHealthKitConfiguration.make(for: workoutSession)
-
         do {
+            let configuration = TrainWorkoutHealthKitConfiguration.make(for: workoutSession)
             let workoutSession = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
             let workoutBuilder = workoutSession.associatedWorkoutBuilder()
             workoutBuilder.dataSource = HKLiveWorkoutDataSource(
@@ -77,7 +74,13 @@ final class LiveWorkoutPhoneSessionManager: NSObject {
             )
         } catch {
             isWorkoutActive = false
-            statusMessage = "Health access needed for live HR"
+            if HealthKitAuthorization.isAuthorizationNotDeterminedError(error)
+                || HealthKitAuthorization.isAuthorizationDeniedError(error)
+            {
+                statusMessage = "Health access needed for live HR"
+            } else {
+                statusMessage = "Live HR unavailable"
+            }
             logger.error("phone workout session start failed: \(String(describing: error), privacy: .public)")
             session = nil
             builder = nil
@@ -120,22 +123,6 @@ final class LiveWorkoutPhoneSessionManager: NSObject {
         onHeartRateUpdate = nil
         isWorkoutActive = false
         statusMessage = nil
-    }
-
-    private func requestWorkoutAccessIfNeeded() async {
-        let shareTypes: Set<HKSampleType> = [HKObjectType.workoutType()]
-        var readTypes = HealthKitTier1Kind.authorizationReadTypes
-        readTypes.insert(HKQuantityType(.heartRate))
-
-        do {
-            try await healthStore.requestAuthorization(toShare: shareTypes, read: readTypes)
-            HealthKitAuthorization.markReadAccessPrompted()
-            logger.info("phone workout HealthKit authorization requested")
-        } catch {
-            logger.error(
-                "phone workout HealthKit authorization failed: \(String(describing: error), privacy: .public)"
-            )
-        }
     }
 
     private func processHeartRate(from workoutBuilder: HKLiveWorkoutBuilder) {

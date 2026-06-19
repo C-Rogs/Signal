@@ -1,6 +1,7 @@
 import os
 import SwiftData
 import SwiftUI
+import UIKit
 
 struct ActiveWorkoutView: View {
     @Environment(\.modelContext) private var modelContext
@@ -26,6 +27,11 @@ struct ActiveWorkoutView: View {
     @State private var completedSetCount = 0
     @State private var restTimerCoordinator = ActiveWorkoutRestTimerCoordinator()
     @State private var exerciseDetailRoute: ExerciseDetailRoute?
+    @State private var setFieldFocusCoordinator = TrainSetFieldFocusCoordinator()
+    @State private var listRecoveryToken = 0
+    @State private var hideBodyForSnapshot = false
+    @State private var didInitialWatchStart = false
+    @State private var homeForegroundRecoveryTask: Task<Void, Never>?
 
     private var store: LiveWorkoutStore {
         LiveWorkoutStore(context: modelContext)
@@ -40,7 +46,14 @@ struct ActiveWorkoutView: View {
     }
 
     var body: some View {
-        workoutList
+        Group {
+            if hideBodyForSnapshot {
+                screenBackground.ignoresSafeArea()
+            } else {
+                workoutList
+            }
+        }
+            .environment(setFieldFocusCoordinator)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 ActiveWorkoutRestTimerLayer(
                     coordinator: restTimerCoordinator,
@@ -55,7 +68,18 @@ struct ActiveWorkoutView: View {
             .navigationTitle(session.title)
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden(true)
-            .toolbar { workoutToolbar }
+            .toolbar {
+                workoutToolbar
+            }
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        setFieldFocusCoordinator.requestDismiss()
+                        TrainKeyboard.dismiss()
+                    }
+                }
+            }
             .modifier(ActiveWorkoutDialogsModifier(
                 showDiscardConfirm: $showDiscardConfirm,
                 showFinishIncompleteConfirm: $showFinishIncompleteConfirm,
@@ -70,23 +94,17 @@ struct ActiveWorkoutView: View {
                     ExerciseDetailView(route: route)
                 }
             }
-            .onChange(of: scenePhase) { _, phase in
+            .onChange(of: scenePhase) { previousPhase, phase in
                 TrainWorkoutDiagnostics.record(
-                    "activeWorkout scenePhase=\(phase) exercises=\(orderedExercises.count) sets=\(completedSetCount)"
+                    "activeWorkout scenePhase=\(phase) exercises=\(orderedExercises.count) sets=\(completedSetCount) uiState=\(UIApplication.shared.applicationState.rawValue) trueBackground=\(TrainApplicationLifecycle.resolvedIsInTrueBackground) hideBody=\(hideBodyForSnapshot)"
                 )
-                Log.ui.info(
-                    "active workout scenePhase=\(String(describing: phase), privacy: .public) exercises=\(orderedExercises.count, privacy: .public)"
-                )
-                if phase == .background {
-                    try? modelContext.save()
-                }
-                if phase == .active {
-                    reloadSessionRecoveryScore()
-                    refreshVolumeStats()
-                    detectAndRecoverBlankBodyIfNeeded()
+                if phase == .active, previousPhase != .active {
+                    restoreWorkoutBodyImmediately(reason: "scenePhaseActive prev=\(previousPhase)")
+                    scheduleDeferredHomeRecovery(from: previousPhase)
                 }
             }
             .onAppear {
+                hideBodyForSnapshot = false
                 reloadSessionRecoveryScore()
                 refreshWorkoutHints()
                 refreshVolumeStats()
@@ -97,17 +115,61 @@ struct ActiveWorkoutView: View {
                 Log.ui.info(
                     "active workout appeared exercises=\(orderedExercises.count, privacy: .public) sessionID=\(String(describing: session.persistentModelID), privacy: .public)"
                 )
+                guard !didInitialWatchStart else { return }
+                didInitialWatchStart = true
                 Task {
                     await watchBridge.ensureWatchWorkoutStarted(for: session, modelContext: modelContext)
                 }
             }
             .onDisappear {
-                coordinator.noteWorkoutViewDisappearedWhilePresented(scenePhase: scenePhase)
                 TrainWorkoutDiagnostics.record(
-                    "activeWorkout disappear exercises=\(orderedExercises.count) scenePhase=\(scenePhase) presented=\(coordinator.presentedWorkoutSessionID != nil)"
+                    "activeWorkout disappear exercises=\(orderedExercises.count) scenePhase=\(scenePhase) viewing=\(coordinator.isViewingActiveWorkout) trueBackground=\(TrainApplicationLifecycle.resolvedIsInTrueBackground)"
                 )
-                Log.ui.info("active workout disappeared")
             }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+                guard coordinator.isViewingActiveWorkout else { return }
+                hideBodyForSnapshot = true
+                coordinator.noteWorkoutViewDisappearedWhilePresented(scenePhase: .background)
+                setFieldFocusCoordinator.dismissForSystemOverlay()
+                TrainKeyboard.dismiss()
+                TrainWorkoutDiagnostics.record(
+                    "activeWorkout didEnterBackground hideBody keyboardVisible=\(TrainApplicationLifecycle.isKeyboardVisible)"
+                )
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                guard coordinator.isViewingActiveWorkout else { return }
+                restoreWorkoutBodyImmediately(reason: "willEnterForeground")
+                TrainWorkoutDiagnostics.record("activeWorkout willEnterForeground restoreBody")
+            }
+    }
+
+    private func restoreWorkoutBodyImmediately(reason: String) {
+        hideBodyForSnapshot = false
+        listRecoveryToken += 1
+        TrainWorkoutDiagnostics.record(
+            "activeWorkout restoreBody reason=\(reason) token=\(listRecoveryToken) exercises=\(orderedExercises.count)"
+        )
+    }
+
+    private func scheduleDeferredHomeRecovery(from previousPhase: ScenePhase) {
+        homeForegroundRecoveryTask?.cancel()
+        homeForegroundRecoveryTask = Task {
+            TrainWorkoutDiagnostics.record(
+                "homeForegroundReturn scheduled prevPhase=\(previousPhase) needsRefresh=\(coordinator.workoutSurfaceNeedsRefresh)"
+            )
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            guard coordinator.isViewingActiveWorkout else { return }
+            refreshWorkoutHints()
+            refreshVolumeStats()
+            if coordinator.workoutSurfaceNeedsRefresh {
+                coordinator.requestWorkoutSurfaceRefresh(reason: "homeForegroundReturn")
+            }
+            await watchBridge.ensureWatchWorkoutStarted(for: session, modelContext: modelContext)
+            TrainWorkoutDiagnostics.record(
+                "homeForegroundReturn completed token=\(listRecoveryToken) gen=\(coordinator.workoutSurfaceGeneration)"
+            )
+        }
     }
 
     private var recoveryBandContext: RecoveryBandContext? {
@@ -202,6 +264,7 @@ struct ActiveWorkoutView: View {
                         )
                         .id(exercise.persistentModelID)
                     }
+                    .id(listRecoveryToken)
 
                     Button {
                         showAddExercise = true
@@ -220,8 +283,9 @@ struct ActiveWorkoutView: View {
                 .padding(.bottom, restTimerCoordinator.showsRestBar ? 4 : 8)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
-            .scrollDismissesKeyboard(.interactively)
+            .scrollDismissesKeyboard(.immediately)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .id(listRecoveryToken)
             .onAppear {
                 if let target = coordinator.consumeScrollTarget() {
                     proxy.scrollTo(target, anchor: .top)
@@ -241,11 +305,17 @@ struct ActiveWorkoutView: View {
     @ToolbarContentBuilder
     private var workoutToolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            HStack(spacing: 16) {
-                Button("Minimize") { coordinator.minimizeWorkout() }
-                Button("Discard") { showDiscardConfirm = true }
-                    .foregroundStyle(.red)
+            Menu {
+                Button("Minimize workout") {
+                    coordinator.minimizeWorkout(source: "toolbarMenu")
+                }
+                Button("Discard workout", role: .destructive) {
+                    showDiscardConfirm = true
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
             }
+            .accessibilityLabel("Workout actions")
         }
         ToolbarItem(placement: .topBarTrailing) {
             Button("Finish") {
@@ -284,17 +354,6 @@ struct ActiveWorkoutView: View {
         let stats = WorkoutLiveSummary.volumeStats(for: session)
         volumeKg = stats.volumeKg
         completedSetCount = stats.completedSetCount
-    }
-
-    private func detectAndRecoverBlankBodyIfNeeded() {
-        guard coordinator.presentedWorkoutSessionID != nil else { return }
-        let modelExerciseCount = session.exercises.count
-        let renderedExerciseCount = orderedExercises.count
-        guard modelExerciseCount > 0, renderedExerciseCount == 0 else { return }
-        TrainWorkoutDiagnostics.record(
-            "blankBodyDetected modelExercises=\(modelExerciseCount) rendered=0 session=\(session.persistentModelID)"
-        )
-        coordinator.requestWorkoutSurfaceRefresh(reason: "blankBodyDetected")
     }
 
     private func attemptFinishWorkout() {

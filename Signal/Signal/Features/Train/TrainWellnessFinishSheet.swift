@@ -6,6 +6,7 @@ struct TrainWellnessFinishSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(LiveWorkoutCoordinator.self) private var coordinator
 
+    let session: WorkoutSession
     let healthKitManager: HealthKitManager
 
     @State private var healthKitWriteNote: String?
@@ -14,50 +15,36 @@ struct TrainWellnessFinishSheet: View {
         LiveWorkoutStore(context: modelContext)
     }
 
-    private var session: WorkoutSession? {
-        guard let sessionID = coordinator.pendingWellnessSessionID else { return nil }
-        return modelContext.model(for: sessionID) as? WorkoutSession
-    }
-
     var body: some View {
-        Group {
-            if let session {
-                WellnessCaptureView(
-                    muscles: coordinator.pendingWellnessMuscles,
-                    needsSessionEffort: !WorkoutEffortScoreCalculator.hasWorkingSetRPE(in: session),
-                    onSave: { energy, mood, stress, soreness, notes, perceivedEffort in
-                        Task {
-                            await completeFinishedWorkout(
-                                session: session,
-                                perceivedEffort: perceivedEffort,
-                                saveWellness: true,
-                                energy: energy,
-                                mood: mood,
-                                stress: stress,
-                                soreness: soreness,
-                                notes: notes
-                            )
-                            coordinator.dismissWellness()
-                        }
-                    },
-                    onSkip: { perceivedEffort in
-                        Task {
-                            await completeFinishedWorkout(
-                                session: session,
-                                perceivedEffort: perceivedEffort,
-                                saveWellness: false
-                            )
-                            coordinator.dismissWellness()
-                        }
-                    }
-                )
-            } else {
-                ProgressView()
-                    .onAppear {
-                        coordinator.dismissWellness()
-                    }
+        WellnessCaptureView(
+            muscles: coordinator.pendingWellnessMuscles,
+            needsSessionEffort: !WorkoutEffortScoreCalculator.hasWorkingSetRPE(in: session),
+            onSave: { energy, mood, stress, soreness, notes, perceivedEffort in
+                Task {
+                    await completeFinishedWorkout(
+                        session: session,
+                        perceivedEffort: perceivedEffort,
+                        saveWellness: true,
+                        energy: energy,
+                        mood: mood,
+                        stress: stress,
+                        soreness: soreness,
+                        notes: notes
+                    )
+                    coordinator.dismissWellness()
+                }
+            },
+            onSkip: { perceivedEffort in
+                Task {
+                    await completeFinishedWorkout(
+                        session: session,
+                        perceivedEffort: perceivedEffort,
+                        saveWellness: false
+                    )
+                    coordinator.dismissWellness()
+                }
             }
-        }
+        )
         .safeAreaInset(edge: .bottom) {
             if let healthKitWriteNote {
                 Text(healthKitWriteNote)

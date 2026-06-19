@@ -21,6 +21,7 @@ struct SignalApp: App {
 
     init() {
         Self.applyDarkNavigationChrome()
+        TrainApplicationLifecycle.installObserversIfNeeded()
         DailyBriefingScheduler.registerCategories()
         LiveWorkoutCoordinatorLaunchState.markProcessLaunched()
         _ = DerivedMetricsService.shared

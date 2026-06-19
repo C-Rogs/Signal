@@ -336,8 +336,35 @@ V1 does not push notifications. V3 introduces the morning briefing. When that mi
 ### Widget (future, V3+)
 A Lock Screen widget showing today's recovery score. Placeholder: add an empty `WidgetKit` extension target in M1 named `SignalWidget` but do not implement it yet. Having the target present from day one avoids a scheme reconfiguration later.
 
-### App Store metadata (personal build, skip for now)
-Since this is a personal sideload, no App Store submission is planned. Skip privacy nutrition labels, App Review notes, and TestFlight configuration unless explicitly added to a future version.
+### Distribution (TestFlight + Xcode Cloud)
+
+Signal ships as an **iOS-only** product (`com.cameronro.Signal`). The watch app and widgets are **embedded** in the iOS archive; they are not separate TestFlight products.
+
+**App Store Connect (one-time):**
+- Listing name: cannot be **Signal** (taken). Use e.g. **Signal Coach**. Home screen label stays **Signal**.
+- SKU: `signal-ios` (fixed, no version in SKU).
+- Bundle IDs: `com.cameronro.Signal`, `com.cameronro.Signal.watchkitapp`, `com.cameronro.Signal.watchkitapp.SignalWatch-Widget-Extension`, `com.cameronro.Signal.SignalWidget`, App Group `group.com.cameronro.signal`.
+- App Privacy: **No, we do not collect data** (HealthKit and calendar are processed on-device only; no runtime network).
+- Privacy policy URL: required before **external** TestFlight or App Store (short on-device-only statement).
+
+**Xcode Cloud workflow (canonical):**
+
+| Setting | Value |
+|---|---|
+| Product / scheme | **Signal** (not SignalWatch Watch App alone) |
+| Start condition | Branch Changes → **main** |
+| Environment | **Latest Release** (Xcode 26.x; matches iOS 26 target) |
+| Archive | **iOS only** |
+| Post-action | **TestFlight (Internal Testing)** once ASC app exists and first upload succeeds |
+| Skip | macOS archive, standalone watchOS archive, macOS TestFlight |
+
+Do **not** archive macOS or standalone watchOS in Cloud: the main target lists `macosx` in supported platforms (Xcode template) but there is no macOS-specific code and HealthKit is not a Mac shipping surface. Watch ships inside the iOS IPA.
+
+**Local fallback:** `./scripts/testflight.sh archive export` (see `scripts/ExportOptions.plist`). `ITSAppUsesNonExemptEncryption` = false in Info.plist.
+
+**Remote testing path:** git push → Xcode Cloud archives iOS → TestFlight Internal (instant, team) → External when ready (Beta App Review + privacy policy).
+
+**Not in scope for V1 distribution:** App Review notes, App Store marketing screenshots, macOS Catalyst / Mac App Store.
 
 ---
 

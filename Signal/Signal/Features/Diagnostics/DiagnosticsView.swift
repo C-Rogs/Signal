@@ -878,7 +878,7 @@ struct DiagnosticsView: View {
                 .font(.cardLabel)
                 .foregroundStyle(Color("TextPrimary"))
 
-            Text("Last 100 lifecycle events from active workout (scenePhase, nav path, container).")
+            Text("Resets when you start a workout or copy this report.")
                 .font(.caption)
                 .foregroundStyle(Color("TextSecondary"))
 
@@ -890,7 +890,7 @@ struct DiagnosticsView: View {
 
             HStack(spacing: 12) {
                 Button("Copy report") {
-                    UIPasteboard.general.string = TrainWorkoutDiagnostics.exportText()
+                    _ = TrainWorkoutDiagnostics.copyToPasteboardAndReset()
                     workoutDiagnosticsCopied = true
                     Log.ui.info("diagnostics train workout report copied")
                 }

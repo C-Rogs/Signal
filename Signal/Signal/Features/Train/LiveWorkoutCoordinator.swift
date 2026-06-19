@@ -84,38 +84,42 @@ final class LiveWorkoutCoordinator {
             Log.workout.error("active session fetch failed: \(String(describing: error), privacy: .public)")
             activeSession = nil
         }
+        TrainApplicationLifecycle.isLiveWorkoutSessionInProgress = activeSession != nil
     }
 
     func resumeWorkout() {
         refresh()
         guard let session = activeSession else {
             Log.workout.info("resume requested but no active session in store")
+            TrainWorkoutDiagnostics.record("resumeWorkout noActiveSession")
             return
         }
+        TrainWorkoutDiagnostics.record("resumeWorkout session=\(String(describing: session.persistentModelID))")
         presentWorkout(sessionID: session.persistentModelID)
     }
 
     func presentWorkout(sessionID: PersistentIdentifier) {
         presentedWorkoutSessionID = sessionID
         isViewingActiveWorkout = true
-        pendingTrainRoute = nil
+        TrainApplicationLifecycle.isWorkoutOverlayPresented = true
+        LiveWorkoutCoordinatorLaunchState.noteLiveWorkoutViewing(true)
         workoutSurfaceNeedsRefresh = false
-        workoutSurfaceGeneration += 1
-        requestStripActiveWorkoutRoute()
+        pendingTrainRoute = .activeWorkout(sessionID)
+        TrainWorkoutDiagnostics.beginSession("presentWorkout")
         TrainWorkoutDiagnostics.record(
-            "presentWorkout session=\(String(describing: sessionID)) gen=\(workoutSurfaceGeneration)"
+            "presentWorkout session=\(String(describing: sessionID))"
         )
     }
 
-    func minimizeWorkout() {
-        dismissWorkoutOverlay(reason: "minimizeWorkout")
+    func minimizeWorkout(source: String = "unknown") {
+        dismissWorkoutOverlay(reason: "minimizeWorkout source=\(source)")
     }
 
     func noteWorkoutViewDisappearedWhilePresented(scenePhase: ScenePhase) {
         guard presentedWorkoutSessionID != nil else { return }
         workoutSurfaceNeedsRefresh = true
         TrainWorkoutDiagnostics.record(
-            "workoutViewDisappearedWhilePresented scenePhase=\(scenePhase) needsRefresh=true"
+            "workoutViewDisappearedWhilePresented scenePhase=\(scenePhase) trueBackground=\(TrainApplicationLifecycle.resolvedIsInTrueBackground) needsRefresh=true"
         )
     }
 
@@ -123,12 +127,11 @@ final class LiveWorkoutCoordinator {
         isReadyForScenePhaseRefresh = true
     }
 
-    func handleRootScenePhaseChange(to phase: ScenePhase) {
-        let previous = lastRecordedScenePhase
+    func handleRootScenePhaseChange(from previousPhase: ScenePhase, to phase: ScenePhase) {
+        if phase == .active, previousPhase == .background {
+            refreshWorkoutSurfaceAfterSceneActivation(from: previousPhase)
+        }
         lastRecordedScenePhase = phase
-        guard isReadyForScenePhaseRefresh else { return }
-        guard phase == .active else { return }
-        refreshWorkoutSurfaceAfterSceneActivation(from: previous)
     }
 
     func requestWorkoutSurfaceRefresh(reason: String) {
@@ -139,19 +142,8 @@ final class LiveWorkoutCoordinator {
     private func refreshWorkoutSurfaceAfterSceneActivation(from previousPhase: ScenePhase) {
         guard presentedWorkoutSessionID != nil else { return }
 
-        let reason: String?
-        if workoutSurfaceNeedsRefresh {
-            reason = "disappear"
-        } else if previousPhase == .inactive {
-            reason = "inactiveReturn"
-        } else if previousPhase == .background {
-            reason = "backgroundReturn"
-        } else {
-            reason = nil
-        }
-
-        guard let reason else { return }
-        bumpWorkoutSurfaceGeneration(reason: reason, previousPhase: previousPhase)
+        guard workoutSurfaceNeedsRefresh else { return }
+        bumpWorkoutSurfaceGeneration(reason: "disappear", previousPhase: previousPhase)
     }
 
     private func bumpWorkoutSurfaceGeneration(reason: String, previousPhase: ScenePhase) {
@@ -162,6 +154,11 @@ final class LiveWorkoutCoordinator {
         )
     }
 
+    func syncWorkoutNavigationDismissed(source: String) {
+        guard isViewingActiveWorkout else { return }
+        dismissWorkoutOverlay(reason: "syncWorkoutNavigationDismissed source=\(source)")
+    }
+
     func requestStripActiveWorkoutRoute() {
         stripActiveWorkoutRouteToken += 1
     }
@@ -169,6 +166,10 @@ final class LiveWorkoutCoordinator {
     private func dismissWorkoutOverlay(reason: String) {
         presentedWorkoutSessionID = nil
         isViewingActiveWorkout = false
+        pendingTrainRoute = nil
+        TrainApplicationLifecycle.isWorkoutOverlayPresented = false
+        TrainApplicationLifecycle.isLiveWorkoutSetFieldEditing = false
+        LiveWorkoutCoordinatorLaunchState.noteLiveWorkoutViewing(false)
         workoutSurfaceNeedsRefresh = false
         requestStripActiveWorkoutRoute()
         trainNavigationResetToken += 1

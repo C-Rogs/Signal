@@ -13,6 +13,21 @@ struct ActiveWorkoutContainerView: View {
     @State private var resolveAttempt = 0
 
     var body: some View {
+        workoutContent
+            .background(screenBackground.ignoresSafeArea())
+            .onAppear {
+                resolveSessionIfNeeded()
+            }
+            .onChange(of: resolveAttempt) { _, _ in
+                resolveSessionIfNeeded()
+            }
+            .onChange(of: coordinator.workoutSurfaceGeneration) { _, _ in
+                resolveSessionIfNeeded()
+            }
+    }
+
+    @ViewBuilder
+    private var workoutContent: some View {
         Group {
             if let session {
                 ActiveWorkoutView(session: session)
@@ -27,7 +42,7 @@ struct ActiveWorkoutContainerView: View {
                         resolveSessionIfNeeded()
                     }
                     Button("Back to Train") {
-                        coordinator.minimizeWorkout()
+                        coordinator.minimizeWorkout(source: "containerUnavailable")
                     }
                 }
             } else {
@@ -35,16 +50,6 @@ struct ActiveWorkoutContainerView: View {
                     .tint(Color("Primary"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-        }
-        .background(screenBackground.ignoresSafeArea())
-        .onAppear {
-            resolveSessionIfNeeded()
-        }
-        .onChange(of: resolveAttempt) { _, _ in
-            resolveSessionIfNeeded()
-        }
-        .onChange(of: coordinator.workoutSurfaceGeneration) { _, _ in
-            resolveSessionIfNeeded()
         }
     }
 
@@ -55,6 +60,17 @@ struct ActiveWorkoutContainerView: View {
     private func resolveSessionIfNeeded() {
         coordinator.configure(modelContext: modelContext)
         coordinator.refresh()
+
+        if session == nil,
+           let cached = coordinator.activeSession,
+           cached.persistentModelID == sessionID,
+           cached.endTime == nil
+        {
+            session = cached
+            loadFailed = false
+            TrainWorkoutDiagnostics.record("container resolved from coordinator cache exercises=\(cached.exercises.count)")
+            return
+        }
 
         if let resolved = resolveSession() {
             session = resolved

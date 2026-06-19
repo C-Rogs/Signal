@@ -1,8 +1,13 @@
 import Foundation
+import UIKit
 
 enum TrainWorkoutDiagnostics {
     private static let storageKey = "signal.train.workout.diag"
-    private static let maxEntries = 100
+    private static let maxEntries = 200
+
+    static func beginSession(_ reason: String) {
+        record("--- sessionStart reason=\(reason) pid=\(ProcessInfo.processInfo.processIdentifier) ---")
+    }
 
     static func record(_ message: String) {
         let stamp = Self.timestamp()
@@ -26,6 +31,13 @@ enum TrainWorkoutDiagnostics {
             return "No train workout diagnostics captured yet."
         }
         return entries.joined(separator: "\n")
+    }
+
+    static func copyToPasteboardAndReset() -> String {
+        let text = exportText()
+        UIPasteboard.general.string = text
+        clear()
+        return text
     }
 
     static func clear() {

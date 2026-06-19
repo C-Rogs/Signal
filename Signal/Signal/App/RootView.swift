@@ -14,13 +14,7 @@ struct RootView: View {
     var body: some View {
         Group {
             if downloadState.phase == .ready || EmbeddingBackend.useNLContextualEmbeddingFallback {
-                ZStack {
-                    MainTabView()
-                    if let sessionID = workoutCoordinator.presentedWorkoutSessionID {
-                        ActiveWorkoutShell(sessionID: sessionID)
-                            .zIndex(1)
-                    }
-                }
+                MainTabView()
             } else {
                 embeddingGate
             }
@@ -28,28 +22,21 @@ struct RootView: View {
         .onAppear {
             paintHostWindowForScheme()
             workoutCoordinator.markReadyForScenePhaseRefresh()
-            TrainWorkoutDiagnostics.record("appLaunch")
+            TrainWorkoutDiagnostics.beginSession("appLaunch")
             Log.ui.info("Root view appeared")
             healthKitManager.refreshAccessState()
             healthKitManager.activateBackgroundObserversIfNeeded()
         }
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: scenePhase) { previousPhase, phase in
             TrainWorkoutDiagnostics.record(
-                "root scenePhase=\(phase) presented=\(workoutCoordinator.presentedWorkoutSessionID != nil) viewing=\(workoutCoordinator.isViewingActiveWorkout)"
+                "root scenePhase=\(phase) presented=\(workoutCoordinator.presentedWorkoutSessionID != nil) viewing=\(workoutCoordinator.isViewingActiveWorkout) bgGen=\(TrainApplicationLifecycle.trueBackgroundGeneration)"
             )
-            if phase == .background {
+            if phase == .background, workoutCoordinator.presentedWorkoutSessionID == nil {
                 try? modelContext.save()
             }
-            workoutCoordinator.handleRootScenePhaseChange(to: phase)
+            workoutCoordinator.handleRootScenePhaseChange(from: previousPhase, to: phase)
             if phase == .active {
-                EmbeddingRunPolicy.applicationDidBecomeActive()
-                paintHostWindowForScheme()
-                healthKitManager.refreshAccessState()
-                healthKitManager.syncOnForegroundIfReady()
-                WatchConnectivityService.shared.retryPendingPush()
-                LiveWorkoutWatchBridge.shared.retryPendingOutboundTelemetry()
-                runReflectionIfForegroundDue()
-                refreshDailyBriefingScheduleIfNeeded()
+                runRootForegroundWork()
             }
         }
         .onChange(of: colorScheme) { _, _ in
@@ -57,7 +44,9 @@ struct RootView: View {
         }
         .task(id: embeddingPreloadTaskID) {
             guard scenePhase == .active else { return }
+            guard downloadState.phase != .ready else { return }
             guard !EmbeddingBackend.useNLContextualEmbeddingFallback else { return }
+            guard !TrainApplicationLifecycle.shouldSkipDeferredSystemWork() else { return }
             await runEmbeddingPreloadDeferred()
         }
     }
@@ -119,7 +108,10 @@ struct RootView: View {
     }
 
     private var embeddingPreloadTaskID: String {
-        "\(downloadState.retryGeneration)-\(scenePhase == .active ? "active" : "inactive")"
+        if downloadState.phase == .ready {
+            return "ready-\(downloadState.retryGeneration)"
+        }
+        return "\(downloadState.retryGeneration)-\(scenePhase == .active ? "active" : "inactive")"
     }
 
     private func runEmbeddingPreloadDeferred() async {
@@ -144,6 +136,29 @@ struct RootView: View {
                 "embedding preload failed: \(String(describing: error), privacy: .public)"
             )
         }
+    }
+
+    private func runRootForegroundWork() {
+        if workoutCoordinator.isViewingActiveWorkout {
+            TrainWorkoutDiagnostics.record("root skipForegroundWork workoutViewing=true")
+            return
+        }
+        if workoutCoordinator.activeSession != nil {
+            TrainWorkoutDiagnostics.record("root skipForegroundWork activeSessionMinimized=true")
+            return
+        }
+        performRootForegroundWork()
+    }
+
+    private func performRootForegroundWork() {
+        EmbeddingRunPolicy.applicationDidBecomeActive()
+        paintHostWindowForScheme()
+        healthKitManager.refreshAccessState()
+        healthKitManager.syncOnForegroundIfReady()
+        WatchConnectivityService.shared.retryPendingPush()
+        LiveWorkoutWatchBridge.shared.retryPendingOutboundTelemetry()
+        runReflectionIfForegroundDue()
+        refreshDailyBriefingScheduleIfNeeded()
     }
 
     private func runReflectionIfForegroundDue() {

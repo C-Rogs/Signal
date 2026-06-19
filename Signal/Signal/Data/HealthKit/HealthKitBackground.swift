@@ -115,6 +115,10 @@ final class HealthKitBackgroundCoordinator {
     }
 
     private func runDeferredSyncIfNeeded(trigger: String) {
+        guard !TrainApplicationLifecycle.shouldSkipDeferredSystemWork() else {
+            TrainWorkoutDiagnostics.record("healthKit deferSync skipped trigger=\(trigger) workoutOverlay=true")
+            return
+        }
         guard HealthKitDirtyFlagStore.isDirty else { return }
         guard UIApplication.shared.isProtectedDataAvailable else {
             Log.sync.info("deferred sync skipped trigger=\(trigger, privacy: .public); protected data unavailable")

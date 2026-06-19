@@ -212,17 +212,16 @@ struct ActiveWorkoutRestTimerLayer: View {
                         )
                     }
                 )
+                .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { date in
+                    coordinator.handleTick(
+                        at: date,
+                        exercises: exercises,
+                        watchBridge: watchBridge,
+                        store: store,
+                        onCoordinatorRefresh: onCoordinatorRefresh
+                    )
+                }
             }
-        }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { date in
-            guard scenePhase == .active else { return }
-            coordinator.handleTick(
-                at: date,
-                exercises: exercises,
-                watchBridge: watchBridge,
-                store: store,
-                onCoordinatorRefresh: onCoordinatorRefresh
-            )
         }
     }
 }

@@ -58,6 +58,14 @@ final class LiveWorkoutWatchBridge {
     ) async {
         guard let sessionKey = prepareLiveSession(for: session, modelContext: modelContext) else { return }
 
+        if !forceFullHandshake,
+           activeSessionKey == sessionKey,
+           hasActiveWatchHandshake || hasActivePhoneSession
+        {
+            logger.info("live workout streaming already active sessionKey=\(sessionKey, privacy: .public)")
+            return
+        }
+
         switch lockedHeartRateSource {
         case .watch:
             await ensureWatchSourceStarted(
@@ -108,6 +116,16 @@ final class LiveWorkoutWatchBridge {
             accessStatusMessage: accessStatusMessage,
             now: now
         )
+    }
+
+    func suspendForAppBackground() async {
+        guard hasActivePhoneSession else {
+            TrainWorkoutDiagnostics.record("livePhoneSession suspendSkipped noActivePhoneSession source=\(sourceLogLabel)")
+            return
+        }
+        hasActivePhoneSession = false
+        await phoneSessionManager.stop(discardHealthKitWorkout: true)
+        TrainWorkoutDiagnostics.record("livePhoneSession suspendedForBackground sessionKey=\(activeSessionKey ?? "none")")
     }
 
     func endWatchWorkout() {

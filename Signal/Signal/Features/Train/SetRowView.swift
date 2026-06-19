@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UIKit
 
 struct SetRowView: View {
     let set: SetEntry
@@ -20,8 +21,8 @@ struct SetRowView: View {
     @State private var loggedRPE: Double?
     @State private var showRPESheet = false
     @State private var sheetRPE: Double = WorkoutRPEScale.defaultValue
-    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(TrainSetFieldFocusCoordinator.self) private var focusCoordinator
     @FocusState private var focusedField: Field?
 
     private enum Field: Hashable {
@@ -104,26 +105,30 @@ struct SetRowView: View {
                 onActivate()
             }
             if oldValue != nil, newValue == nil {
-                commitFields()
+                if focusCoordinator.consumeSuppressNextCommit() {
+                    TrainWorkoutDiagnostics.record("setRow skipCommit overlayDismiss set=\(set.setIndex)")
+                } else {
+                    commitFields()
+                }
             }
+            focusCoordinator.noteEditingActive(newValue != nil)
         }
-        .onChange(of: scenePhase) { _, phase in
-            if TrainScenePhaseKeyboardPolicy.shouldReleaseSetFieldFocus(for: phase) {
-                TrainWorkoutDiagnostics.record("setRow releaseFocus set=\(set.setIndex) phase=\(phase)")
+        .onChange(of: focusCoordinator.dismissGeneration) { _, _ in
+            if !focusCoordinator.consumeSuppressNextCommit() {
                 commitFields()
-                focusedField = nil
             }
+            focusedField = nil
+            focusCoordinator.noteEditingActive(false)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
+            guard focusedField != nil else { return }
+            focusCoordinator.prepareForSystemOverlay()
+            focusedField = nil
+            focusCoordinator.noteEditingActive(false)
+            TrainWorkoutDiagnostics.record("setRow releaseFocus trueBackground set=\(set.setIndex)")
         }
         .contextMenu {
             Button("Delete", role: .destructive, action: onDelete)
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("Done") {
-                    focusedField = nil
-                }
-            }
         }
     }
 

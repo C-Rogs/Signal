@@ -2038,3 +2038,518 @@ Add to **Signal** target if not auto-synced:
 |------|--------|
 | Tabs | `MainTabView.swift` |
 | Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-08 — Train NC blank + ghost bottom sheet
+
+### Shipped
+
+- **Ghost bottom sheet:** Removed iOS 26.1 `tabViewBottomAccessory(isEnabled: false)`; all OS versions hide banner via opacity/hit-testing while keeping accessory branch stable. Banner attaches synchronously when minimized workout already exists on appear.
+- **NC numpad blank:** `noteWorkoutViewDisappearedWhilePresented` ignores `.inactive` (Notification Centre only flags refresh on `.background`). Removed coordinator-generation `VStack.id`; surgical `listRecoveryToken` on exercise `ForEach` only when blank body detected.
+- **Keyboard:** Single Done toolbar on `ActiveWorkoutView` via `TrainSetFieldFocusCoordinator`; dismiss keyboard chrome on `.inactive` without clearing `@FocusState`.
+- **Wellness sheet:** `sheet(item:)` presents only when session resolves; no empty `ProgressView` fallback.
+
+### Gate A (agent)
+
+- `test_sim` scene-phase + keyboard policy tests: **pass** (11/11).
+- `build_device` iPhone 16 Pro: **pass** (~11s).
+- `install_app_device` + `launch_app_device`: **pass** (PID 21234).
+
+### Gate B (human)
+
+1. Minimized workout → background → reopen: no empty swipe sheet; banner above tabs.
+2. Active workout, numpad open → Notification Centre ×5: list visible; numpad usable.
+3. NC return → tap number: value commits.
+4. Finish workout: full wellness sheet, never empty sheet.
+5. Copy workout debug log: expect `inactiveReturnRecovery` / `container refreshInPlace`; no `refreshWorkoutSurface reason=disappear` after NC-only cycles.
+
+### Human Xcode
+
+- Empty.
+
+### Out of scope
+
+- Broader Coach/Dashboard blank screens.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Tabs / wellness | `MainTabView.swift`, `TrainWellnessFinishSheet.swift` |
+| Coordinator | `LiveWorkoutCoordinator.swift` |
+| Active workout | `ActiveWorkoutView.swift` |
+| Keyboard | `SetRowView.swift`, `TrainKeyboard.swift` |
+| Tests | `LiveWorkoutCoordinatorScenePhaseTests.swift`, `TrainScenePhaseKeyboardPolicyTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-08 — Train NC follow-up (applicationState gating)
+
+### Shipped
+
+- **Root cause (Log3):** Notification Centre reports `scenePhase == .background` while `UIApplication` is still `.active`. Prior fix treated that as true background: released `@FocusState`, flagged `workoutViewDisappearedWhilePresented`, and dismissed keyboard chrome on `.inactive` (empty swipe sheet). Blank recovery only bumped `listRecoveryToken` when exercise count was zero while model still had data.
+- **Fix:** Gate focus release, disappear refresh, and model save on `UIApplication.shared.applicationState == .background` via `TrainApplicationLifecycle`. Removed `TrainKeyboard.dismiss()` on inactive. Keyboard Done toolbar only when a set field is editing. Foreground return (inactive or NC background blip → active) always bumps `listRecoveryToken` and logs `foregroundReturnRecovery`. Container refreshes on any non-active → active return.
+
+### Gate A (agent)
+
+- `test_sim` scene-phase + coordinator tests: **pass** (14/14).
+- `build_device` iPhone 16 Pro: **pass** (~11s).
+- `install_app_device` + `launch_app_device`: **pass** (PID 21289).
+
+### Gate B (human)
+
+1. Active workout, numpad open → Notification Centre ×5: no empty swipe sheet; list stays visible; numpad usable after return.
+2. Copy workout debug log: expect `foregroundReturnRecovery token=1+`; expect `activeWorkout disappearIgnored` during NC (not `workoutViewDisappearedWhilePresented`); no `setRow releaseFocus` during NC-only cycles; no `appLaunch` after NC dismiss.
+
+### Human Xcode
+
+- Empty.
+
+### Out of scope
+
+- Watchdog / process restart if still reproducing after NC with keyboard (needs fresh Log4).
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Lifecycle / keyboard | `TrainKeyboard.swift`, `SetRowView.swift` |
+| Coordinator | `LiveWorkoutCoordinator.swift` |
+| Active workout | `ActiveWorkoutView.swift`, `ActiveWorkoutContainerView.swift` |
+| Tests | `LiveWorkoutCoordinatorScenePhaseTests.swift`, `TrainScenePhaseKeyboardPolicyTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-08 — Train NC remount restore (Log3 follow-up)
+
+### Shipped
+
+- **Misdiagnosis corrected:** Gating `workoutViewDisappearedWhilePresented` on `UIApplication.applicationState` blocked the P0 remount path. NC still fires `onDisappear` + `scenePhase=.background`; without `needsRefresh`, `workoutSurfaceGeneration` never bumped on return → blank shell.
+- **Restore disappear → refresh:** Any `activeWorkout disappear` while `presented=true` sets `workoutSurfaceNeedsRefresh`; active return bumps generation and remounts `ActiveWorkoutShell` via `.id(workoutSurfaceGeneration)`.
+- **True background only for focus:** `didEnterBackground` / `willEnterForeground` observers (`TrainApplicationLifecycle`); no focus release or keyboard dismiss during NC/Control Centre. Removed keyboard Done toolbar (ghost swipe source).
+- **Diagnostics:** Logs include `trueBackground=`, `uiState=`, `refreshWorkoutSurface`, `foregroundReturnRecovery`.
+
+### Gate A (agent)
+
+- `test_sim` scene-phase + coordinator tests: **pass** (10/10).
+- `build_device` iPhone 16 Pro: **pass** (~11s).
+- `install_app_device`: **pass** (clean install after user delete).
+- `launch_app_device`: **fail** (device locked; unlock and launch from home screen).
+
+### Gate B (human)
+
+1. Resume workout → tap weight/reps → pull Control Centre or Notification Centre → dismiss → tap number field. List and numpad must work.
+2. Copy workout debug log. Expect: `workoutViewDisappearedWhilePresented trueBackground=false` during NC; then `refreshWorkoutSurface reason=disappear gen=N+1` on return; **no** `setRow releaseFocus` during NC; **no** `appLaunch` after NC.
+
+### Human Xcode
+
+- Empty.
+
+### Out of scope
+
+- Re-adding keyboard Done toolbar (removed to kill ghost sheet).
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Lifecycle | `TrainKeyboard.swift`, `SignalApp.swift` |
+| Shell / coordinator | `ActiveWorkoutShell.swift`, `LiveWorkoutCoordinator.swift` |
+| Active workout | `ActiveWorkoutView.swift`, `SetRowView.swift` |
+| Tests | `LiveWorkoutCoordinatorScenePhaseTests.swift`, `TrainScenePhaseKeyboardPolicyTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-08 — Train Control Centre + numpad watchdog (Log7)
+
+### Shipped
+
+- **Root cause (Log7):** Control Centre with numpad open fires real `didEnterBackground` (uiState=2). We released focus + committed fields during that transition → `setRow releaseFocus` → process restart (`appLaunch` ~300ms after `willEnterForeground`). Not a blank-body render bug; watchdog kill.
+- **Fix:** Removed all automatic focus release on background (SetRowView + ActiveWorkoutView). Let iOS own keyboard during CC. Skip SwiftData save while workout presented on background. Defer RootView foreground housekeeping (HealthKit sync, embedding, paint window) 450ms when workout open after recent background. Skip list remount when returning from inactive-only while still editing.
+
+### Gate A (agent)
+
+- `test_sim` lifecycle + coordinator tests: **pass** (11/11).
+- `build_device` + `install_app_device` + `launch_app_device` iPhone 16 Pro: **pass** (PID 21401).
+
+### Gate B (human)
+
+1. Resume workout → tap reps/weight → pull Control Centre (numpad still open) → dismiss CC → tap field and enter a number.
+2. Log must show `appDidEnterBackground` but **no** `setRow releaseFocus` and **no** `appLaunch` until you actually leave the app.
+
+### Human Xcode
+
+- Empty.
+
+### Out of scope
+
+- Keyboard Done toolbar (still removed).
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Lifecycle | `TrainKeyboard.swift` |
+| Root | `RootView.swift` |
+| Active workout | `ActiveWorkoutView.swift`, `SetRowView.swift` |
+| Tests | `TrainApplicationLifecycleTests.swift` (new), `LiveWorkoutCoordinatorScenePhaseTests.swift`; removed `TrainScenePhaseKeyboardPolicyTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-08 — Train CC keyboard watchdog (Log8)
+
+### Shipped
+
+- **Root cause (Log8):** Control Centre with numpad fires real `didEnterBackground`. Process dies ~300ms after `willEnterForeground`, before `scenePhase=active`. No `setRow releaseFocus` in Log8 (prior fix worked). Kill is keyboard still up through background + deferred HealthKit/embedding work on foreground notification.
+- **Fix:** Dismiss keyboard on `willResignActive` before CC backgrounds (skip field commit during overlay). Block HealthKit deferred sync while workout overlay is up or field is editing. Stop embedding preload task from restarting on every scene flicker when already ready. Defer root foreground housekeeping 900ms after recent background.
+
+### Gate A (agent)
+
+- `test_sim` lifecycle + coordinator tests: **pass** (14/14).
+- `build_device` + `install_app_device` + `launch_app_device`: **pass** (PID 21417).
+
+### Gate B (human)
+
+1. Resume workout → tap kg field → pull Control Centre → dismiss → enter weight.
+2. Log must show `appWillResignActive` + `activeWorkout willResignActive dismissKeyboard` before `appDidEnterBackground`; then `root scenePhase=active` without `appLaunch`.
+
+### Human Xcode
+
+- Empty.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Lifecycle / keyboard | `TrainKeyboard.swift`, `ActiveWorkoutView.swift`, `SetRowView.swift` |
+| Coordinator | `LiveWorkoutCoordinator.swift` |
+| Root | `RootView.swift` |
+| HealthKit | `HealthKitBackground.swift`, `HealthKitManager.swift` |
+| Tests | `TrainApplicationLifecycleTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-08 — Train NC privacy shield (Log9)
+
+### Shipped
+
+- **Root cause (Log9):** First NC pull with numpad succeeds (`willResignActive` dismiss + `foregroundReturnRecovery`). Second NC pull (keyboard already dismissed) still hits real `didEnterBackground` then process kill (`appLaunch` ~323ms after `willEnterForeground`, no `scenePhase=active`). Matches scene-update watchdog during background snapshot of heavy SwiftUI (NavigationStack + ScrollView + TextFields in ZStack overlay).
+- **Research:** Apple forums: NC/CC should be `willResignActive` → `didBecomeActive`; when iOS reports `didEnterBackground` during NC, return path uses `willEnterForeground` and full scene restore. Mitigation: detach complex UI before background; privacy shield pattern.
+- **Fix:** `RootView` shows `TrainWorkoutPrivacyShield` (solid screen background) whenever `scenePhase != .active` while workout is presented; `ActiveWorkoutShell` only mounts on `.active`. Removed `blankBodyRecovery`, aggressive `foregroundReturnRecovery` list remount, and container `refreshInPlace` on every inactive→active. `onDisappear` only flags refresh on true `.background`. Added `appDidBecomeActive` diagnostic.
+
+### Gate A (agent)
+
+- `test_sim` lifecycle + coordinator tests: **pass** (14/14).
+- `build_device` + `install_app_device` + `launch_app_device` iPhone 16 Pro: **pass** (PID 21437).
+- NC/CC sim automation: **not run** (system gestures not scriptable; no interaction-free repro).
+
+### Gate B (human)
+
+1. Fresh install → resume workout → tap kg → pull Notification Centre twice (with and without numpad) → pull Control Centre twice.
+2. Log must show `workoutPrivacyShield phase=inactive` on each pull, then `activeWorkout appear` on return, **no** `appLaunch` between pulls.
+3. Brief black flash during NC is expected (privacy shield).
+
+### Human Xcode
+
+- Empty.
+
+### Out of scope
+
+- Reverting ZStack overlay to `fullScreenCover`.
+- Sim UI test for NC gesture.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Root | `RootView.swift` |
+| Privacy shield | `TrainWorkoutPrivacyShield.swift` (new) |
+| Active workout | `ActiveWorkoutView.swift`, `ActiveWorkoutContainerView.swift` |
+| Lifecycle | `TrainKeyboard.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-06-08 — Train NC exclusive presentation + deferred remount (Log10)
+
+### Shipped
+
+- **Log10 diagnosis:** First NC (pure inactive, `didBecomeActive` only) succeeded with privacy shield. Second pull escalated to `didEnterBackground`; return via `willEnterForeground` killed process in ~7ms (`appLaunch` before `root scenePhase=active`). Shield was active but **MainTabView (4 tabs + NavigationStacks) still lived under it** for iOS snapshot/restore.
+- **Why 10 iterations missed it:** fixes targeted keyboard, focus, remount tokens, and shield overlay while keeping the ZStack architecture (TabView + workout). Two different NC paths (`didBecomeActive` vs `willEnterForeground`) were treated as one bug. No crash log (0x8BADF00D) to confirm watchdog.
+- **Fix:** When workout presented, **only** workout shell or privacy shield renders (no MainTabView). On `willEnterForeground`, defer workout shell remount 600ms after `didBecomeActive` (shield stays up through scene restore). Skip all root foreground housekeeping (HealthKit, embedding, Watch, reflection) while workout is open.
+
+### Gate A (agent)
+
+- `test_sim` lifecycle + coordinator tests: **pass** (15/15).
+- `build_device` + `install_app_device` + `launch_app_device`: **pass** (PID 21456).
+
+### Gate B (human)
+
+1. Fresh install → start workout → add exercise → tap kg → NC → wait → return.
+2. Log must show `workoutSurfaceRemount deferred=true reason=willEnterForeground` when iOS backgrounds, then `deferred=false reason=didBecomeActive`, then `activeWorkout appear`. **No** `appLaunch` mid-session.
+
+### Human Xcode
+
+- Empty.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Root | `RootView.swift` |
+| Lifecycle | `TrainKeyboard.swift` |
+| Tabs | `MainTabView.swift` |
+| Tests | `TrainApplicationLifecycleTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+
+## 2026-06-08 — Train NC exclusive presentation + deferred remount (Log10)
+
+### Shipped
+
+- **Log10 diagnosis:** First NC (pure inactive, `didBecomeActive` only) succeeded with privacy shield. Second pull escalated to `didEnterBackground`; return via `willEnterForeground` killed process in ~7ms (`appLaunch` before `root scenePhase=active`). Shield was active but **MainTabView (4 tabs + NavigationStacks) still lived under it** for iOS snapshot/restore.
+- **Why 10 iterations missed it:** fixes targeted keyboard, focus, remount tokens, and shield overlay while keeping the ZStack architecture (TabView + workout). Two different NC paths (`didBecomeActive` vs `willEnterForeground`) were treated as one bug. No crash log (0x8BADF00D) to confirm watchdog.
+- **Fix:** When workout presented, **only** workout shell or privacy shield renders (no MainTabView). On `willEnterForeground`, defer workout shell remount 600ms after `didBecomeActive` (shield stays up through scene restore). Skip all root foreground housekeeping (HealthKit, embedding, Watch, reflection) while workout is open.
+
+### Gate A (agent)
+
+- `test_sim` lifecycle + coordinator tests: **pass** (15/15).
+- `build_device` + `install_app_device` + `launch_app_device`: **pass** (PID 21456).
+
+### Gate B (human)
+
+1. Fresh install → start workout → add exercise → tap kg → NC → wait → return.
+2. Log must show `workoutSurfaceRemount deferred=true reason=willEnterForeground` when iOS backgrounds, then `deferred=false reason=didBecomeActive`, then `activeWorkout appear`. **No** `appLaunch` mid-session.
+
+### Human Xcode
+
+- Empty.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Root | `RootView.swift` |
+| Lifecycle | `TrainKeyboard.swift` |
+| Tabs | `MainTabView.swift` |
+| Tests | `TrainApplicationLifecycleTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+
+## 2026-06-08 — Train nav push presentation (Log11)
+
+### Shipped
+
+- **Log11:** NC path works with shield remount. Home path shows blank shield then kills on second return. Root cause: replacing RootView tree fights iOS scene restore.
+- **Hevy pattern:** active workout is a NavigationStack push on the Train tab, tab bar hidden, view stays mounted through NC and home.
+- **Fix:** Removed RootView workout overlay, privacy shield, deferred remount. presentWorkout pushes on TrainHomeView path with hidden tab bar.
+
+### Gate A (agent)
+
+- `test_sim`: **pass** (15/15).
+- `build_device` + install + launch: **pass** (PID 21484).
+
+### Gate B (human)
+
+1. Start workout → tap kg → NC ×3 → home → return ×2.
+2. Log: `trainPushActiveWorkout`, no `workoutPrivacyShield`, no disappear on NC, no `appLaunch` mid-session.
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Root | `RootView.swift` |
+| Train nav | `TrainHomeView.swift`, `LiveWorkoutCoordinator.swift` |
+| Active workout | `ActiveWorkoutView.swift` |
+| Tabs | `MainTabView.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+
+## 2026-06-08 — Train home foreground recovery (Log13)
+
+### Shipped
+
+- **Log13 diagnosis:** NC stable on nav push. Home gen=1 OK; gen=2 kills in ~6ms after `appDidBecomeActive` (`appLaunch`, no `root scenePhase=active`). SwiftUI reports `inactive→active` after real `didEnterBackground`, so `previousPhase == .background` never fired and deferred recovery was skipped (`foregroundReturn prevPhase=inactive`).
+- **Fix:** `pendingHomeForegroundRecovery` set on `didEnterBackground` when workout open; consumed on foreground. Home return defers stats/HK restart 500ms. Snapshot shield hides ScrollView/TextFields on true background only (NC unchanged). Phone HK session suspended before stop on background. More diagnostics: PID on launch, `msSinceBackground`, `msSinceWillEnterForeground`, `bgGen`, `livePhoneSession suspendedForBackground`, `hideBodyForBackgroundSnapshot`.
+
+### Gate A (agent)
+
+- `build_device` + install + launch: **pass** (PID 21508).
+- `test_sim`: not re-run this session (prior 15/15).
+
+### Gate B (human)
+
+1. Start workout → add exercise → home ×2 in quick succession (Log13 kill pattern).
+2. Log14 must show: `hideBodyForBackgroundSnapshot`, `homeForegroundReturn scheduled`, `homeForegroundReturn completed`, `livePhoneSession suspendedForBackground`. **No** `appLaunch` mid-session (new PID only on cold start).
+3. NC ×3 with numpad still stable.
+
+### Human Xcode
+
+(empty)
+
+### Out of scope
+
+- Removing dead `TrainWorkoutPrivacyShield` / `ActiveWorkoutShell` files
+- Analytics crash report pull if home still kills
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Lifecycle | `TrainKeyboard.swift` (TrainApplicationLifecycle) |
+| Active workout | `ActiveWorkoutView.swift` |
+| Watch/HK | `LiveWorkoutWatchBridge.swift` |
+| Root | `RootView.swift` |
+| Diagnostics | `TrainWorkoutDiagnostics.swift` |
+| Tests | `TrainApplicationLifecycleTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+
+## 2026-06-08 — Train numpad home blank (route strip fix)
+
+### Shipped
+
+- **Root cause:** `stripStaleActiveWorkoutRoutes()` ran on every `TrainHomeView.onAppear` and removed the active workout nav route while `LiveWorkoutCoordinator` still had `isViewingActiveWorkout=true`. Returning from home with numpad open could leave a blank screen (coordinator thinks workout is open, path has no destination).
+- **Fix:** Stop stripping active workout routes on appear; only strip when `presentedWorkoutSessionID == nil`. Reassert route on appear when viewing. Skip post-relaunch nav collapse when resuming live workout.
+- **Numpad:** Keyboard **Done** toolbar on active workout. Foreground `listRecoveryToken` bump repaints set list after numpad + home without full remount.
+
+### Gate A (agent)
+
+- `build_device` + install + launch: **pass** (PID 21644).
+
+### Gate B (human)
+
+1. Resume workout → tap kg/reps (numpad up) → swipe home → return. Workout list should repopulate, not blank.
+2. Profile → Copy Train Diagnostics. Expect `willResignActive dismissKeyboard`, `foregroundRepaint`, optionally `trainReassertActiveWorkoutRoute`. **No** `appLaunch` mid-session.
+
+### Human Xcode
+
+(empty)
+
+### Out of scope
+
+- UIKit-wrapped numeric fields if blank persists after route fix
+- Removing dead privacy shield files
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Train nav | `TrainHomeView.swift` |
+| Active workout | `ActiveWorkoutView.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+
+## 2026-06-08 — Train diagnostics preserve kills + minimized session foreground skip
+
+### Shipped
+
+- **Log analysis:** User Log 19 showed two watchdog relaunches (`appLaunch` pid 21676 then 21682) with `workoutViewing=false banner=true` entire time. Prior workout/numpad events were invisible because `beginSession("appLaunch")` cleared diagnostics on every kill.
+- **Diagnostics:** `beginSession` now appends a `--- sessionStart ---` marker without clearing. Log survives across kills until Profile copy/clear. Banner tap and `resumeWorkout` logged.
+- **Minimized live session:** Root foreground HK/reflection/briefing skipped when `activeSession != nil` even if workout UI minimized. `isLiveWorkoutSessionInProgress` gates deferred HK sync too.
+- **Prior session (Log 18):** `minimizeWorkout` was explicit toolbar dismiss; Minimize moved to menu, nav path sync, container gated on `isViewingActiveWorkout`.
+
+### Gate A (agent)
+
+- `build_device` + install + launch: **pass** (PID 21687).
+- `test_sim`: not re-run this session.
+
+### Gate B (human)
+
+1. Do not copy diagnostics until after blank/kill repro completes.
+2. Repro: banner or Continue → numpad → home → return. Paste full log including lines **before** any final `sessionStart appLaunch` marker.
+3. Expect `presentWorkout`, `activeWorkout appear`, `willResignActive`, `foregroundRepaint`. Look for `root skipForegroundWork activeSessionMinimized=true` when banner visible.
+
+### Human Xcode
+
+(empty)
+
+### Out of scope
+
+- Analytics 0x8badf00d pull
+- UIKit numeric fields fallback
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Diagnostics | `TrainWorkoutDiagnostics.swift` |
+| Lifecycle | `TrainKeyboard.swift` |
+| Coordinator | `LiveWorkoutCoordinator.swift` |
+| Banner | `LiveWorkoutBanner.swift` |
+| Root | `RootView.swift` |
+| Tests | `TrainApplicationLifecycleTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+
+## 2026-06-08 — Train diagnostics preserve kills + minimized session foreground skip
+
+### Shipped
+
+- **Log analysis:** User Log 19 showed two watchdog relaunches (`appLaunch` pid 21676 then 21682) with `workoutViewing=false banner=true` entire time. Prior workout/numpad events were invisible because `beginSession("appLaunch")` cleared diagnostics on every kill.
+- **Diagnostics:** `beginSession` now appends a `--- sessionStart ---` marker without clearing. Log survives across kills until Profile copy/clear. Banner tap and `resumeWorkout` logged.
+- **Minimized live session:** Root foreground HK/reflection/briefing skipped when `activeSession != nil` even if workout UI minimized. `isLiveWorkoutSessionInProgress` gates deferred HK sync too.
+- **Prior session (Log 18):** `minimizeWorkout` was explicit toolbar dismiss; Minimize moved to menu, nav path sync, container gated on `isViewingActiveWorkout`.
+
+### Gate A (agent)
+
+- `build_device` + install + launch: **pass** (PID 21687).
+- `test_sim`: not re-run this session.
+
+### Gate B (human)
+
+1. Do not copy diagnostics until after blank/kill repro completes.
+2. Repro: banner or Continue → numpad → home → return. Paste full log including lines **before** any final `sessionStart appLaunch` marker.
+3. Expect `presentWorkout`, `activeWorkout appear`, `willResignActive`, `foregroundRepaint`. Look for `root skipForegroundWork activeSessionMinimized=true` when banner visible.
+
+### Human Xcode
+
+(empty)
+
+### Out of scope
+
+- Analytics 0x8badf00d pull
+- UIKit numeric fields fallback
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Diagnostics | `TrainWorkoutDiagnostics.swift` |
+| Lifecycle | `TrainKeyboard.swift` |
+| Coordinator | `LiveWorkoutCoordinator.swift` |
+| Banner | `LiveWorkoutBanner.swift` |
+| Root | `RootView.swift` |
+| Tests | `TrainApplicationLifecycleTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+
+## 2026-06-08 — Train workout final lifecycle fix (Log13 wiring)
+
+### Shipped
+
+- **Root cause (blank):** NC/home cleared `@FocusState` via `willResignActive` + `dismissForSystemOverlay`, corrupting SwiftUI list paint. Container `Color.clear` gate showed blank when coordinator/path desynced. Remount API existed but was unwired.
+- **Root cause (kill):** Background snapshot of ScrollView+TextFields without body hide; phone HK session not suspended on `didEnterBackground`; HK/watch restarted on every `onAppear`; embedding preload ungated during live session.
+- **Fix:** Hide workout body on true background; suspend phone HK on background; 500ms deferred `homeForegroundReturn` before HK restart; NC preserves focus (keyboard dismiss only on background); `workoutSurfaceGeneration` remount on background return when disappear flagged; removed container blank gate; path-pop guard during foreground restore; diagnostics append across kills.
+
+### Gate A (agent)
+
+- `test_sim`: **pass** (17/17 LiveWorkoutCoordinatorScenePhase + TrainApplicationLifecycle).
+- `build_device` + install: **pass**. `launch_app_device`: device locked.
+
+### Gate B (human)
+
+- Agent verified build/install. Normal gym use: open workout, log sets with numpad, home and NC cycles.
+
+### Human Xcode
+
+(empty)
+
+### Out of scope
+
+- Delete dead TrainWorkoutSnapshotShell files (not in target)
+- UIKit numeric field fallback
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Active workout | `ActiveWorkoutView.swift`, `ActiveWorkoutContainerView.swift`, `SetRowView.swift` |
+| Lifecycle | `TrainKeyboard.swift` |
+| Coordinator | `LiveWorkoutCoordinator.swift` |
+| Nav | `TrainHomeView.swift` |
+| Root | `RootView.swift` |
+| Tests | `LiveWorkoutCoordinatorScenePhaseTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |

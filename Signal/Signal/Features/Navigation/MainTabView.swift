@@ -8,6 +8,14 @@ enum AppTab: Hashable {
     case profile
 }
 
+private struct WellnessSheetSession: Identifiable {
+    let session: WorkoutSession
+
+    var id: PersistentIdentifier {
+        session.persistentModelID
+    }
+}
+
 struct MainTabView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
@@ -25,6 +33,15 @@ struct MainTabView: View {
         isLaunchShellReady && showsWorkoutBanner && scenePhase == .active
     }
 
+    private var resolvedWellnessSession: WellnessSheetSession? {
+        guard let sessionID = coordinator.pendingWellnessSessionID,
+              let session = modelContext.model(for: sessionID) as? WorkoutSession
+        else {
+            return nil
+        }
+        return WellnessSheetSession(session: session)
+    }
+
     var body: some View {
         tabShell
             .onChange(of: coordinator.pendingTrainRoute) { _, route in
@@ -34,20 +51,23 @@ struct MainTabView: View {
             }
             .onAppear {
                 coordinator.configure(modelContext: modelContext)
-                guard !isLaunchShellReady else { return }
-                Task { @MainActor in
-                    await Task.yield()
-                    isLaunchShellReady = true
-                }
+                markLaunchShellReadyIfNeeded()
+            }
+            .onChange(of: showsWorkoutBanner) { _, _ in
+                markLaunchShellReadyIfNeeded()
             }
             .onChange(of: scenePhase) { _, phase in
                 TrainWorkoutDiagnostics.record(
-                    "mainTab scenePhase=\(phase) viewingWorkout=\(coordinator.isViewingActiveWorkout) banner=\(showsWorkoutBanner) accessoryVisible=\(tabBottomAccessoryVisible)"
+                    "mainTab scenePhase=\(phase) viewingWorkout=\(coordinator.isViewingActiveWorkout) banner=\(showsWorkoutBanner) accessoryVisible=\(tabBottomAccessoryVisible) branch=\(accessoryBranchLabel)"
                 )
                 if phase == .active {
                     coordinator.configure(modelContext: modelContext)
                     coordinator.refresh()
                 }
+            }
+            .onChange(of: coordinator.pendingWellnessSessionID) { _, sessionID in
+                guard sessionID != nil, resolvedWellnessSession == nil else { return }
+                coordinator.dismissWellness()
             }
             .onChange(of: selectedTab) { oldTab, tab in
                 if oldTab != tab {
@@ -60,16 +80,16 @@ struct MainTabView: View {
                     NotificationCenter.default.post(name: .signalDashboardBecameSelected, object: nil)
                 }
             }
-            .sheet(isPresented: wellnessSheetPresented) {
-                TrainWellnessFinishSheet(healthKitManager: healthKitManager)
+            .sheet(item: wellnessSheetItem) { item in
+                TrainWellnessFinishSheet(session: item.session, healthKitManager: healthKitManager)
             }
     }
 
-    private var wellnessSheetPresented: Binding<Bool> {
+    private var wellnessSheetItem: Binding<WellnessSheetSession?> {
         Binding(
-            get: { coordinator.pendingWellnessSessionID != nil },
-            set: { isPresented in
-                if !isPresented {
+            get: { resolvedWellnessSession },
+            set: { item in
+                if item == nil {
                     if let sessionID = coordinator.pendingWellnessSessionID,
                        let session = modelContext.model(for: sessionID) as? WorkoutSession
                     {
@@ -81,21 +101,31 @@ struct MainTabView: View {
         )
     }
 
+    private var accessoryBranchLabel: String {
+        isLaunchShellReady && showsWorkoutBanner ? "attached" : "plain"
+    }
+
+    private func markLaunchShellReadyIfNeeded() {
+        guard !isLaunchShellReady else { return }
+        if showsWorkoutBanner {
+            isLaunchShellReady = true
+        } else {
+            Task { @MainActor in
+                await Task.yield()
+                isLaunchShellReady = true
+            }
+        }
+    }
+
     @ViewBuilder
     private var tabShell: some View {
         let tabs = tabViewCore
         if isLaunchShellReady, showsWorkoutBanner {
-            if #available(iOS 26.1, *) {
-                tabs.tabViewBottomAccessory(isEnabled: tabBottomAccessoryVisible) {
-                    LiveWorkoutBanner(selectedTab: $selectedTab)
-                }
-            } else {
-                tabs.tabViewBottomAccessory {
-                    LiveWorkoutBanner(selectedTab: $selectedTab)
-                        .opacity(tabBottomAccessoryVisible ? 1 : 0)
-                        .allowsHitTesting(tabBottomAccessoryVisible)
-                        .accessibilityHidden(!tabBottomAccessoryVisible)
-                }
+            tabs.tabViewBottomAccessory {
+                LiveWorkoutBanner(selectedTab: $selectedTab)
+                    .opacity(tabBottomAccessoryVisible ? 1 : 0)
+                    .allowsHitTesting(tabBottomAccessoryVisible)
+                    .accessibilityHidden(!tabBottomAccessoryVisible)
             }
         } else {
             tabs

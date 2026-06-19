@@ -26,7 +26,7 @@ struct ProfileView: View {
                             .font(.caption2.monospaced())
                             .textSelection(.enabled)
                         Button("Copy workout debug log") {
-                            UIPasteboard.general.string = TrainWorkoutDiagnostics.exportText()
+                            _ = TrainWorkoutDiagnostics.copyToPasteboardAndReset()
                         }
                     }
                 }
