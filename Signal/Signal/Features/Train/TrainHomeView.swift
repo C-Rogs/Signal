@@ -385,7 +385,7 @@ struct TrainHomeView: View {
         if let session = completedSessions.first(where: { $0.persistentModelID == id }) {
             return session
         }
-        return try? modelContext.model(for: id) as? WorkoutSession
+        return modelContext.model(for: id) as? WorkoutSession
     }
 
     private var screenBackground: Color {

@@ -95,7 +95,7 @@ struct ActiveWorkoutContainerView: View {
     }
 
     private func resolveSession() -> WorkoutSession? {
-        if let model = try? modelContext.model(for: sessionID) as? WorkoutSession {
+        if let model = modelContext.model(for: sessionID) as? WorkoutSession {
             if model.endTime == nil, model.source == WorkoutSessionSource.live {
                 return model
             }

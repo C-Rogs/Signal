@@ -59,7 +59,7 @@ enum ExerciseCatalogCurator {
     ]
 
     static func applyPickerDefaultsIfNeeded(in context: ModelContext) throws {
-        var descriptor = FetchDescriptor<ExerciseCatalog>(
+        let descriptor = FetchDescriptor<ExerciseCatalog>(
             predicate: #Predicate { $0.isPickerDefault }
         )
         let existing = try context.fetchCount(descriptor)

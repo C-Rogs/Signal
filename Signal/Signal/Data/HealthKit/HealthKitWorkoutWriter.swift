@@ -24,7 +24,7 @@ enum HealthKitWorkoutWriter {
         modelContext: ModelContext,
         healthStore: HKHealthStore = HKHealthStore()
     ) async -> HealthKitWorkoutWriteOutcome {
-        guard let session = try? modelContext.model(for: sessionID) as? WorkoutSession else {
+        guard let session = modelContext.model(for: sessionID) as? WorkoutSession else {
             Log.workout.error("workout write skipped session not found")
             return .failed(message: "Saved in Signal. Could not update Apple Health.")
         }

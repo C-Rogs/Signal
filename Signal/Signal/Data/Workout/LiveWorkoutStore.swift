@@ -177,7 +177,7 @@ final class LiveWorkoutStore {
             catalogEntry: catalogEntry,
             restDurationSeconds: restDurationSeconds ?? 90
         )
-        if let catalogEntry {
+        if catalogEntry != nil {
             let catalog = try context.fetch(FetchDescriptor<ExerciseCatalog>())
             let index = ExerciseCatalogMatcher.buildAliasIndex(catalog: catalog)
             CatalogLinkService.linkExercise(exercise, catalog: catalog, aliasIndex: index)

@@ -332,7 +332,7 @@ struct ActiveWorkoutView: View {
 
     private var addExerciseSheet: some View {
         ExercisePickerView { catalog in
-            try? store.addExercise(
+            _ = try? store.addExercise(
                 to: session,
                 catalogEntry: catalog,
                 exerciseTitle: catalog.canonicalName

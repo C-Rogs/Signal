@@ -100,7 +100,7 @@ struct WorkoutExerciseSectionView: View {
             }
 
             Button {
-                try? store.addSet(to: exercise)
+                _ = try? store.addSet(to: exercise)
                 onNeedsRefresh()
             } label: {
                 Label("Add Set", systemImage: "plus")

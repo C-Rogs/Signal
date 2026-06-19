@@ -69,7 +69,7 @@ enum CatalogAliasGenerator {
             ])
         }
 
-        if let hevyStyle = hevyStyleTitle(canonicalName: canonicalName, equipment: equipment) {
+        if hevyStyleTitle(canonicalName: canonicalName, equipment: equipment) != nil {
             let display = ExerciseEquipmentMapper.hevyDisplayName(for: equipment)
             let base = canonicalName
             let prefixes = ["Barbell ", "Dumbbell ", "Cable ", "Machine ", "Kettlebell ", "Band ", "Smith Machine "]
