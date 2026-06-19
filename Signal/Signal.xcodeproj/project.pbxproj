@@ -134,6 +134,13 @@
 			);
 			target = F82793F82FCDABE200003386 /* Signal */;
 		};
+		F84C9D882FE59CBA0082F155 /* Exceptions for "SignalWatch Watch App" folder in "SignalWatch Watch App" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"WatchApp-Info.plist",
+			);
+			target = F85059F12FD07FDF00741614 /* SignalWatch Watch App */;
+		};
 		F8505F292FD0D44900741614 /* Exceptions for "SignalWatch Widget Extension" folder in "SignalWatch Widget ExtensionExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -172,6 +179,9 @@
 		};
 		F85059F32FD07FDF00741614 /* SignalWatch Watch App */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				F84C9D882FE59CBA0082F155 /* Exceptions for "SignalWatch Watch App" folder in "SignalWatch Watch App" target */,
+			);
 			path = "SignalWatch Watch App";
 			sourceTree = "<group>";
 		};
