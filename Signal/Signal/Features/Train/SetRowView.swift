@@ -120,13 +120,6 @@ struct SetRowView: View {
             focusedField = nil
             focusCoordinator.noteEditingActive(false)
         }
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
-            guard focusedField != nil else { return }
-            focusCoordinator.prepareForSystemOverlay()
-            focusedField = nil
-            focusCoordinator.noteEditingActive(false)
-            TrainWorkoutDiagnostics.record("setRow releaseFocus trueBackground set=\(set.setIndex)")
-        }
         .contextMenu {
             Button("Delete", role: .destructive, action: onDelete)
         }

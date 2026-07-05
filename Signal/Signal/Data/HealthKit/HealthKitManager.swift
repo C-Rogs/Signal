@@ -93,7 +93,7 @@ final class HealthKitManager {
     func syncOnForegroundIfReady() {
         guard accessState == .ready else { return }
         guard !isWorkoutWriteInFlight else { return }
-        guard !TrainApplicationLifecycle.shouldSkipDeferredSystemWork() else { return }
+        guard !AppLifecycleBroker.shared.shouldSkipDeferredSystemWork() else { return }
         syncDeferredIfDirty()
     }
 
@@ -137,7 +137,7 @@ final class HealthKitManager {
 
     func syncDeferredIfDirty() {
         guard accessState == .ready else { return }
-        guard !TrainApplicationLifecycle.shouldSkipDeferredSystemWork() else { return }
+        guard !AppLifecycleBroker.shared.shouldSkipDeferredSystemWork() else { return }
         guard HealthKitDirtyFlagStore.isDirty else { return }
         startSyncTask(trigger: "deferred", clearDirtyOnSuccess: true, cancelExisting: false)
     }

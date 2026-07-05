@@ -10,6 +10,7 @@ struct ActiveWorkoutView: View {
     @Environment(LiveWorkoutCoordinator.self) private var coordinator
     @Environment(LiveWorkoutWatchBridge.self) private var watchBridge
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(AppLifecycleBroker.self) private var lifecycleBroker
 
     @Bindable var session: WorkoutSession
 
@@ -28,9 +29,6 @@ struct ActiveWorkoutView: View {
     @State private var restTimerCoordinator = ActiveWorkoutRestTimerCoordinator()
     @State private var exerciseDetailRoute: ExerciseDetailRoute?
     @State private var setFieldFocusCoordinator = TrainSetFieldFocusCoordinator()
-    @State private var listRecoveryToken = 0
-    @State private var hideBodyForSnapshot = false
-    @State private var didInitialWatchStart = false
     @State private var homeForegroundRecoveryTask: Task<Void, Never>?
 
     private var store: LiveWorkoutStore {
@@ -46,13 +44,7 @@ struct ActiveWorkoutView: View {
     }
 
     var body: some View {
-        Group {
-            if hideBodyForSnapshot {
-                screenBackground.ignoresSafeArea()
-            } else {
-                workoutList
-            }
-        }
+        workoutList
             .environment(setFieldFocusCoordinator)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 ActiveWorkoutRestTimerLayer(
@@ -92,19 +84,27 @@ struct ActiveWorkoutView: View {
             .sheet(item: $exerciseDetailRoute) { route in
                 NavigationStack {
                     ExerciseDetailView(route: route)
+                        .navigationDestination(for: TrainRoute.self) { trainRoute in
+                            exerciseDetailTrainRouteDestination(trainRoute)
+                        }
                 }
             }
             .onChange(of: scenePhase) { previousPhase, phase in
                 TrainWorkoutDiagnostics.record(
-                    "activeWorkout scenePhase=\(phase) exercises=\(orderedExercises.count) sets=\(completedSetCount) uiState=\(UIApplication.shared.applicationState.rawValue) trueBackground=\(TrainApplicationLifecycle.resolvedIsInTrueBackground) hideBody=\(hideBodyForSnapshot)"
+                    "activeWorkout scenePhase=\(phase) exercises=\(orderedExercises.count) sets=\(completedSetCount) uiState=\(UIApplication.shared.applicationState.rawValue) trueBackground=\(lifecycleBroker.resolvedIsInTrueBackground)"
                 )
                 if phase == .active, previousPhase != .active {
-                    restoreWorkoutBodyImmediately(reason: "scenePhaseActive prev=\(previousPhase)")
                     scheduleDeferredHomeRecovery(from: previousPhase)
                 }
             }
+            .onChange(of: lifecycleBroker.backgroundFocusDismissGeneration) { _, _ in
+                guard coordinator.isViewingActiveWorkout else { return }
+                setFieldFocusCoordinator.dismissForSystemOverlay()
+                TrainWorkoutDiagnostics.record(
+                    "activeWorkout brokerFocusDismiss keyboardVisible=\(lifecycleBroker.isKeyboardVisible)"
+                )
+            }
             .onAppear {
-                hideBodyForSnapshot = false
                 reloadSessionRecoveryScore()
                 refreshWorkoutHints()
                 refreshVolumeStats()
@@ -115,59 +115,60 @@ struct ActiveWorkoutView: View {
                 Log.ui.info(
                     "active workout appeared exercises=\(orderedExercises.count, privacy: .public) sessionID=\(String(describing: session.persistentModelID), privacy: .public)"
                 )
-                guard !didInitialWatchStart else { return }
-                didInitialWatchStart = true
+                guard !coordinator.hasStartedWatch(for: session.persistentModelID) else { return }
+                coordinator.markWatchStarted(for: session.persistentModelID)
                 Task {
                     await watchBridge.ensureWatchWorkoutStarted(for: session, modelContext: modelContext)
                 }
             }
             .onDisappear {
                 TrainWorkoutDiagnostics.record(
-                    "activeWorkout disappear exercises=\(orderedExercises.count) scenePhase=\(scenePhase) viewing=\(coordinator.isViewingActiveWorkout) trueBackground=\(TrainApplicationLifecycle.resolvedIsInTrueBackground)"
+                    "activeWorkout disappear exercises=\(orderedExercises.count) scenePhase=\(scenePhase) viewing=\(coordinator.isViewingActiveWorkout) trueBackground=\(lifecycleBroker.resolvedIsInTrueBackground)"
                 )
-            }
-            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)) { _ in
-                guard coordinator.isViewingActiveWorkout else { return }
-                hideBodyForSnapshot = true
-                coordinator.noteWorkoutViewDisappearedWhilePresented(scenePhase: .background)
-                setFieldFocusCoordinator.dismissForSystemOverlay()
-                TrainKeyboard.dismiss()
-                TrainWorkoutDiagnostics.record(
-                    "activeWorkout didEnterBackground hideBody keyboardVisible=\(TrainApplicationLifecycle.isKeyboardVisible)"
-                )
-            }
-            .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-                guard coordinator.isViewingActiveWorkout else { return }
-                restoreWorkoutBodyImmediately(reason: "willEnterForeground")
-                TrainWorkoutDiagnostics.record("activeWorkout willEnterForeground restoreBody")
             }
     }
 
-    private func restoreWorkoutBodyImmediately(reason: String) {
-        hideBodyForSnapshot = false
-        listRecoveryToken += 1
-        TrainWorkoutDiagnostics.record(
-            "activeWorkout restoreBody reason=\(reason) token=\(listRecoveryToken) exercises=\(orderedExercises.count)"
-        )
+    @ViewBuilder
+    private func exerciseDetailTrainRouteDestination(_ route: TrainRoute) -> some View {
+        switch route {
+        case .history(let id):
+            if let historySession = resolveHistorySession(id: id) {
+                WorkoutHistoryDetailView(session: historySession)
+            } else {
+                ContentUnavailableView("Session not found", systemImage: "questionmark")
+            }
+        default:
+            ContentUnavailableView("Unavailable", systemImage: "questionmark")
+        }
+    }
+
+    private func resolveHistorySession(id: PersistentIdentifier) -> WorkoutSession? {
+        modelContext.model(for: id) as? WorkoutSession
     }
 
     private func scheduleDeferredHomeRecovery(from previousPhase: ScenePhase) {
         homeForegroundRecoveryTask?.cancel()
+        coordinator.isForegroundRecoveryInFlight = true
         homeForegroundRecoveryTask = Task {
             TrainWorkoutDiagnostics.record(
-                "homeForegroundReturn scheduled prevPhase=\(previousPhase) needsRefresh=\(coordinator.workoutSurfaceNeedsRefresh)"
+                "homeForegroundReturn scheduled prevPhase=\(previousPhase)"
             )
             try? await Task.sleep(for: .milliseconds(500))
             guard !Task.isCancelled else { return }
-            guard coordinator.isViewingActiveWorkout else { return }
+            guard coordinator.isViewingActiveWorkout else {
+                coordinator.isForegroundRecoveryInFlight = false
+                return
+            }
+            reloadSessionRecoveryScore()
             refreshWorkoutHints()
             refreshVolumeStats()
-            if coordinator.workoutSurfaceNeedsRefresh {
-                coordinator.requestWorkoutSurfaceRefresh(reason: "homeForegroundReturn")
+            if orderedExercises.isEmpty, !session.exercises.isEmpty {
+                coordinator.requestWorkoutSurfaceRefresh(reason: "blankBodyDetected")
             }
             await watchBridge.ensureWatchWorkoutStarted(for: session, modelContext: modelContext)
+            coordinator.isForegroundRecoveryInFlight = false
             TrainWorkoutDiagnostics.record(
-                "homeForegroundReturn completed token=\(listRecoveryToken) gen=\(coordinator.workoutSurfaceGeneration)"
+                "homeForegroundReturn completed gen=\(coordinator.workoutSurfaceGeneration)"
             )
         }
     }
@@ -264,7 +265,6 @@ struct ActiveWorkoutView: View {
                         )
                         .id(exercise.persistentModelID)
                     }
-                    .id(listRecoveryToken)
 
                     Button {
                         showAddExercise = true
@@ -285,7 +285,6 @@ struct ActiveWorkoutView: View {
             }
             .scrollDismissesKeyboard(.immediately)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .id(listRecoveryToken)
             .onAppear {
                 if let target = coordinator.consumeScrollTarget() {
                     proxy.scrollTo(target, anchor: .top)

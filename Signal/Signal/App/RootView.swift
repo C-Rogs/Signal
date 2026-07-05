@@ -9,6 +9,7 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
     @Environment(LiveWorkoutCoordinator.self) private var workoutCoordinator
+    @Environment(AppLifecycleBroker.self) private var lifecycleBroker
     @Bindable private var downloadState = EmbeddingDownloadState.shared
 
     var body: some View {
@@ -29,7 +30,7 @@ struct RootView: View {
         }
         .onChange(of: scenePhase) { previousPhase, phase in
             TrainWorkoutDiagnostics.record(
-                "root scenePhase=\(phase) presented=\(workoutCoordinator.presentedWorkoutSessionID != nil) viewing=\(workoutCoordinator.isViewingActiveWorkout) bgGen=\(TrainApplicationLifecycle.trueBackgroundGeneration)"
+                "root scenePhase=\(phase) presented=\(workoutCoordinator.presentedWorkoutSessionID != nil) viewing=\(workoutCoordinator.isViewingActiveWorkout) bgGen=\(lifecycleBroker.trueBackgroundGeneration)"
             )
             if phase == .background, workoutCoordinator.presentedWorkoutSessionID == nil {
                 try? modelContext.save()
@@ -46,7 +47,7 @@ struct RootView: View {
             guard scenePhase == .active else { return }
             guard downloadState.phase != .ready else { return }
             guard !EmbeddingBackend.useNLContextualEmbeddingFallback else { return }
-            guard !TrainApplicationLifecycle.shouldSkipDeferredSystemWork() else { return }
+            guard !lifecycleBroker.shouldSkipDeferredSystemWork() else { return }
             await runEmbeddingPreloadDeferred()
         }
     }

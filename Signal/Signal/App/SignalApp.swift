@@ -17,11 +17,12 @@ struct SignalApp: App {
     @State private var recoveryPreferences = RecoveryPreferences.shared
     @State private var coachPreferences = CoachPreferences.shared
     @State private var liveWorkoutCoordinator = LiveWorkoutCoordinator()
+    @State private var lifecycleBroker = AppLifecycleBroker.shared
     private let liveWorkoutWatchBridge = LiveWorkoutWatchBridge.shared
 
     init() {
         Self.applyDarkNavigationChrome()
-        TrainApplicationLifecycle.installObserversIfNeeded()
+        AppLifecycleBroker.shared.installObserversIfNeeded()
         DailyBriefingScheduler.registerCategories()
         LiveWorkoutCoordinatorLaunchState.markProcessLaunched()
         _ = DerivedMetricsService.shared
@@ -51,6 +52,7 @@ struct SignalApp: App {
                 .environment(coachPreferences)
                 .environment(liveWorkoutCoordinator)
                 .environment(liveWorkoutWatchBridge)
+                .environment(lifecycleBroker)
                 .modelContainer(modelContainer)
         } else if let bootstrapErrorMessage {
             AppLaunchFailureView(message: bootstrapErrorMessage) {
@@ -76,6 +78,7 @@ struct SignalApp: App {
             let briefingDelegate = DailyBriefingNotificationDelegate(modelContainer: container)
             UNUserNotificationCenter.current().delegate = briefingDelegate
             liveWorkoutCoordinator.configure(modelContext: ModelContext(container))
+            lifecycleBroker.configure(workoutCoordinator: liveWorkoutCoordinator)
             modelContainer = container
             healthKitManager = healthKit
             briefingNotificationDelegate = briefingDelegate

@@ -2,6 +2,8 @@
 
 Log for the architect and review. Newest entries at the bottom.
 
+**Xcode project policy (2026-07-05):** Agents may edit `project.pbxproj`, entitlements, and plists when needed. Rules: `.cursor/rules/xcode-project-setup.mdc`. Older entries may say "agent did not edit pbxproj"; that reflects the policy at the time, not a current ban.
+
 ---
 
 ## 2026-06-04 — V4 M1 Live workout HR (watch → iPhone)
@@ -2552,4 +2554,48 @@ Add to **Signal** target if not auto-synced:
 | Nav | `TrainHomeView.swift` |
 | Root | `RootView.swift` |
 | Tests | `LiveWorkoutCoordinatorScenePhaseTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+
+## 2026-07-05 - Swift lifecycle Track A
+
+### Shipped
+
+- **AppLifecycleBroker:** New `@MainActor @Observable` broker owns all UIApplication NC observers (migrated from `TrainApplicationLifecycle` in `TrainKeyboard.swift`). Single `didEnterBackground` path: keyboard dismiss, `backgroundFocusDismissGeneration` broadcast, diagnostics-only `noteWorkoutViewDisappearedWhilePresented`, watch HK suspend.
+- **Shield removed:** Deleted `hideBodyForSnapshot`, `listRecoveryToken`, restore handlers, and duplicate NC handlers from `ActiveWorkoutView`. Workout list stays mounted on background; live preview in app switcher accepted.
+- **Foreground model:** `scheduleDeferredHomeRecovery` runs hints/volume/recovery/watch restart after 500ms. Watchdog remount only when `orderedExercises.isEmpty` but model has exercises (`blankBodyDetected`). No generation bump on normal home/NC return.
+- **Coordinator:** `didStartWatchForSessionID` hoisted to `LiveWorkoutCoordinator` (`hasStartedWatch` / `markWatchStarted`). `isForegroundRecoveryInFlight` for path-pop grace. Scene-phase handler no longer auto-remounts on disappear flag.
+- **Nav/tab hardening:** `TrainHomeView` path-pop guard uses 2.5s `pathPopGraceActive` + `isForegroundRecoveryInFlight`. `ActiveWorkoutContainerView` 3s resolve timeout. `MainTabView` always uses `tabViewBottomAccessory` branch (no tab tree swap).
+- **Exercise detail sheet:** `navigationDestination(for: TrainRoute.self)` for history push from in-workout sheet.
+- **Dead files deleted:** `ActiveWorkoutShell`, `TrainWorkoutPrivacyShield`, `TrainWorkoutSnapshotShell`, `TrainSecureSnapshotField`, `StaleActiveWorkoutRouteView` (folder-synced; no `pbxproj` edit needed).
+
+### Gate A (agent)
+
+- `test_sim` (lifecycle tests only): **not run** (agent env: Metal Toolchain missing). Cameron to run locally if desired.
+- `build_device` + install: **pass** (Cameron, 2026-07-05, physical iPhone). Agent could not run MCP/xcodebuild gate (disk image + Metal Toolchain blocked).
+
+### Gate B (human)
+
+- awaiting human Gate E (home x3 numpad scroll, NC x5 no kill, lock 10s)
+
+### Human Xcode
+
+(empty; Cameron built to device)
+
+### Out of scope
+
+- Track B/C, `beginBackgroundTask` (A1), UIKit list (A3), RootView overlay, route-token prune
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Lifecycle broker | `App/AppLifecycleBroker.swift` (new) |
+| App bootstrap | `App/SignalApp.swift`, `App/RootView.swift` |
+| Train keyboard/focus | `Features/Train/TrainKeyboard.swift`, `SetRowView.swift` |
+| Active workout | `ActiveWorkoutView.swift`, `ActiveWorkoutContainerView.swift` |
+| Nav/coordinator | `TrainHomeView.swift`, `MainTabView.swift`, `LiveWorkoutCoordinator.swift` |
+| HealthKit gates | `Data/HealthKit/HealthKitManager.swift`, `HealthKitBackground.swift` |
+| Tests | `TrainApplicationLifecycleTests.swift`, `LiveWorkoutCoordinatorScenePhaseTests.swift` |
+| Deleted | `ActiveWorkoutShell.swift`, `TrainWorkoutPrivacyShield.swift`, `TrainWorkoutSnapshotShell.swift`, `TrainSecureSnapshotField.swift`, `StaleActiveWorkoutRouteView.swift` |
 | Handover | `AGENT-BUILD-UPDATES.md` |

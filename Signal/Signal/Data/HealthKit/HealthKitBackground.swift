@@ -115,7 +115,7 @@ final class HealthKitBackgroundCoordinator {
     }
 
     private func runDeferredSyncIfNeeded(trigger: String) {
-        guard !TrainApplicationLifecycle.shouldSkipDeferredSystemWork() else {
+        guard !AppLifecycleBroker.shared.shouldSkipDeferredSystemWork() else {
             TrainWorkoutDiagnostics.record("healthKit deferSync skipped trigger=\(trigger) workoutOverlay=true")
             return
         }

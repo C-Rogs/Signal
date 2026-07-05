@@ -1,64 +1,93 @@
+import UIKit
 import XCTest
 @testable import Signal
 
 @MainActor
 final class TrainApplicationLifecycleTests: XCTestCase {
+    private var broker: AppLifecycleBroker!
+
+    override func setUp() {
+        super.setUp()
+        broker = AppLifecycleBroker.shared
+        broker.installObserversIfNeeded()
+    }
+
     override func tearDown() {
-        TrainApplicationLifecycle.testingIsInTrueBackground = nil
-        TrainApplicationLifecycle.isWorkoutOverlayPresented = false
-        TrainApplicationLifecycle.isLiveWorkoutSetFieldEditing = false
-        TrainApplicationLifecycle.isLiveWorkoutSessionInProgress = false
-        TrainApplicationLifecycle.setLastDidEnterBackgroundForTesting(nil)
+        broker.testingIsInTrueBackground = nil
+        broker.isWorkoutOverlayPresented = false
+        broker.isLiveWorkoutSetFieldEditing = false
+        broker.isLiveWorkoutSessionInProgress = false
+        broker.setLastDidEnterBackgroundForTesting(nil)
+        broker.setLastWillEnterForegroundForTesting(nil)
         super.tearDown()
     }
 
     func testShouldDeferForegroundHousekeepingWhenWorkoutPresentedAfterRecentBackground() {
-        TrainApplicationLifecycle.setLastDidEnterBackgroundForTesting(Date())
-        TrainApplicationLifecycle.isWorkoutOverlayPresented = true
+        broker.setLastDidEnterBackgroundForTesting(Date())
+        broker.isWorkoutOverlayPresented = true
         XCTAssertTrue(
-            TrainApplicationLifecycle.shouldDeferForegroundHousekeeping(workoutPresented: false)
+            broker.shouldDeferForegroundHousekeeping(workoutPresented: false)
         )
     }
 
     func testShouldDeferForegroundHousekeepingWhileEditing() {
-        TrainApplicationLifecycle.isWorkoutOverlayPresented = true
-        TrainApplicationLifecycle.isLiveWorkoutSetFieldEditing = true
+        broker.isWorkoutOverlayPresented = true
+        broker.isLiveWorkoutSetFieldEditing = true
         XCTAssertTrue(
-            TrainApplicationLifecycle.shouldDeferForegroundHousekeeping(workoutPresented: true)
+            broker.shouldDeferForegroundHousekeeping(workoutPresented: true)
         )
     }
 
     func testShouldSkipDeferredSystemWorkDuringWorkout() {
-        TrainApplicationLifecycle.isWorkoutOverlayPresented = true
-        TrainApplicationLifecycle.setLastDidEnterBackgroundForTesting(Date())
-        XCTAssertTrue(TrainApplicationLifecycle.shouldSkipDeferredSystemWork())
+        broker.isWorkoutOverlayPresented = true
+        broker.setLastDidEnterBackgroundForTesting(Date())
+        XCTAssertTrue(broker.shouldSkipDeferredSystemWork())
     }
 
     func testShouldSkipDeferredSystemWorkWhileEditing() {
-        TrainApplicationLifecycle.isLiveWorkoutSetFieldEditing = true
-        XCTAssertTrue(TrainApplicationLifecycle.shouldSkipDeferredSystemWork())
+        broker.isLiveWorkoutSetFieldEditing = true
+        XCTAssertTrue(broker.shouldSkipDeferredSystemWork())
     }
 
     func testShouldNotDeferForegroundHousekeepingWithoutWorkout() {
-        TrainApplicationLifecycle.setLastDidEnterBackgroundForTesting(Date())
+        broker.setLastDidEnterBackgroundForTesting(Date())
         XCTAssertFalse(
-            TrainApplicationLifecycle.shouldDeferForegroundHousekeeping(workoutPresented: false)
+            broker.shouldDeferForegroundHousekeeping(workoutPresented: false)
         )
     }
 
     func testShouldDeferWheneverWorkoutPresented() {
         XCTAssertTrue(
-            TrainApplicationLifecycle.shouldDeferForegroundHousekeeping(workoutPresented: true)
+            broker.shouldDeferForegroundHousekeeping(workoutPresented: true)
         )
     }
 
     func testShouldSkipDeferredSystemWorkWheneverWorkoutOverlayUp() {
-        TrainApplicationLifecycle.isWorkoutOverlayPresented = true
-        XCTAssertTrue(TrainApplicationLifecycle.shouldSkipDeferredSystemWork())
+        broker.isWorkoutOverlayPresented = true
+        XCTAssertTrue(broker.shouldSkipDeferredSystemWork())
     }
 
     func testShouldSkipDeferredSystemWorkWhileLiveSessionMinimized() {
-        TrainApplicationLifecycle.isLiveWorkoutSessionInProgress = true
-        XCTAssertTrue(TrainApplicationLifecycle.shouldSkipDeferredSystemWork())
+        broker.isLiveWorkoutSessionInProgress = true
+        XCTAssertTrue(broker.shouldSkipDeferredSystemWork())
+    }
+
+    func testPathPopGraceActiveAfterForeground() {
+        broker.setLastWillEnterForegroundForTesting(Date())
+        XCTAssertTrue(broker.pathPopGraceActive)
+        XCTAssertTrue(broker.recentlyEnteredForeground)
+    }
+
+    func testPathPopGraceInactiveAfterGraceWindow() {
+        broker.setLastWillEnterForegroundForTesting(Date().addingTimeInterval(-3))
+        XCTAssertFalse(broker.pathPopGraceActive)
+    }
+
+    func testBackgroundFocusDismissGenerationIncrementsOnWorkoutBackground() {
+        let initial = broker.backgroundFocusDismissGeneration
+        broker.isWorkoutOverlayPresented = true
+        NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+        XCTAssertEqual(broker.backgroundFocusDismissGeneration, initial + 1)
+        XCTAssertTrue(broker.isInTrueBackground)
     }
 }

@@ -8,6 +8,7 @@ struct TrainHomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(LiveWorkoutCoordinator.self) private var coordinator
     @Environment(LiveWorkoutWatchBridge.self) private var watchBridge
+    @Environment(AppLifecycleBroker.self) private var lifecycleBroker
 
     @Query(sort: \Routine.createdAt, order: .reverse) private var routines: [Routine]
     @Query(
@@ -102,8 +103,9 @@ struct TrainHomeView: View {
             )
             if pathLostActiveWorkout(oldPath: oldPath, newPath: newPath),
                coordinator.isViewingActiveWorkout,
-               !TrainApplicationLifecycle.resolvedIsInTrueBackground,
-               !TrainApplicationLifecycle.recentlyEnteredForeground
+               !lifecycleBroker.resolvedIsInTrueBackground,
+               !lifecycleBroker.pathPopGraceActive,
+               !coordinator.isForegroundRecoveryInFlight
             {
                 coordinator.syncWorkoutNavigationDismissed(source: "trainPathPop")
             }
@@ -115,9 +117,6 @@ struct TrainHomeView: View {
             if phase == .active {
                 reassertActiveWorkoutRouteIfNeeded()
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-            reassertActiveWorkoutRouteIfNeeded()
         }
         .sheet(isPresented: $showNewRoutine) {
             RoutineEditorView(routine: nil)

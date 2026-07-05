@@ -11,12 +11,17 @@ struct ActiveWorkoutContainerView: View {
     @State private var session: WorkoutSession?
     @State private var loadFailed = false
     @State private var resolveAttempt = 0
+    @State private var resolveTimeoutTask: Task<Void, Never>?
 
     var body: some View {
         workoutContent
             .background(screenBackground.ignoresSafeArea())
             .onAppear {
                 resolveSessionIfNeeded()
+                scheduleResolveTimeoutIfNeeded()
+            }
+            .onDisappear {
+                resolveTimeoutTask?.cancel()
             }
             .onChange(of: resolveAttempt) { _, _ in
                 resolveSessionIfNeeded()
@@ -68,6 +73,7 @@ struct ActiveWorkoutContainerView: View {
         {
             session = cached
             loadFailed = false
+            resolveTimeoutTask?.cancel()
             TrainWorkoutDiagnostics.record("container resolved from coordinator cache exercises=\(cached.exercises.count)")
             return
         }
@@ -75,6 +81,7 @@ struct ActiveWorkoutContainerView: View {
         if let resolved = resolveSession() {
             session = resolved
             loadFailed = false
+            resolveTimeoutTask?.cancel()
             TrainWorkoutDiagnostics.record("container resolved exercises=\(resolved.exercises.count)")
             Log.workout.info("active workout container resolved session")
             return
@@ -113,5 +120,18 @@ struct ActiveWorkoutContainerView: View {
         )
         let live = (try? modelContext.fetch(descriptor)) ?? []
         return live.first { $0.persistentModelID == sessionID }
+    }
+
+    private func scheduleResolveTimeoutIfNeeded() {
+        resolveTimeoutTask?.cancel()
+        resolveTimeoutTask = Task {
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            guard session == nil, !loadFailed else { return }
+            loadFailed = true
+            TrainWorkoutDiagnostics.record(
+                "container resolveTimeout sessionID=\(sessionID)"
+            )
+        }
     }
 }

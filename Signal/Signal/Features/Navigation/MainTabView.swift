@@ -119,17 +119,15 @@ struct MainTabView: View {
 
     @ViewBuilder
     private var tabShell: some View {
-        let tabs = tabViewCore
-        if isLaunchShellReady, showsWorkoutBanner {
-            tabs.tabViewBottomAccessory {
-                LiveWorkoutBanner(selectedTab: $selectedTab)
-                    .opacity(tabBottomAccessoryVisible ? 1 : 0)
-                    .allowsHitTesting(tabBottomAccessoryVisible)
-                    .accessibilityHidden(!tabBottomAccessoryVisible)
+        tabViewCore
+            .tabViewBottomAccessory {
+                if isLaunchShellReady, showsWorkoutBanner {
+                    LiveWorkoutBanner(selectedTab: $selectedTab)
+                        .opacity(tabBottomAccessoryVisible ? 1 : 0)
+                        .allowsHitTesting(tabBottomAccessoryVisible)
+                        .accessibilityHidden(!tabBottomAccessoryVisible)
+                }
             }
-        } else {
-            tabs
-        }
     }
 
     private var tabViewCore: some View {
