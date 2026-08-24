@@ -8,25 +8,7 @@ import os
 final class WatchRecoveryPushCoordinator {
     static let shared = WatchRecoveryPushCoordinator()
 
-    private var observer: (any NSObjectProtocol)?
-
     private init() {}
-
-    func start() {
-        guard observer == nil else { return }
-        observer = NotificationCenter.default.addObserver(
-            forName: .healthKitProcessDeltaDidFinish,
-            object: nil,
-            queue: .main
-        ) { notification in
-            guard let container = notification.userInfo?["modelContainer"] as? ModelContainer else {
-                return
-            }
-            Task { @MainActor in
-                Self.shared.pushLatestRecovery(modelContainer: container)
-            }
-        }
-    }
 
     func pushLatestRecovery(modelContainer: ModelContainer) {
         let context = ModelContext(modelContainer)
@@ -42,6 +24,5 @@ final class WatchRecoveryPushCoordinator {
             "recovery push after sync score=\(Int(bundle.score.value.rounded()), privacy: .public)"
         )
     }
-
 }
 #endif

@@ -48,6 +48,16 @@ enum EmbeddingRunPolicy {
     @MainActor
     static func applicationDidBecomeActive() {
         guard mayUseMetal else { return }
+        resumeMetalWaiters()
+    }
+
+    @MainActor
+    static func applicationDidEnterBackground() {
+        resumeMetalWaiters()
+    }
+
+    @MainActor
+    private static func resumeMetalWaiters() {
         let waiters = metalWaiters
         metalWaiters = []
         for waiter in waiters {

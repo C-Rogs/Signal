@@ -1,6 +1,6 @@
 # M3 SPM setup
 
-**Status:** Packages are already wired in `Signal.xcodeproj` (Signal target). Open the project in Xcode once so it resolves packages if needed.
+**Status:** Packages are wired in `Signal.xcodeproj` (Signal target). Agent may adjust SPM in `project.pbxproj` per `.cursor/rules/xcode-project-setup.mdc`. Open the project in Xcode once if package resolution is stale.
 
 To add manually (only if resetting the project), use **File → Add Package Dependencies**:
 

@@ -17,8 +17,7 @@ a file explicitly needs to change for this milestone. Commit when done.
 - **@Observable macro only.** Never ObservableObject / @Published.
 - **NavigationStack + navigationDestination(for:).** Never NavigationView.
 - **No em dashes, en dashes, or double dashes** in any string, comment, or copy.
-- **Do not touch .pbxproj, .xcodeproj, .xcworkspace, .entitlements, .storyboard, .xib.**
-  The human manages Xcode project files. You write Swift source only.
+- **Xcode project:** `.cursor/rules/xcode-project-setup.mdc`. Prefer folder sync; edit `project.pbxproj` only when build requires it.
 - **os.Logger in every data path.** Category: `"watch"` for WCSession code.
 - **No cloud calls at runtime.** Everything is on-device / local network (WCSession).
 - **Stop after 2 failed builds.** Report the exact compiler error rather than guessing.
@@ -37,12 +36,7 @@ a file explicitly needs to change for this milestone. Commit when done.
 - **Watch source root:** `Signal/Signal/SignalWatch Watch App/`
 - **Tests:** `Signal/Signal/SignalTests/`
 
-**Folder sync rule:** The `Signal/Signal/Signal/` and `Signal/Signal/SignalTests/` directories
-use Xcode folder sync — any new `.swift` file you place there compiles automatically without
-a manual "Add to target" step. The watch target (`SignalWatch Watch App/`) does NOT use folder
-sync; new files there need the human to add them in Xcode. Put iOS-side WCSession code under
-`Signal/Signal/Signal/Data/Watch/` (auto-synced). Watch-side changes go in
-`Signal/Signal/SignalWatch Watch App/` (human adds to target after you write them).
+**Folder sync rule:** `Signal/Signal/Signal/`, `Signal/Signal/SignalTests/`, and `Signal/Signal/SignalWatch Watch App/` use Xcode folder sync. New `.swift` files under those roots compile automatically. If `build_device` fails on target membership, edit `project.pbxproj` per `.cursor/rules/xcode-project-setup.mdc`. Put iOS-side WCSession code under `Signal/Signal/Signal/Data/Watch/`. Watch-side changes go in `Signal/Signal/SignalWatch Watch App/`.
 
 ---
 
@@ -279,11 +273,7 @@ These are pure-logic tests; no HealthKit or WCSession mocking needed.
 
 2. **Watch tests (logic only):** `xcodebuild -scheme Signal -destination 'platform=iOS Simulator,id=311A9753' test -only-testing:SignalTests/WatchPayloadTests`
 
-3. **Watch target build (human-triggered in Xcode):** after the human adds the new watch files to
-   the watch target, they will build and run on the paired Apple Watch.
-
-WCSession pairing does not work in the simulator — `WCSession.default.isPaired` is always false
-there. The guard inside `push(score:)` prevents crashes. Real device test is a human step.
+3. **Watch target build:** `build_device` or watch scheme build after agent project edits. WCSession pairing does not work in the simulator.
 
 ---
 
@@ -333,4 +323,4 @@ let context = ModelContext(modelContainer)
 | CREATE | `Signal/Signal/SignalTests/WatchPayloadTests.swift` |
 | UPDATE | whichever file currently calls `RecoveryEngine.shared.computeScore(in:)` in the dashboard — add `WatchConnectivityService.shared.push(score:)` after the call |
 
-Do not create any other files. Do not touch `.pbxproj`.
+Do not create any other files. Edit `project.pbxproj` only if folder sync does not pick up a required file and build fails.

@@ -62,6 +62,21 @@ final class ChatViewModel {
         }
     }
 
+    func abandonActiveWork() async {
+        await coach.abandonActiveWork()
+    }
+
+    func cancelActiveWork() {
+        activeSendTask?.cancel()
+        activeSendTask = nil
+        sendInFlight = false
+        isThinking = false
+        streamingText = ""
+        Task {
+            await abandonActiveWork()
+        }
+    }
+
     func startNewConversation() {
         activeSendTask?.cancel()
         sendInFlight = false

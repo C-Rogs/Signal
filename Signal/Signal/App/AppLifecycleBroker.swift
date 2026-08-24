@@ -12,7 +12,6 @@ final class AppLifecycleBroker {
     private(set) var trueBackgroundGeneration = 0
     private(set) var lastDidEnterBackgroundAt: Date?
     private(set) var lastWillEnterForegroundAt: Date?
-    private(set) var backgroundFocusDismissGeneration = 0
     private(set) var isKeyboardVisible = false
 
     var isWorkoutOverlayPresented = false
@@ -21,6 +20,7 @@ final class AppLifecycleBroker {
 
     private var observersInstalled = false
     private weak var workoutCoordinator: LiveWorkoutCoordinator?
+    private var workoutBackgroundTaskID: UIBackgroundTaskIdentifier = .invalid
 
     var resolvedIsInTrueBackground: Bool {
         testingIsInTrueBackground ?? isInTrueBackground
@@ -31,9 +31,10 @@ final class AppLifecycleBroker {
         return Date().timeIntervalSince(lastWillEnterForegroundAt) < 1.0
     }
 
-    var pathPopGraceActive: Bool {
+    func isForegroundStableForDeferredWork(minimumSeconds: TimeInterval) -> Bool {
         guard let lastWillEnterForegroundAt else { return false }
-        return Date().timeIntervalSince(lastWillEnterForegroundAt) < 2.5
+        guard !resolvedIsInTrueBackground else { return false }
+        return Date().timeIntervalSince(lastWillEnterForegroundAt) >= minimumSeconds
     }
 
     private init() {}
@@ -57,6 +58,9 @@ final class AppLifecycleBroker {
                 TrainWorkoutDiagnostics.record(
                     "appDidBecomeActive uiState=\(UIApplication.shared.applicationState.rawValue) workoutViewing=\(self.isWorkoutOverlayPresented) editing=\(self.isLiveWorkoutSetFieldEditing) keyboardVisible=\(self.isKeyboardVisible) msSinceWillEnterForeground=\(msSinceForeground)"
                 )
+                TrainWorkoutDiagnostics.recordMemory("appDidBecomeActive")
+                guard self.isWorkoutOverlayPresented else { return }
+                self.workoutCoordinator?.acknowledgeWorkoutForegroundWithoutRemount()
             }
         }
         center.addObserver(
@@ -115,22 +119,69 @@ final class AppLifecycleBroker {
         TrainWorkoutDiagnostics.record(
             "appDidEnterBackground gen=\(trueBackgroundGeneration) uiState=\(UIApplication.shared.applicationState.rawValue) workoutViewing=\(isWorkoutOverlayPresented) editing=\(isLiveWorkoutSetFieldEditing)"
         )
-        guard isWorkoutOverlayPresented else { return }
-        TrainKeyboard.dismiss()
-        backgroundFocusDismissGeneration += 1
-        workoutCoordinator?.noteWorkoutViewDisappearedWhilePresented(scenePhase: .background)
+        TrainWorkoutDiagnostics.recordMemory("appDidEnterBackground")
+        if isLiveWorkoutSetFieldEditing {
+            TrainKeyboard.dismiss()
+            isLiveWorkoutSetFieldEditing = false
+            TrainWorkoutDiagnostics.record("setFieldEditing clearedForBackground")
+        }
+        EmbeddingRunPolicy.applicationDidEnterBackground()
+        if !isWorkoutOverlayPresented {
+            releaseEmbeddingMemoryIfIdle()
+        }
+        guard shouldSuspendPhoneWorkoutForBackground() else { return }
+        if isWorkoutOverlayPresented {
+            beginWorkoutBackgroundTaskIfNeeded()
+            TrainKeyboard.dismiss()
+            workoutCoordinator?.noteWorkoutViewDisappearedWhilePresented(scenePhase: .background)
+        }
         Task {
             await LiveWorkoutWatchBridge.shared.suspendForAppBackground()
         }
     }
 
+    private func shouldSuspendPhoneWorkoutForBackground() -> Bool {
+        isWorkoutOverlayPresented || LiveWorkoutWatchBridge.shared.hasActivePhoneHeartRateSession
+    }
+
+    private func releaseEmbeddingMemoryIfIdle() {
+        guard !isWorkoutOverlayPresented else { return }
+        Task {
+            await GemmaEmbeddingService.shared.releaseModelIfIdle()
+        }
+    }
+
+    private func beginWorkoutBackgroundTaskIfNeeded() {
+        guard workoutBackgroundTaskID == .invalid else { return }
+        workoutBackgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "WorkoutSuspend") { [weak self] in
+            MainActor.assumeIsolated {
+                self?.endWorkoutBackgroundTask(reason: "expiration")
+            }
+        }
+        TrainWorkoutDiagnostics.record(
+            "workoutBackgroundTask began id=\(workoutBackgroundTaskID.rawValue)"
+        )
+    }
+
+    private func endWorkoutBackgroundTask(reason: String) {
+        guard workoutBackgroundTaskID != .invalid else { return }
+        let taskID = workoutBackgroundTaskID
+        workoutBackgroundTaskID = .invalid
+        UIApplication.shared.endBackgroundTask(taskID)
+        TrainWorkoutDiagnostics.record(
+            "workoutBackgroundTask ended reason=\(reason) id=\(taskID.rawValue)"
+        )
+    }
+
     private func handleWillEnterForeground() {
         isInTrueBackground = false
         lastWillEnterForegroundAt = Date()
+        endWorkoutBackgroundTask(reason: "willEnterForeground")
         let msSinceBackground = Self.millisecondsSince(lastDidEnterBackgroundAt)
         TrainWorkoutDiagnostics.record(
             "appWillEnterForeground uiState=\(UIApplication.shared.applicationState.rawValue) workoutViewing=\(isWorkoutOverlayPresented) bgGen=\(trueBackgroundGeneration) msSinceBackground=\(msSinceBackground)"
         )
+        TrainWorkoutDiagnostics.recordMemory("appWillEnterForeground")
     }
 
     func shouldDeferForegroundHousekeeping(workoutPresented: Bool) -> Bool {
@@ -138,7 +189,7 @@ final class AppLifecycleBroker {
     }
 
     func shouldSkipDeferredSystemWork() -> Bool {
-        isWorkoutOverlayPresented || isLiveWorkoutSetFieldEditing || isLiveWorkoutSessionInProgress
+        isWorkoutOverlayPresented || isLiveWorkoutSetFieldEditing
     }
 
     func setLastDidEnterBackgroundForTesting(_ date: Date?) {

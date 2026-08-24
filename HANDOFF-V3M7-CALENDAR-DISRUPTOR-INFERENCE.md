@@ -122,9 +122,7 @@ Console: `category:calendar`, `category:recovery`
 
 ## Human Xcode
 
-- New Swift files → Signal target (agent cannot edit pbxproj)
-- EventKit already used; confirm calendar usage description in Info.plist if new access surface on Dashboard
-- Optional: Settings UI entry
+Empty if `build_device` passes. Folder sync covers new Swift under `Signal/Signal/Signal/`. If build fails on target membership or plist keys, agent edits project files per `.cursor/rules/xcode-project-setup.mdc`.
 
 ## Implementation order
 

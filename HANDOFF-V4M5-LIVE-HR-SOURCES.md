@@ -23,7 +23,7 @@
 - Workout complications, cloud, network.
 - Simulator fake HR (device gates only for live paths).
 - Detecting “AirPods connected” in UI copy (use neutral: “Phone HR” or “HealthKit HR” in logs only).
-- Editing `.pbxproj`, entitlements, plists (human owns; create Swift files under `Signal/` folder sync).
+- Unrelated Xcode project changes (edit `project.pbxproj` only when this milestone's build requires it; see `.cursor/rules/xcode-project-setup.mdc`).
 
 ---
 
@@ -159,7 +159,7 @@ Console: `category:workout`, subsystem `com.cameronro.Signal`.
 
 - iOS 26+, Swift 6, `@Observable`, no network.
 - Use XcodeBuildMCP, not raw xcodebuild loops.
-- Do not edit `.pbxproj`. New Swift under `Signal/Signal/...` folder sync.
+- Xcode project: `.cursor/rules/xcode-project-setup.mdc`. New Swift under synced roots usually needs no pbxproj edit.
 - Research `@Docs` before `HKWorkoutSession` / `HKLiveWorkoutBuilder` APIs; compiler is truth.
 - No em dashes in user-facing copy or `AGENT-BUILD-UPDATES.md`.
 - Human commits only; end with `MILESTONE COMPLETE: V4 M5 live HR sources, READY TO COMMIT` when Gate A + Gate B pass.

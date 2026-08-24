@@ -5,19 +5,39 @@ import os
 actor ReflectionEngine {
     static let shared = ReflectionEngine()
 
-    private var observationTask: Task<Void, Never>?
+    private var reflectionInFlight = false
+    private var lastReflectionCompletedAt: Date?
+    private static let reflectionDebounce: TimeInterval = 60
     private let calendar: Calendar
 
     private init() {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = .current
         calendar = cal
-        observationTask = Task { [weak self] in
-            await self?.observeTriggers()
-        }
     }
 
-    func runReflection(in context: ModelContext, referenceDate: Date? = nil) async {
+    func mayStartReflection() -> Bool {
+        guard !reflectionInFlight else { return false }
+        if let last = lastReflectionCompletedAt,
+           Date().timeIntervalSince(last) < Self.reflectionDebounce
+        {
+            return false
+        }
+        return true
+    }
+
+    func resetReflectionStateForTesting() {
+        reflectionInFlight = false
+        lastReflectionCompletedAt = nil
+    }
+
+    @discardableResult
+    func runReflection(in context: ModelContext, referenceDate: Date? = nil) async -> Bool {
+        guard beginReflectionRun() else { return false }
+        defer {
+            endReflectionRun()
+            lastReflectionCompletedAt = Date()
+        }
         let ref = referenceDate ?? Date()
         let snapshot = await MainActor.run {
             ReflectionSnapshotBuilder.build(in: context, calendar: calendar, referenceDate: ref)
@@ -59,6 +79,7 @@ actor ReflectionEngine {
         }
         _ = specCount
         await DailyBriefingScheduler.shared.refreshSchedule(in: context)
+        return true
     }
 
     @MainActor
@@ -136,34 +157,14 @@ actor ReflectionEngine {
         }
     }
 
-    private func observeTriggers() async {
-        let workoutFinish = NotificationCenter.default.notifications(
-            named: Notification.Name("workoutDidFinish"),
-            object: nil
-        )
-        let deltaFinish = NotificationCenter.default.notifications(
-            named: Notification.Name("healthKitProcessDeltaDidFinish"),
-            object: nil
-        )
+    private func beginReflectionRun() -> Bool {
+        guard !reflectionInFlight else { return false }
+        reflectionInFlight = true
+        return true
+    }
 
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask {
-                for await notification in workoutFinish {
-                    guard let container = notification.userInfo?["modelContainer"] as? ModelContainer else {
-                        continue
-                    }
-                    await self.runReflection(in: ModelContext(container))
-                }
-            }
-            group.addTask {
-                for await notification in deltaFinish {
-                    guard let container = notification.userInfo?["modelContainer"] as? ModelContainer else {
-                        continue
-                    }
-                    await self.runReflection(in: ModelContext(container))
-                }
-            }
-        }
+    private func endReflectionRun() {
+        reflectionInFlight = false
     }
 }
 

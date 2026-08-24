@@ -23,6 +23,8 @@ final class LiveWorkoutPhoneSessionManager: NSObject {
     private var sessionKey: String?
     private var lastUIUpdateAt: Date?
     private var onHeartRateUpdate: ((Int, Date) -> Void)?
+    private var stopInFlight: Task<Void, Never>?
+    private var isPerformingStop = false
 
     private override init() {
         super.init()
@@ -36,10 +38,19 @@ final class LiveWorkoutPhoneSessionManager: NSObject {
         guard HKHealthStore.isHealthDataAvailable() else {
             statusMessage = "Health access needed for live HR"
             logger.info("phone workout session skipped HealthKit unavailable")
+            TrainWorkoutDiagnostics.record("hkPhoneStart skipped unavailable")
             return
         }
         if session != nil {
             logger.info("phone workout session already running")
+            return
+        }
+
+        let accessState = await HealthKitAuthorization.resolveAccessState(healthStore: healthStore)
+        TrainWorkoutDiagnostics.record("hkPhoneStart access=\(Self.accessLogLabel(accessState))")
+        guard accessState == .ready else {
+            statusMessage = "Health access needed for live HR"
+            logger.info("phone workout session skipped access=\(Self.accessLogLabel(accessState), privacy: .public)")
             return
         }
 
@@ -82,6 +93,7 @@ final class LiveWorkoutPhoneSessionManager: NSObject {
                 statusMessage = "Live HR unavailable"
             }
             logger.error("phone workout session start failed: \(String(describing: error), privacy: .public)")
+            TrainWorkoutDiagnostics.record("hkPhoneStart failed error=\(error.localizedDescription)")
             session = nil
             builder = nil
             self.sessionKey = nil
@@ -90,10 +102,38 @@ final class LiveWorkoutPhoneSessionManager: NSObject {
     }
 
     func stop(discardHealthKitWorkout: Bool) async {
+        switch LiveWorkoutPhoneStopGate.decide(
+            hasStopInFlight: stopInFlight != nil,
+            hasSession: session != nil && builder != nil
+        ) {
+        case .awaitInFlight:
+            await stopInFlight?.value
+            return
+        case .noop:
+            clearWorkoutState()
+            return
+        case .performStop:
+            break
+        }
+
+        let task = Task { @MainActor in
+            await performStop(discardHealthKitWorkout: discardHealthKitWorkout)
+        }
+        stopInFlight = task
+        await task.value
+        stopInFlight = nil
+    }
+
+    private func performStop(discardHealthKitWorkout: Bool) async {
         guard let workoutSession = session, let workoutBuilder = builder else {
             clearWorkoutState()
             return
         }
+
+        isPerformingStop = true
+        defer { isPerformingStop = false }
+
+        TrainWorkoutDiagnostics.record("hkPhoneStop begin discard=\(discardHealthKitWorkout)")
 
         let endDate = Date()
         workoutSession.stopActivity(with: endDate)
@@ -106,9 +146,11 @@ final class LiveWorkoutPhoneSessionManager: NSObject {
                 _ = try await workoutBuilder.finishWorkout()
             }
             workoutSession.end()
+            TrainWorkoutDiagnostics.record("hkPhoneStop end ok discard=\(discardHealthKitWorkout)")
             logger.info("phone workout session ended discard=\(discardHealthKitWorkout, privacy: .public)")
         } catch {
             logger.error("phone workout session end failed: \(String(describing: error), privacy: .public)")
+            TrainWorkoutDiagnostics.record("hkPhoneStop end error=\(error.localizedDescription)")
             workoutSession.end()
         }
 
@@ -140,6 +182,15 @@ final class LiveWorkoutPhoneSessionManager: NSObject {
         onHeartRateUpdate?(bpm, now)
         logger.debug("live HR bpm=\(bpm, privacy: .public) source=phone")
     }
+
+    private static func accessLogLabel(_ state: HealthKitAccessState) -> String {
+        switch state {
+        case .unavailable: "unavailable"
+        case .notDetermined: "notDetermined"
+        case .ready: "ready"
+        case .denied: "denied"
+        }
+    }
 }
 
 extension LiveWorkoutPhoneSessionManager: HKWorkoutSessionDelegate {
@@ -153,7 +204,7 @@ extension LiveWorkoutPhoneSessionManager: HKWorkoutSessionDelegate {
             logger.info(
                 "phone workout session state=\(toState.rawValue, privacy: .public) from=\(fromState.rawValue, privacy: .public)"
             )
-            if toState == .ended {
+            if toState == .ended, !isPerformingStop {
                 clearWorkoutState()
             }
         }

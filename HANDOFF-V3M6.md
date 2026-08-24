@@ -22,18 +22,9 @@ RecoveryDisruptorEpisode → RecoveryDisruptorEngine (tag + infer)
 
 Alcohol proxy (confidence 0.6): prior night sleep < 6.5h AND RHR delta > 3 AND suppressed HRV. Training load (ACWR > 1.5) wins when both fire. UI never says "you drank" below confidence 0.75.
 
-## Human Xcode (required before first run)
+## Human Xcode
 
-1. Add to **Signal** iOS target:
-   - `Data/Models/RecoveryDisruptorEpisode.swift`
-   - `Data/Recovery/RecoveryDisruptorHeuristics.swift`
-   - `Data/Recovery/PersonalReadinessCalculator.swift`
-   - `Data/Recovery/RecoveryDisruptorEngine.swift`
-   - `Features/Dashboard/RecoveryDisruptorTagButton.swift`
-2. Add to **SignalTests**:
-   - `PersonalReadinessCalculatorTests.swift`
-   - `RecoveryDisruptorEngineTests.swift`
-3. Confirm `RecoveryDisruptorEpisode.self` is in `ModelContainer+Signal.swift` schema (agent added; verify lightweight migration on device if store already exists).
+Empty if `build_device` passes. Folder sync covers listed Swift files under `Signal/Signal/Signal/`. Agent edits project files if build fails (`.cursor/rules/xcode-project-setup.mdc`). Confirm `RecoveryDisruptorEpisode.self` in `ModelContainer+Signal.swift` schema; lightweight migration on device if store already exists.
 
 ## Gate B checklist (device)
 

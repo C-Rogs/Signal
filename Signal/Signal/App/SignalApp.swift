@@ -26,8 +26,8 @@ struct SignalApp: App {
         DailyBriefingScheduler.registerCategories()
         LiveWorkoutCoordinatorLaunchState.markProcessLaunched()
         _ = DerivedMetricsService.shared
+        Task { await SystemWorkCoordinator.shared.startIfNeeded() }
         WatchConnectivityService.shared.activate()
-        WatchRecoveryPushCoordinator.shared.start()
     }
 
     var body: some Scene {
@@ -73,7 +73,7 @@ struct SignalApp: App {
             CatalogBootstrap.runIfNeeded(modelContainer: container)
             DataQualityMigration.scheduleIfNeeded(modelContainer: container)
             _ = ReflectionEngine.shared
-            _ = SetHRAttributionTrigger.shared
+            await SetHRAttributionTrigger.shared.startIfNeeded()
             let healthKit = HealthKitManager(modelContainer: container)
             let briefingDelegate = DailyBriefingNotificationDelegate(modelContainer: container)
             UNUserNotificationCenter.current().delegate = briefingDelegate

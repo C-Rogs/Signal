@@ -32,6 +32,8 @@ actor MockLLMCoach: LLMCoach {
 
     func resetThread() async {}
 
+    func abandonActiveWork() async {}
+
     func compactThread(messages: [ChatMessage]) async throws -> CoachCompactResult {
         CoachCompactResult(summary: "summary", messages: messages)
     }

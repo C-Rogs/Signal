@@ -190,6 +190,7 @@ enum HealthKitSyncEngine {
         }
         Log.sync.info("daily nutrition upserted count=\(nutritionWritten, privacy: .public)")
 
+        try Task.checkCancellation()
         let vectorsWritten = try await DailyImportEmbeddingPipeline.embedAndUpsert(
             dayStarts: sortedDays,
             modelContainer: modelContainer,

@@ -3,6 +3,7 @@ import HealthKit
 import SwiftData
 import Observation
 import os
+import UIKit
 
 enum HealthKitAccessState: Equatable, Sendable {
     case unavailable
@@ -24,7 +25,9 @@ final class HealthKitManager {
     private let modelContainer: ModelContainer
     private let calendar: Calendar
     private var syncTask: Task<Void, Never>?
+    private var stableSyncTask: Task<Void, Never>?
     private var backgroundCoordinator: HealthKitBackgroundCoordinator?
+    private var backgroundCancelObserver: NSObjectProtocol?
     private(set) var isWorkoutWriteInFlight = false
 
     init(modelContainer: ModelContainer, calendar: Calendar? = nil) {
@@ -40,7 +43,28 @@ final class HealthKitManager {
             self?.syncDeferredIfDirty()
         }
         backgroundCoordinator = coordinator
+        installBackgroundSyncCancellationObserver()
         refreshAccessState()
+    }
+
+    private func installBackgroundSyncCancellationObserver() {
+        guard backgroundCancelObserver == nil else { return }
+        backgroundCancelObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.cancelSyncForBackground()
+            }
+        }
+    }
+
+    func cancelSyncForBackground() {
+        stableSyncTask?.cancel()
+        guard isSyncing else { return }
+        syncTask?.cancel()
+        TrainWorkoutDiagnostics.record("healthKit sync cancelForBackground")
     }
 
     func refreshAccessState() {
@@ -137,14 +161,40 @@ final class HealthKitManager {
 
     func syncDeferredIfDirty() {
         guard accessState == .ready else { return }
-        guard !AppLifecycleBroker.shared.shouldSkipDeferredSystemWork() else { return }
         guard HealthKitDirtyFlagStore.isDirty else { return }
+        guard DeferredSystemWorkPolicy.mayStartDeferredHealthKitSync() else {
+            if DeferredSystemWorkPolicy.isTrainInteractionCooldownActive {
+                TrainWorkoutDiagnostics.record("healthKit deferSync skipped trainCooldown=true")
+            } else if AppLifecycleBroker.shared.shouldSkipDeferredSystemWork() {
+                TrainWorkoutDiagnostics.record("healthKit deferSync skipped workoutOverlay=true")
+            } else {
+                TrainWorkoutDiagnostics.record("healthKit deferSync skipped foregroundUnstable=true")
+            }
+            scheduleDeferredSyncWhenStable()
+            return
+        }
         startSyncTask(trigger: "deferred", clearDirtyOnSuccess: true, cancelExisting: false)
     }
 
+    private func scheduleDeferredSyncWhenStable() {
+        stableSyncTask?.cancel()
+        stableSyncTask = Task {
+            for _ in 0 ..< 24 {
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled else { return }
+                guard HealthKitDirtyFlagStore.isDirty else { return }
+                guard DeferredSystemWorkPolicy.mayStartDeferredHealthKitSync() else { continue }
+                startSyncTask(trigger: "deferred", clearDirtyOnSuccess: true, cancelExisting: false)
+                return
+            }
+        }
+    }
+
     private func startSyncTask(trigger: String, clearDirtyOnSuccess: Bool, cancelExisting: Bool) {
-        guard !isSyncing, !isWorkoutWriteInFlight else { return }
-        if cancelExisting {
+        guard !isWorkoutWriteInFlight else { return }
+        guard !AppLifecycleBroker.shared.resolvedIsInTrueBackground else { return }
+        if isSyncing {
+            guard cancelExisting else { return }
             syncTask?.cancel()
         }
         isSyncing = true
@@ -211,11 +261,13 @@ final class HealthKitManager {
                 object: nil,
                 userInfo: userInfo
             )
-            await DerivedMetricsService.shared.invalidateCache()
             await DailyBriefingScheduler.shared.refreshSchedule(in: ModelContext(modelContainer))
             Log.sync.info(
                 "sync finished trigger=\(trigger, privacy: .public) noOp=\(outcome.noOp, privacy: .public) elapsedSec=\(Date().timeIntervalSince(started), format: .fixed(precision: 2), privacy: .public)"
             )
+        } catch is CancellationError {
+            Log.sync.info("sync paused trigger=\(trigger, privacy: .public) reason=cancelled")
+            TrainWorkoutDiagnostics.record("healthKit sync cancelled trigger=\(trigger)")
         } catch {
             lastSyncErrorMessage = error.localizedDescription
             if HealthKitAuthorization.isAuthorizationDeniedError(error) {

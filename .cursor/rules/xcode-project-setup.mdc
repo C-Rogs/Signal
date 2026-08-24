@@ -1,0 +1,59 @@
+---
+description: Safe Xcode project file edits: when, how, verify, log
+alwaysApply: true
+---
+
+# Xcode project setup
+
+Agents may edit `project.pbxproj`, entitlements, and Info plists when a milestone requires it. Treat these files as fragile; prefer Swift + folder sync first.
+
+## Prefer no project edit
+
+Signal uses **PBXFileSystemSynchronizedRootGroup** (objectVersion 77). New Swift under synced roots (`Signal/`, watch app folders, etc.) usually compiles without touching `project.pbxproj`.
+
+Only open the project file when:
+
+- `build_device` / `build_sim` fails with missing file, wrong target, undefined symbol from absent membership
+- Milestone requires build settings, a new target, SPM package wiring, embed phase, or capability/entitlement
+- A resource must be referenced explicitly (not covered by sync)
+
+## Edit discipline
+
+1. **Read before write.** Grep `project.pbxproj` for the target name, existing file refs, and parallel entries to copy UUID/format from.
+2. **Minimal diff.** One logical change per edit pass (e.g. add one file to one target, or one build setting). Never rewrite whole sections or reformat the file.
+3. **Match existing style.** Tabs, 24-char hex IDs, comment labels `/* Name */`, same `sourceTree` / `isa` patterns as neighbours.
+4. **Do not touch signing.** Leave `DEVELOPMENT_TEAM`, provisioning profiles, and `CODE_SIGN_*` unless the human explicitly asked. Capabilities that need the Apple Developer portal: document in handover; edit entitlements only when the capability is already provisioned.
+5. **Avoid .xib / .storyboard.** Signal is SwiftUI; do not add Interface Builder files.
+6. **No project generators mid-milestone.** XcodeGen/Tuist are long-term options; do not introduce them unless the milestone says so.
+
+## Verify (mandatory)
+
+After any `project.pbxproj`, entitlements, or plist change:
+
+1. `build_device` on Cameron's iPhone 16 Pro (default gate)
+2. If watch/widget/extension touched: `./scripts/install-watch-app.sh` or the relevant scheme build
+3. If build fails twice on project-file suspicion, STOP with full error and the exact sections edited
+
+## Log every project edit
+
+Append to `AGENT-BUILD-UPDATES.md` for the session (see `.cursor/rules/agent-build-handover.mdc`):
+
+Under **Files touched**, add a row `Xcode project | project.pbxproj (or entitlements path)`.
+
+Add subsection **Xcode project** with:
+
+- **Why:** one line (e.g. "add Foo.swift to SignalWatch target")
+- **What:** target(s), build setting keys, SPM product, entitlement key, or exception set changed
+- **Verify:** build_device / watch script result
+
+Do not hide project edits. Do not say "human must add in Xcode" if you already edited the project file.
+
+## Human Xcode (narrow)
+
+Use **Human Xcode** in the handover only when the agent cannot complete:
+
+- Apple Developer portal capability or provisioning not available to the agent
+- Device locked/offline so verify could not run
+- Subjective signing/UI steps in Xcode GUI
+
+Empty **Human Xcode** when agent edited project files and `build_device` passed.

@@ -2599,3 +2599,295 @@ Add to **Signal** target if not auto-synced:
 | Tests | `TrainApplicationLifecycleTests.swift`, `LiveWorkoutCoordinatorScenePhaseTests.swift` |
 | Deleted | `ActiveWorkoutShell.swift`, `TrainWorkoutPrivacyShield.swift`, `TrainWorkoutSnapshotShell.swift`, `TrainSecureSnapshotField.swift`, `StaleActiveWorkoutRouteView.swift` |
 | Handover | `AGENT-BUILD-UPDATES.md` |
+
+---
+
+## 2026-07-05 — Architect: HK teardown handoff (builder next)
+
+Console capture + code review identified **HKLiveWorkoutBuilder Error(7)** after `finishWorkout` with fire-and-forget `endWatchWorkout()`. Blank screen on background return reproduced **without pid change** (pid 7694). RAM jetsam ruled out for that run.
+
+**Builder:** implement per `HANDOFF-HK-WORKOUT-TEARDOWN.md`. Await phone HK `stop()` before `resetStreamingState()`; fix delegate race; dismiss keyboard on finish; device repro: workout → finish → background → return.
+
+**Evidence:** `drafts/console-capture-20260705-210806.log`, in-app `ProcessMemoryFootprint` logging already on main.
+
+---
+
+## 2026-07-05 — Architect: Custom numpad handoff (builder next)
+
+HK await-stop + wellness swipe fix **shipped**. Human verify: pre-filled sets + wellness **pass**; **typing in set value sheet still fails**.
+
+**Builder:** implement `HANDOFF-TRAIN-CUSTOM-NUMPAD.md` (SwiftUI numpad, no system keyboard in `SetValueEditorSheet`).
+
+---
+
+## 2026-07-05 — HK workout teardown (blank after background return)
+
+### Shipped
+
+- **`endWatchWorkout()` async:** phone HK `stop()` awaited before `resetStreamingState()`; no fire-and-forget `Task`.
+- **Idempotent stop:** `LiveWorkoutPhoneStopGate` + in-flight `stopTask` on manager; bridge `phoneStopTask` dedupes finish vs background.
+- **Delegate race fix:** `clearWorkoutState()` skipped on `.ended` while `isPerformingStop` drives teardown.
+- **Background suspend:** checks `phoneSessionManager.isWorkoutActive` in addition to `hasActivePhoneSession`; clears flag only after stop completes.
+- **Finish/discard:** `TrainKeyboard.dismiss()` then await HK stop before session persist and nav reset.
+- **Diagnostics:** `hkPhoneStop begin/end ok|error`, `phoneSessionStop begin`, `endWatchWorkout awaited phoneStop`.
+- **Tests:** `LiveWorkoutPhoneTeardownTests` (stop gate decision logic).
+
+### Gate A (agent)
+
+- `LiveWorkoutPhoneStopGateTests`: **pass** (3/3).
+- `build_device` + `install_app_device` + `launch_app_device`: **pass** (PID 7790).
+
+### Gate B (human)
+
+- Repro: force-quit → open → start workout → 1 set → finish → home 15s → return.
+- Pass: tabs visible (not blank); Profile → Train Workout Diagnostics shows `hkPhoneStop end ok`, same pid before/after background.
+- Optional: Console no `HKLiveWorkoutBuilder` `Error(7)` after finish.
+
+### Human Xcode
+
+(empty)
+
+### Out of scope
+
+- MLX unload on background, workout overlay remount, watch app changes
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Phone HK | `LiveWorkoutPhoneSessionManager.swift`, `LiveWorkoutPhoneStopGate.swift` |
+| Bridge | `LiveWorkoutWatchBridge.swift` |
+| Finish UI | `ActiveWorkoutView.swift` |
+| Tests | `LiveWorkoutPhoneTeardownTests.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+---
+
+## 2026-07-05 — HK teardown follow-up (keypad + wellness swipe)
+
+### Shipped
+
+- **Set value keypad:** `SetValueEditorSheet` dismisses keyboard on disappear and background; auto-dismiss sheet on background; `SetRowView` clears presentation on background; broker clears `isLiveWorkoutSetFieldEditing` before suspend snapshot.
+- **Wellness swipe:** `.interactiveDismissDisabled(true)` on wellness sheet; Save/Skip run full `completeFinishedWorkout` before dismiss; interactive dismiss routes through skip teardown via coordinator flag; diagnostics `wellnessDismiss save|skip|interactive|interactiveHandled`.
+- **HK start gate:** phone session skips start when HealthKit access not `.ready`; logs `hkPhoneStart access=...` and `hkPhoneStart failed`.
+
+### Gate A (agent)
+
+- `LiveWorkoutPhoneStopGateTests` + `TrainApplicationLifecycleTests`: **pass** (14/14).
+- `build_device` + `install_app_device` + `launch_app_device`: **pass** (PID 7934).
+
+### Gate B (human)
+
+1. Finish → **Save** on wellness → home → return (pass)
+2. Finish → try swipe wellness (blocked; use Skip) → home → return (pass)
+3. Set keypad → type → **Done** → home → return (pass)
+4. Set keypad → type → home **without** Done → return (must not blank)
+5. Profile → Train Workout Diagnostics if any fail
+
+### Human Xcode
+
+(empty)
+
+### Out of scope
+
+- MLX park on background, HK Error(7) deep fix beyond auth gate
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Keypad | `SetValueEditorSheet.swift`, `SetRowView.swift` |
+| Wellness | `MainTabView.swift`, `TrainWellnessFinishSheet.swift`, `WellnessCaptureView.swift`, `LiveWorkoutCoordinator.swift` |
+| Lifecycle | `AppLifecycleBroker.swift` |
+| Phone HK | `LiveWorkoutPhoneSessionManager.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+---
+
+## 2026-07-05 — Train custom numpad (blank after typing fix)
+
+### Shipped
+
+- **`TrainNumpadView` + `TrainNumpadLogic`:** SwiftUI-only digit entry (0-9, decimal when allowed, backspace). No `TextField`, `@FocusState`, or `.keyboardType`.
+- **`SetValueEditorSheet`:** embeds custom numpad; removed UIKit keyboard focus, `TrainKeyboard.dismiss()`, and `isLiveWorkoutSetFieldEditing` flag. Background auto-dismisses sheet only.
+- **`SetRowView`:** `allowsDecimal` replaces `UIKeyboardType`; background clears sheet without keyboard dismiss; diagnostics `mode=customNumpad`.
+- **Tests:** `TrainNumpadLogicTests` (append digit, decimal rules, backspace, max length).
+
+### Gate A (agent)
+
+- `TrainNumpadLogicTests`: **pass** (5/5).
+- `build_device` + `install_app_device` + `launch_app_device`: **pass** (PID 7998).
+
+### Gate B (human)
+
+1. Start workout → tap weight or reps → tap several numpad digits → Done → home 15s → return (**tabs visible, not blank**)
+2. Type reps → finish workout → wellness Save → home → return
+3. Complete set using only pre-filled values (regression)
+4. Profile → Train Workout Diagnostics: `setValueEditor open ... mode=customNumpad`; no `keyboardReleased` lines
+
+### Human Xcode
+
+(empty)
+
+### Out of scope
+
+- `.interactiveDismissDisabled` on value editor sheet
+- HK auth gate before `LiveWorkoutPhoneSessionManager.start`
+- MLX unload / workout overlay rewrite
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Numpad | `TrainNumpadView.swift`, `TrainNumpadLogic.swift` (new) |
+| Value editor | `SetValueEditorSheet.swift` |
+| Set row | `SetRowView.swift` |
+| Tests | `TrainNumpadLogicTests.swift` (new) |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-07-05 — HK sync pause on background (blank after repeated home)
+
+### Shipped
+
+- **HealthKit deferred sync** cancels when app enters background (`cancelSyncForBackground`); dirty flag kept so sync resumes next stable foreground.
+- **Embedding during sync** aborts when app leaves active (`assertEmbeddingPermitted` throws `CancellationError` instead of waiting forever).
+- **Vector batch save:** one `context.save()` per embed batch instead of per day (cuts UIKit Shared Background Assertion churn).
+- **Foreground housekeeping** skipped while `healthKitManager.isSyncing`; deferred sync skipped while `resolvedIsInTrueBackground`.
+
+### Gate A (agent)
+
+- `build_device`: **pass**
+- `install_app_device`: **pass**
+- `launch_app_device`: **fail** (device locked)
+
+### Gate B (human)
+
+1. Finish workout + wellness → home/return 5+ times on tabs (**not blank**)
+2. Diagnostics: if blank, check for `healthKit sync cancelForBackground` on home and no assertion count > ~10 in Console
+3. Unlock phone, launch Signal, repeat repro
+
+### Human Xcode
+
+Unlock iPhone 16 Pro and launch Signal after install.
+
+### Out of scope
+
+- HK auth gate before `LiveWorkoutPhoneSessionManager.start`
+- Wellness Notes `TextField` (system keyboard)
+- MLX unload on background
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| HK sync | `HealthKitManager.swift`, `HealthKitBackground.swift`, `HealthKitSyncEngine.swift` |
+| Embedding | `DailyImportEmbeddingPipeline.swift` |
+| Vector store | `VectorStore.swift` |
+| Root lifecycle | `RootView.swift` |
+| Handover | `AGENT-BUILD-UPDATES.md` |
+
+## 2026-07-09 — Efficiency and battery audit (non-feature fixes)
+
+### Shipped
+
+- **Phone HK suspend on background** even when workout minimized to banner (not only when overlay presented).
+- **Deferred system work** no longer blocked by minimized live session; HK sync and Gemma release can run when user is not viewing workout UI.
+- **Reflection debounce** on `healthKitProcessDeltaDidFinish` (60s, in-flight guard).
+- **Dashboard** calendar inference no longer re-triggers on sync start/finish (`isSyncing` removed from refresh token).
+- **Coach** cancels active send and releases FM gate on tab disappear.
+- **Rest bell** deactivates `AVAudioSession` after playback.
+- **Metal waiters** resume on background so calendar classifier does not hold continuations indefinitely.
+- **Root reflection** guarded with `resolvedIsInTrueBackground`.
+- **Plan doc:** `docs/EFFICIENCY-AUDIT.md` with P0/P1/P2 follow-ups for external review.
+
+### Gate A (agent)
+
+- `build_device`: **pass**
+- `test_sim` (TrainApplicationLifecycleTests + EmbeddingRunPolicyTests): **12 passed**
+- `install_app_device`: **fail** (device not found / offline)
+
+### Gate B (human)
+
+1. Phone HR live workout → minimize → background 2+ min → confirm HR collection stops (Instruments `HKWorkoutSession`).
+2. Same scenario → confirm Gemma can release and HK sync runs on return.
+3. Unlock iPhone 16 Pro, install/launch build, spot-check Coach tab switch during generation.
+
+### Human Xcode
+
+Unlock iPhone 16 Pro and reconnect for device install if MCP cannot see device.
+
+### Out of scope
+
+- Unified system work coordinator (reflection fan-out)
+- HK observer tiering (30 types)
+- Vector index for Coach RAG
+- FM inner Task cancellation on Coach abandon
+- Watch HK stop on phone background
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Lifecycle | `AppLifecycleBroker.swift`, `RootView.swift` |
+| Live workout | `LiveWorkoutWatchBridge.swift` |
+| Embedding | `EmbeddingService.swift` |
+| Reflection | `ReflectionEngine.swift` |
+| Dashboard | `DashboardView.swift` |
+| Coach | `ChatView.swift`, `ChatViewModel.swift`, `LLMCoach.swift`, `FoundationModelsCoach.swift` |
+| Train audio | `RestBellPlayer.swift` |
+| Tests | `TrainApplicationLifecycleTests.swift`, `MockLLMCoach.swift`, `EmbeddingRunPolicyTests.swift` |
+| Docs | `docs/EFFICIENCY-AUDIT.md`, `AGENT-BUILD-UPDATES.md` |
+
+## 2026-07-09 — M1 Unified system work coordinator
+
+### Shipped
+
+- **`SystemWorkCoordinator` actor** sole subscriber for `healthKitProcessDeltaDidFinish` and `workoutDidFinish`.
+- **Sequenced HK delta pipeline:** invalidate derived metrics, HR attribution (when span present), reflection (60s debounce), watch recovery push.
+- **Sequenced workout finish pipeline:** derived metrics + progress record, delayed HR attribution, reflection.
+- **Background cancel** of in-flight coordinator work on `didEnterBackground`.
+- **Deferred policy gate** on HK delta path (`shouldSkipDeferredSystemWork`, true background).
+- **`ReflectionEngine.mayStartReflection()`** shared 60s debounce; `RootView` foreground reflection respects it.
+- Removed parallel notification listeners from `ReflectionEngine`, `DerivedMetricsService`, `WatchRecoveryPushCoordinator`, `SetHRAttributionTrigger` (delta/workout paths).
+- **AppleHealthXMLImporter** now passes `modelContainer` in delta notification userInfo.
+
+### Gate A (agent)
+
+- `build_sim`: **pass**
+- `build_device`: **pass**
+- `install_app_device`: **pass**
+- `launch_app_device`: **fail** (device locked)
+- `test_sim` (`SystemWorkCoordinatorTests`): **not-run** (simulator clone launch denied `FBSOpenApplicationServiceErrorDomain`; tests compile in test target build)
+
+### Gate B (human)
+
+- Unlock iPhone 16 Pro and launch Signal to complete launch gate.
+- Spot-check: finish HK sync, confirm single reflection fan-out in Console (`systemWork healthKitDelta` logs, no duplicate reflection within 60s).
+- Prior Gate B Coach reload-on-fail button still out of scope (M3).
+
+### Human Xcode
+
+Empty.
+
+### Out of scope
+
+- M2 live workout lifecycle policy
+- M3 Coach FM cancellation
+- M4 HK observer tiering
+- M5 embedding foreground budget
+- Coach failed-message reload button
+
+### Files touched
+
+| Area | Files |
+|------|--------|
+| Coordinator | `SystemWorkCoordinator.swift` (new) |
+| Reflection | `ReflectionEngine.swift` |
+| Derived metrics | `DerivedMetricsService.swift` |
+| HR attribution | `SetHRAttributionTrigger.swift` |
+| Watch | `WatchRecoveryPushCoordinator.swift` |
+| App lifecycle | `SignalApp.swift`, `RootView.swift` |
+| HealthKit | `HealthKitManager.swift` |
+| Import | `AppleHealthXMLImporter.swift` |
+| Tests | `SystemWorkCoordinatorTests.swift` (new) |
+| Handover | `AGENT-BUILD-UPDATES.md` |

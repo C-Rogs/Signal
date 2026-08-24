@@ -21,6 +21,32 @@ final class RestBellPlayer {
         player.currentTime = 0
         player.play()
         Log.workout.info("rest bell played")
+        scheduleSessionDeactivation(after: player.duration)
+    }
+
+    private func scheduleSessionDeactivation(after duration: TimeInterval) {
+        let delay = max(duration, 0.5) + 0.25
+        Task {
+            try? await Task.sleep(for: .seconds(delay))
+            deactivateSessionIfIdle()
+        }
+    }
+
+    private func deactivateSessionIfIdle() {
+        guard sessionConfigured else { return }
+        guard player?.isPlaying != true else { return }
+        do {
+            try AVAudioSession.sharedInstance().setActive(
+                false,
+                options: .notifyOthersOnDeactivation
+            )
+            sessionConfigured = false
+            Log.workout.info("rest bell audio session deactivated")
+        } catch {
+            Log.workout.error(
+                "rest bell audio session deactivate failed: \(String(describing: error), privacy: .public)"
+            )
+        }
     }
 
     private func configureSessionIfNeeded() {

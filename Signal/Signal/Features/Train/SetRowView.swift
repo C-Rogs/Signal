@@ -1,6 +1,5 @@
 import SwiftData
 import SwiftUI
-import UIKit
 
 struct SetRowView: View {
     let set: SetEntry
@@ -21,12 +20,35 @@ struct SetRowView: View {
     @State private var loggedRPE: Double?
     @State private var showRPESheet = false
     @State private var sheetRPE: Double = WorkoutRPEScale.defaultValue
+    @State private var valueEditorPresentation: ValueEditorPresentation?
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(TrainSetFieldFocusCoordinator.self) private var focusCoordinator
-    @FocusState private var focusedField: Field?
+    @Environment(\.scenePhase) private var scenePhase
 
-    private enum Field: Hashable {
-        case weight, reps, distance, duration
+    private enum ValueEditorField {
+        case weight
+        case reps
+        case distance
+        case duration
+    }
+
+    private struct ValueEditorPresentation: Identifiable {
+        let setIndex: Int
+        let field: ValueEditorField
+        let title: String
+        let placeholder: String
+        let initialText: String
+        let allowsDecimal: Bool
+
+        var id: String { "\(setIndex)-\(fieldKey)" }
+
+        var fieldKey: String {
+            switch field {
+            case .weight: "weight"
+            case .reps: "reps"
+            case .distance: "distance"
+            case .duration: "duration"
+            }
+        }
     }
 
     private var isWarmup: Bool {
@@ -97,28 +119,24 @@ struct SetRowView: View {
                 }
             )
         }
+        .sheet(item: $valueEditorPresentation) { presentation in
+            SetValueEditorSheet(
+                title: presentation.title,
+                placeholder: presentation.placeholder,
+                initialText: presentation.initialText,
+                allowsDecimal: presentation.allowsDecimal,
+                fieldLabel: presentation.fieldKey
+            ) { newText in
+                applyEditorValue(field: presentation.field, text: newText)
+            }
+        }
         .onChange(of: set.persistentModelID) { _, _ in
             syncFromModel()
         }
-        .onChange(of: focusedField) { oldValue, newValue in
-            if newValue != nil, oldValue == nil {
-                onActivate()
-            }
-            if oldValue != nil, newValue == nil {
-                if focusCoordinator.consumeSuppressNextCommit() {
-                    TrainWorkoutDiagnostics.record("setRow skipCommit overlayDismiss set=\(set.setIndex)")
-                } else {
-                    commitFields()
-                }
-            }
-            focusCoordinator.noteEditingActive(newValue != nil)
-        }
-        .onChange(of: focusCoordinator.dismissGeneration) { _, _ in
-            if !focusCoordinator.consumeSuppressNextCommit() {
-                commitFields()
-            }
-            focusedField = nil
-            focusCoordinator.noteEditingActive(false)
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .background, valueEditorPresentation != nil else { return }
+            valueEditorPresentation = nil
+            TrainWorkoutDiagnostics.record("setValueEditor dismissedFromRow background")
         }
         .contextMenu {
             Button("Delete", role: .destructive, action: onDelete)
@@ -197,42 +215,67 @@ struct SetRowView: View {
 
     @ViewBuilder
     private var strengthFields: some View {
-        TextField("0", text: $weightText)
-            .keyboardType(.decimalPad)
-            .multilineTextAlignment(.trailing)
-            .font(.body.monospacedDigit().weight(.medium))
-            .frame(width: 52)
-            .focused($focusedField, equals: .weight)
-            .accessibilityIdentifier("setWeight-\(set.setIndex)")
-            .onSubmit { commitFields() }
-        TextField("0", text: $repsText)
-            .keyboardType(.numberPad)
-            .multilineTextAlignment(.trailing)
-            .font(.body.monospacedDigit().weight(.medium))
-            .frame(width: 40)
-            .focused($focusedField, equals: .reps)
-            .accessibilityIdentifier("setReps-\(set.setIndex)")
-            .onSubmit { commitFields() }
+        valueButton(
+            text: weightText,
+            placeholder: "0",
+            width: 52,
+            identifier: "setWeight-\(set.setIndex)"
+        ) {
+            openValueEditor(.weight)
+        }
+        valueButton(
+            text: repsText,
+            placeholder: "0",
+            width: 40,
+            identifier: "setReps-\(set.setIndex)"
+        ) {
+            openValueEditor(.reps)
+        }
     }
 
     @ViewBuilder
     private var cardioFields: some View {
-        TextField("0", text: $distanceText)
-            .keyboardType(.decimalPad)
-            .multilineTextAlignment(.trailing)
-            .font(.subheadline.monospacedDigit())
-            .frame(width: 44)
-            .focused($focusedField, equals: .distance)
-            .accessibilityIdentifier("setDistance-\(set.setIndex)")
-            .onSubmit { commitFields() }
-        TextField("Min", text: $durationText)
-            .keyboardType(.numberPad)
-            .multilineTextAlignment(.trailing)
-            .font(.subheadline.monospacedDigit())
-            .frame(width: 36)
-            .focused($focusedField, equals: .duration)
-            .accessibilityIdentifier("setDuration-\(set.setIndex)")
-            .onSubmit { commitFields() }
+        valueButton(
+            text: distanceText,
+            placeholder: "0",
+            width: 44,
+            identifier: "setDistance-\(set.setIndex)"
+        ) {
+            openValueEditor(.distance)
+        }
+        valueButton(
+            text: durationText,
+            placeholder: "Min",
+            width: 36,
+            identifier: "setDuration-\(set.setIndex)"
+        ) {
+            openValueEditor(.duration)
+        }
+    }
+
+    private func valueButton(
+        text: String,
+        placeholder: String,
+        width: CGFloat,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            action()
+        } label: {
+            Text(displayText(text, placeholder: placeholder))
+                .font(.body.monospacedDigit().weight(.medium))
+                .foregroundStyle(Color("TextPrimary"))
+                .frame(width: width, alignment: .trailing)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private func displayText(_ text: String, placeholder: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? placeholder : trimmed
     }
 
     private var rpePill: some View {
@@ -328,6 +371,63 @@ struct SetRowView: View {
             return formatter.formatMassKg(kg).replacingOccurrences(of: " ", with: "")
         }
         return "—"
+    }
+
+    private func openValueEditor(_ field: ValueEditorField) {
+        onActivate()
+        TrainWorkoutDiagnostics.record("setValueEditor open field=\(field) set=\(set.setIndex) mode=customNumpad")
+        switch field {
+        case .weight:
+            valueEditorPresentation = ValueEditorPresentation(
+                setIndex: set.setIndex,
+                field: .weight,
+                title: formatter.massUnit == .kilograms ? "Weight (kg)" : "Weight (lb)",
+                placeholder: "0",
+                initialText: weightText,
+                allowsDecimal: true
+            )
+        case .reps:
+            valueEditorPresentation = ValueEditorPresentation(
+                setIndex: set.setIndex,
+                field: .reps,
+                title: "Reps",
+                placeholder: "0",
+                initialText: repsText,
+                allowsDecimal: false
+            )
+        case .distance:
+            valueEditorPresentation = ValueEditorPresentation(
+                setIndex: set.setIndex,
+                field: .distance,
+                title: formatter.distanceUnit == .kilometers ? "Distance (km)" : "Distance (mi)",
+                placeholder: "0",
+                initialText: distanceText,
+                allowsDecimal: true
+            )
+        case .duration:
+            valueEditorPresentation = ValueEditorPresentation(
+                setIndex: set.setIndex,
+                field: .duration,
+                title: "Duration (min)",
+                placeholder: "Min",
+                initialText: durationText,
+                allowsDecimal: false
+            )
+        }
+    }
+
+    private func applyEditorValue(field: ValueEditorField, text: String) {
+        switch field {
+        case .weight:
+            weightText = text
+        case .reps:
+            repsText = text
+        case .distance:
+            distanceText = text
+        case .duration:
+            durationText = text
+        }
+        commitFields()
     }
 
     private func commitFields() {

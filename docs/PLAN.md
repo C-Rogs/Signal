@@ -201,7 +201,7 @@ Do not change Summarizer `Health day …` embedding format in this milestone.
 | Metrics | `DerivedMetricsService.swift` |
 | Tests | NEW `CoachClockFormatterTests.swift`, extend `CoachContextBuilderTests.swift` |
 
-Human Xcode: add new Swift files to Signal target. Do not edit pbxproj.
+Agent-owned Xcode setup per `.cursor/rules/xcode-project-setup.mdc`. Prefer folder sync for new Swift under synced roots.
 
 ### Delicate constraints
 

@@ -7,6 +7,7 @@ enum TrainWorkoutDiagnostics {
 
     static func beginSession(_ reason: String) {
         record("--- sessionStart reason=\(reason) pid=\(ProcessInfo.processInfo.processIdentifier) ---")
+        recordMemory("sessionStart reason=\(reason)")
     }
 
     static func record(_ message: String) {
@@ -19,6 +20,10 @@ enum TrainWorkoutDiagnostics {
             entries.removeFirst(entries.count - maxEntries)
         }
         UserDefaults.standard.set(entries, forKey: storageKey)
+    }
+
+    static func recordMemory(_ context: String) {
+        record("\(context) \(ProcessMemoryFootprint.diagnosticSuffix())")
     }
 
     static var hasEntries: Bool {

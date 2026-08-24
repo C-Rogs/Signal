@@ -78,6 +78,9 @@ struct ChatView: View {
                 _ = await CalendarEventStore.shared.requestAccessIfNeeded()
             }
         }
+        .onDisappear {
+            viewModel.cancelActiveWork()
+        }
     }
 
     private var messageList: some View {

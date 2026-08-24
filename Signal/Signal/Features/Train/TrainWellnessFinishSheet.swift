@@ -4,6 +4,7 @@ import SwiftUI
 
 struct TrainWellnessFinishSheet: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
     @Environment(LiveWorkoutCoordinator.self) private var coordinator
 
     let session: WorkoutSession
@@ -21,6 +22,7 @@ struct TrainWellnessFinishSheet: View {
             needsSessionEffort: !WorkoutEffortScoreCalculator.hasWorkingSetRPE(in: session),
             onSave: { energy, mood, stress, soreness, notes, perceivedEffort in
                 Task {
+                    TrainWorkoutDiagnostics.record("wellnessDismiss save")
                     await completeFinishedWorkout(
                         session: session,
                         perceivedEffort: perceivedEffort,
@@ -32,19 +34,36 @@ struct TrainWellnessFinishSheet: View {
                         notes: notes
                     )
                     coordinator.dismissWellness()
+                    dismiss()
                 }
             },
             onSkip: { perceivedEffort in
                 Task {
+                    TrainWorkoutDiagnostics.record("wellnessDismiss skip")
                     await completeFinishedWorkout(
                         session: session,
                         perceivedEffort: perceivedEffort,
                         saveWellness: false
                     )
                     coordinator.dismissWellness()
+                    dismiss()
                 }
             }
         )
+        .onChange(of: coordinator.wellnessSkipTeardownRequested) { _, requested in
+            guard requested else { return }
+            _ = coordinator.consumeWellnessSkipTeardownRequest()
+            Task {
+                TrainWorkoutDiagnostics.record("wellnessDismiss interactiveHandled")
+                await completeFinishedWorkout(
+                    session: session,
+                    perceivedEffort: nil,
+                    saveWellness: false
+                )
+                coordinator.dismissWellness()
+                dismiss()
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             if let healthKitWriteNote {
                 Text(healthKitWriteNote)

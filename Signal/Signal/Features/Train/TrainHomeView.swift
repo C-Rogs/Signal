@@ -5,12 +5,11 @@ import UIKit
 struct TrainHomeView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.scenePhase) private var scenePhase
     @Environment(LiveWorkoutCoordinator.self) private var coordinator
     @Environment(LiveWorkoutWatchBridge.self) private var watchBridge
-    @Environment(AppLifecycleBroker.self) private var lifecycleBroker
 
     @Query(sort: \Routine.createdAt, order: .reverse) private var routines: [Routine]
+    @State private var path: [TrainRoute] = []
     @Query(
         filter: #Predicate<WorkoutSession> { $0.endTime != nil },
         sort: \WorkoutSession.startTime,
@@ -20,7 +19,6 @@ struct TrainHomeView: View {
 
     @Query private var liveSessions: [WorkoutSession]
 
-    @State private var path: [TrainRoute] = []
     @State private var editingRoutine: Routine?
     @State private var showNewRoutine = false
     @State private var errorMessage: String?
@@ -63,32 +61,12 @@ struct TrainHomeView: View {
         .onAppear {
             coordinator.configure(modelContext: modelContext)
             collapseWorkoutNavigationIfNeeded()
-            consumePendingRouteIfNeeded()
-            resumeLiveWorkoutAfterRelaunchIfNeeded()
-            reassertActiveWorkoutRouteIfNeeded()
             consumeHealthKitWriteNoteIfNeeded()
             reloadBusyDayChip()
             reloadDeloadBanner()
         }
         .onChange(of: coordinator.pendingHealthKitWriteNote) { _, _ in
             consumeHealthKitWriteNoteIfNeeded()
-        }
-        .onChange(of: coordinator.pendingTrainRoute) { _, route in
-            guard route != nil else { return }
-            consumePendingRouteIfNeeded()
-        }
-        .onChange(of: coordinator.trainNavigationResetToken) { _, _ in
-            path.removeAll()
-        }
-        .onChange(of: coordinator.stripActiveWorkoutRouteToken) { _, _ in
-            stripStaleActiveWorkoutRoutes()
-        }
-        .onChange(of: coordinator.presentedWorkoutSessionID) { _, sessionID in
-            guard let sessionID else {
-                stripStaleActiveWorkoutRoutes()
-                return
-            }
-            pushActiveWorkoutRouteIfNeeded(sessionID: sessionID)
         }
         .onChange(of: liveSessions) { _, sessions in
             coordinator.refresh()
@@ -97,25 +75,12 @@ struct TrainHomeView: View {
             guard coordinator.activeSession == nil else { return }
             path.removeAll()
         }
-        .onChange(of: path) { oldPath, newPath in
+        .onChange(of: path) { _, newPath in
             TrainWorkoutDiagnostics.record(
                 "trainPath count=\(newPath.count) viewingWorkout=\(coordinator.isViewingActiveWorkout) routes=\(newPath.map(\.diagnosticLabel).joined(separator: ","))"
             )
-            if pathLostActiveWorkout(oldPath: oldPath, newPath: newPath),
-               coordinator.isViewingActiveWorkout,
-               !lifecycleBroker.resolvedIsInTrueBackground,
-               !lifecycleBroker.pathPopGraceActive,
-               !coordinator.isForegroundRecoveryInFlight
-            {
-                coordinator.syncWorkoutNavigationDismissed(source: "trainPathPop")
-            }
             if newPath.isEmpty {
                 coordinator.refresh()
-            }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active {
-                reassertActiveWorkoutRouteIfNeeded()
             }
         }
         .sheet(isPresented: $showNewRoutine) {
@@ -363,10 +328,6 @@ struct TrainHomeView: View {
     @ViewBuilder
     private func routeDestination(_ route: TrainRoute) -> some View {
         switch route {
-        case .activeWorkout(let sessionID):
-            ActiveWorkoutContainerView(sessionID: sessionID)
-                .id("\(sessionID)-\(coordinator.workoutSurfaceGeneration)")
-                .toolbar(.hidden, for: .tabBar)
         case .history(let id):
             if let session = resolveSession(id: id) {
                 WorkoutHistoryDetailView(session: session)
@@ -398,69 +359,6 @@ struct TrainHomeView: View {
             return
         }
         path.removeAll()
-    }
-
-    private func consumePendingRouteIfNeeded() {
-        guard case .activeWorkout(let sessionID) = coordinator.pendingTrainRoute else { return }
-        coordinator.pendingTrainRoute = nil
-        pushActiveWorkoutRouteIfNeeded(sessionID: sessionID)
-    }
-
-    private func pushActiveWorkoutRouteIfNeeded(sessionID: PersistentIdentifier) {
-        let alreadyOpen = path.contains { route in
-            if case .activeWorkout(let id) = route {
-                return id == sessionID
-            }
-            return false
-        }
-        guard !alreadyOpen else { return }
-        path.append(.activeWorkout(sessionID))
-        TrainWorkoutDiagnostics.record("trainPushActiveWorkout session=\(String(describing: sessionID))")
-    }
-
-    private func reassertActiveWorkoutRouteIfNeeded() {
-        guard coordinator.isViewingActiveWorkout,
-              let sessionID = coordinator.presentedWorkoutSessionID
-        else { return }
-        let hadRoute = path.contains { route in
-            if case .activeWorkout = route { return true }
-            return false
-        }
-        pushActiveWorkoutRouteIfNeeded(sessionID: sessionID)
-        if !hadRoute {
-            TrainWorkoutDiagnostics.record("trainReassertActiveWorkoutRoute session=\(String(describing: sessionID))")
-        }
-    }
-
-    private func resumeLiveWorkoutAfterRelaunchIfNeeded() {
-        guard LiveWorkoutCoordinatorLaunchState.shouldResumeLiveWorkoutAfterRelaunch else { return }
-        guard coordinator.presentedWorkoutSessionID == nil else { return }
-        guard inProgressSession != nil else {
-            LiveWorkoutCoordinatorLaunchState.noteLiveWorkoutViewing(false)
-            return
-        }
-        TrainWorkoutDiagnostics.record("resumeLiveWorkoutAfterRelaunch")
-        coordinator.resumeWorkout()
-    }
-
-    private func stripStaleActiveWorkoutRoutes() {
-        guard coordinator.presentedWorkoutSessionID == nil else { return }
-        path.removeAll { route in
-            if case .activeWorkout = route { return true }
-            return false
-        }
-    }
-
-    private func pathLostActiveWorkout(oldPath: [TrainRoute], newPath: [TrainRoute]) -> Bool {
-        let hadActiveWorkout = oldPath.contains { route in
-            if case .activeWorkout = route { return true }
-            return false
-        }
-        let hasActiveWorkout = newPath.contains { route in
-            if case .activeWorkout = route { return true }
-            return false
-        }
-        return hadActiveWorkout && !hasActiveWorkout
     }
 
     private func consumeHealthKitWriteNoteIfNeeded() {

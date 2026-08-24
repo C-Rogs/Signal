@@ -18,6 +18,7 @@ final class LiveWorkoutWatchBridge {
     private var lockedHeartRateSource: LiveHeartRateSource?
     private var hasActiveWatchHandshake = false
     private var hasActivePhoneSession = false
+    private var phoneStopTask: Task<Void, Never>?
 
     private let healthStore = HKHealthStore()
     private let phoneSessionManager = LiveWorkoutPhoneSessionManager.shared
@@ -27,6 +28,11 @@ final class LiveWorkoutWatchBridge {
     )
 
     private init() {}
+
+    var hasActivePhoneHeartRateSession: Bool {
+        lockedHeartRateSource == .phoneHealthKit
+            && (hasActivePhoneSession || phoneSessionManager.isWorkoutActive)
+    }
 
     func beginWatchWorkout(for session: WorkoutSession, modelContext: ModelContext) async {
         await ensureWatchWorkoutStarted(for: session, modelContext: modelContext, forceFullHandshake: true)
@@ -119,16 +125,16 @@ final class LiveWorkoutWatchBridge {
     }
 
     func suspendForAppBackground() async {
-        guard hasActivePhoneSession else {
+        guard hasActivePhoneSession || phoneSessionManager.isWorkoutActive else {
             TrainWorkoutDiagnostics.record("livePhoneSession suspendSkipped noActivePhoneSession source=\(sourceLogLabel)")
             return
         }
+        await awaitPhoneSessionStop(discard: true, context: "background")
         hasActivePhoneSession = false
-        await phoneSessionManager.stop(discardHealthKitWorkout: true)
         TrainWorkoutDiagnostics.record("livePhoneSession suspendedForBackground sessionKey=\(activeSessionKey ?? "none")")
     }
 
-    func endWatchWorkout() {
+    func endWatchWorkout() async {
         let source = lockedHeartRateSource
         let sessionKey = activeSessionKey
 
@@ -139,17 +145,32 @@ final class LiveWorkoutWatchBridge {
                 logger.info("watch workout stop sent sessionKey=\(sessionKey, privacy: .public)")
             }
         case .phoneHealthKit:
-            Task {
-                await phoneSessionManager.stop(discardHealthKitWorkout: true)
-            }
             if let sessionKey {
                 logger.info("phone workout stop requested sessionKey=\(sessionKey, privacy: .public)")
             }
+            await awaitPhoneSessionStop(discard: true, context: "finish")
+            TrainWorkoutDiagnostics.record("endWatchWorkout awaited phoneStop")
         case nil:
             break
         }
 
         resetStreamingState()
+    }
+
+    private func awaitPhoneSessionStop(discard: Bool, context: String) async {
+        if let phoneStopTask {
+            await phoneStopTask.value
+            return
+        }
+        guard hasActivePhoneSession || phoneSessionManager.isWorkoutActive else { return }
+
+        let task = Task { @MainActor in
+            TrainWorkoutDiagnostics.record("phoneSessionStop begin context=\(context) discard=\(discard)")
+            await phoneSessionManager.stop(discardHealthKitWorkout: discard)
+        }
+        phoneStopTask = task
+        await task.value
+        phoneStopTask = nil
     }
 
     func ingest(messageData: Data) {

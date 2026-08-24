@@ -50,7 +50,7 @@ Show RPE on history set rows for working sets when `set.rpe != nil`. Match live 
 ## Constraints
 
 - iOS 26+, SwiftUI, `DisplayUnitFormatter` for mass
-- Minimal diff; no .pbxproj
+- Minimal diff. Xcode project edits only if build requires (`.cursor/rules/xcode-project-setup.mdc`).
 
 ## On complete
 

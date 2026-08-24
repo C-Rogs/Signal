@@ -18,23 +18,29 @@ Code: `SignalIdentifiers.swift`. Bundle IDs use capital **S**; the App Group use
 
 `RecoveryWidgetSnapshot.swift` and `WatchPayloadCache.swift` are watch-safe display and App Group cache helpers. Add them to **SignalWidget**, **SignalWatch Widget Extension**, and **SignalWatch Watch App** as well as the main Signal target.
 
-## Xcode target membership (human step)
+## Xcode target membership
 
-1. In Xcode, select `Signal/Signal/Data/Watch/WatchPayload.swift`.
-2. Enable **SignalWatch Watch App** and **SignalWatch Widget Extension** in Target Membership (in addition to Signal iOS and SignalWidget).
-3. Enable **RecoveryWidgetSnapshot.swift** and **WatchPayloadCache.swift** for Signal iOS, SignalWidget, SignalWatch Watch App, and SignalWatch Widget Extension.
-4. The watch folder may contain a **symlink** at `SignalWatch Watch App/WatchPayload.swift` pointing here so existing target references keep working. Do not maintain a second copy of the struct.
+Most watch Swift uses folder sync under `SignalWatch Watch App/`. Shared files in this folder may need explicit multi-target membership in `project.pbxproj`.
 
-## App Group (human step, iOS Lock Screen widget)
+**Agent:** edit `project.pbxproj` when build fails on missing target membership. Follow `.cursor/rules/xcode-project-setup.mdc`. Verify with `build_device` and `./scripts/install-watch-app.sh` when watch or widget targets change.
 
-1. Select the **Signal** target → Signing & Capabilities → **+ Capability** → App Groups.
-2. Add `group.com.cameronro.signal`.
-3. Repeat for the **SignalWidget** extension target (same group id).
-4. `WatchConnectivityService` writes the latest plist-safe payload to this suite at push time; the Lock Screen widget reads it.
+1. `WatchPayload.swift`: Signal iOS, SignalWidget, SignalWatch Watch App, SignalWatch Widget Extension.
+2. `RecoveryWidgetSnapshot.swift` and `WatchPayloadCache.swift`: same four targets.
+3. The watch folder may contain a **symlink** at `SignalWatch Watch App/WatchPayload.swift` pointing here so existing target references keep working. Do not maintain a second copy of the struct.
 
-## WidgetKit extensions (human step)
+## App Group
 
-1. **SignalWatch Widget Extension**: File → New Target → Widget Extension on watchOS, name `SignalWatch Widget Extension`. Add `RecoveryComplicationWidget.swift` to that target only. Remove the template `@main` if Xcode generates one.
-2. **SignalWidget**: Add `SignalWidget/SignalRecoveryWidget.swift` to the existing empty SignalWidget target. Remove duplicate `@main` from any Xcode template.
+`group.com.cameronro.signal` must be on Signal, SignalWidget, watch app, and watch widget entitlements.
 
-The agent does not edit `.pbxproj`. After you add target membership, complications and the Lock Screen widget share the same `WatchPayload` as the watch app.
+**Agent:** edit entitlements when capability is already on the team profile. **Human:** Apple Developer portal if provisioning blocks.
+
+`WatchConnectivityService` writes the latest plist-safe payload to this suite at push time; the Lock Screen widget reads it.
+
+## WidgetKit extensions
+
+**Agent-owned** when milestone requires it:
+
+1. **SignalWatch Widget Extension**: widget target on watchOS; `RecoveryComplicationWidget.swift` in that target only. Remove duplicate `@main` from Xcode templates.
+2. **SignalWidget**: `SignalWidget/SignalRecoveryWidget.swift` in SignalWidget target. Remove duplicate `@main` from templates.
+
+Log project edits in `AGENT-BUILD-UPDATES.md` under **Xcode project**.

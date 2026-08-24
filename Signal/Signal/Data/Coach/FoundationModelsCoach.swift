@@ -43,6 +43,10 @@ actor FoundationModelsCoach: LLMCoach {
         Log.coach.info("coach thread reset")
     }
 
+    func abandonActiveWork() async {
+        await endSession()
+    }
+
     func compactThread(messages: [ChatMessage]) async throws -> CoachCompactResult {
         guard !responding else {
             throw CoachError.busy

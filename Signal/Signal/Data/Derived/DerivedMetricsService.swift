@@ -24,13 +24,8 @@ actor DerivedMetricsService {
     static let shared = DerivedMetricsService()
 
     private var cachedSnapshot: DerivedMetricsSnapshot?
-    private var observationTask: Task<Void, Never>?
 
-    private init() {
-        observationTask = Task { [weak self] in
-            await self?.observeInvalidationNotifications()
-        }
-    }
+    private init() {}
 
     func invalidateCache() {
         cachedSnapshot = nil
@@ -100,33 +95,6 @@ actor DerivedMetricsService {
     ) async -> T {
         await MainActor.run {
             work(ModelContext(modelContainer))
-        }
-    }
-
-    private func observeInvalidationNotifications() async {
-        let workoutFinish = NotificationCenter.default.notifications(
-            named: Notification.Name("workoutDidFinish"),
-            object: nil
-        )
-        let deltaFinish = NotificationCenter.default.notifications(
-            named: Notification.Name("healthKitProcessDeltaDidFinish"),
-            object: nil
-        )
-
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask {
-                for await notification in workoutFinish {
-                    guard let sessionID = notification.userInfo?["sessionID"] as? PersistentIdentifier,
-                          let container = notification.userInfo?["modelContainer"] as? ModelContainer
-                    else { continue }
-                    await self.handleWorkoutDidFinish(sessionID: sessionID, modelContainer: container)
-                }
-            }
-            group.addTask {
-                for await _ in deltaFinish {
-                    await self.invalidateCache()
-                }
-            }
         }
     }
 

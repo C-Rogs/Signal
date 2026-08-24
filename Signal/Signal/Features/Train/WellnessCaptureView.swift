@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct WellnessCaptureView: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
 
     let muscles: [Muscle]
@@ -66,7 +65,6 @@ struct WellnessCaptureView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Skip") {
                         onSkip(perceivedEffortForHealthKit())
-                        dismiss()
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {
@@ -80,7 +78,6 @@ struct WellnessCaptureView: View {
                             notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes,
                             perceivedEffortForHealthKit()
                         )
-                        dismiss()
                     }
                 }
             }

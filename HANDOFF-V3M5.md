@@ -7,35 +7,37 @@
 - iOS Lock Screen widget reads the same payload from App Group cache written when Dashboard loads (watch optional).
 - Shared display logic in `RecoveryWidgetSnapshot.swift`; single DTO in `Data/Watch/WatchPayload.swift`.
 
-## Human steps before Gate B
+## Setup before Gate B
+
+Agent-owned per `.cursor/rules/xcode-project-setup.mdc`. Human only if Apple Developer portal blocks provisioning.
 
 ### 1. App Group
 
-Signal target and SignalWidget target → Capabilities → App Groups → `group.com.cameronro.signal`.
+`group.com.cameronro.signal` on Signal and SignalWidget entitlements (agent edits when capability is on team profile).
 
 ### 2. SignalWatch Widget Extension target
 
-File → New Target → Widget Extension (watchOS). Name: `SignalWatch Widget Extension`.
-
-Add to that target:
+Widget Extension target on watchOS named `SignalWatch Widget Extension`. Add to that target:
 
 - `SignalWatch Widget Extension/RecoveryComplicationWidget.swift`
 - `Signal/Data/Watch/WatchPayload.swift`
 - `Signal/Data/Watch/RecoveryWidgetSnapshot.swift`
 
-Remove any duplicate `@main` from the Xcode template.
+Remove duplicate `@main` from Xcode templates.
 
 ### 3. SignalWidget target
 
-Add to existing SignalWidget target (or create via File → New Target → Widget Extension):
+Add to SignalWidget target:
 
 - `SignalWidget/SignalRecoveryWidget.swift`
-- `SignalWidget/SignalWidget.entitlements` → Code Signing Entitlements
+- `SignalWidget/SignalWidget.entitlements` (Code Signing Entitlements)
 - `Signal/Data/Watch/WatchPayload.swift`
 - `Signal/Data/Watch/RecoveryWidgetSnapshot.swift`
 - `Signal/Data/Watch/WatchPayloadCache.swift`
 
-Remove duplicate `@main` from template if present.
+Remove duplicate `@main` from templates.
+
+Verify with `build_device` and `./scripts/install-watch-app.sh`. Log pbxproj edits in `AGENT-BUILD-UPDATES.md`.
 
 See `Signal/SignalWidget/README.md` for Lock Screen testing **without** reinstalling the watch.
 

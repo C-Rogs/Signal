@@ -26,9 +26,6 @@ struct ActiveWorkoutContainerView: View {
             .onChange(of: resolveAttempt) { _, _ in
                 resolveSessionIfNeeded()
             }
-            .onChange(of: coordinator.workoutSurfaceGeneration) { _, _ in
-                resolveSessionIfNeeded()
-            }
     }
 
     @ViewBuilder

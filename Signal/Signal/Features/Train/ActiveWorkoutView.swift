@@ -28,7 +28,6 @@ struct ActiveWorkoutView: View {
     @State private var completedSetCount = 0
     @State private var restTimerCoordinator = ActiveWorkoutRestTimerCoordinator()
     @State private var exerciseDetailRoute: ExerciseDetailRoute?
-    @State private var setFieldFocusCoordinator = TrainSetFieldFocusCoordinator()
     @State private var homeForegroundRecoveryTask: Task<Void, Never>?
 
     private var store: LiveWorkoutStore {
@@ -45,7 +44,7 @@ struct ActiveWorkoutView: View {
 
     var body: some View {
         workoutList
-            .environment(setFieldFocusCoordinator)
+            .background(WorkoutInteractivePopDisabled())
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 ActiveWorkoutRestTimerLayer(
                     coordinator: restTimerCoordinator,
@@ -62,15 +61,6 @@ struct ActiveWorkoutView: View {
             .navigationBarBackButtonHidden(true)
             .toolbar {
                 workoutToolbar
-            }
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") {
-                        setFieldFocusCoordinator.requestDismiss()
-                        TrainKeyboard.dismiss()
-                    }
-                }
             }
             .modifier(ActiveWorkoutDialogsModifier(
                 showDiscardConfirm: $showDiscardConfirm,
@@ -96,13 +86,6 @@ struct ActiveWorkoutView: View {
                 if phase == .active, previousPhase != .active {
                     scheduleDeferredHomeRecovery(from: previousPhase)
                 }
-            }
-            .onChange(of: lifecycleBroker.backgroundFocusDismissGeneration) { _, _ in
-                guard coordinator.isViewingActiveWorkout else { return }
-                setFieldFocusCoordinator.dismissForSystemOverlay()
-                TrainWorkoutDiagnostics.record(
-                    "activeWorkout brokerFocusDismiss keyboardVisible=\(lifecycleBroker.isKeyboardVisible)"
-                )
             }
             .onAppear {
                 reloadSessionRecoveryScore()
@@ -283,7 +266,6 @@ struct ActiveWorkoutView: View {
                 .padding(.bottom, restTimerCoordinator.showsRestBar ? 4 : 8)
                 .frame(maxWidth: .infinity, alignment: .top)
             }
-            .scrollDismissesKeyboard(.immediately)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .onAppear {
                 if let target = coordinator.consumeScrollTarget() {
@@ -368,30 +350,48 @@ struct ActiveWorkoutView: View {
     private func finishWorkout() {
         restTimerCoordinator.markUserSkippedFeedback()
         TrainFeedback.shared.play(.workoutFinish)
-        watchBridge.endWatchWorkout()
-        do {
-            try store.finishSession(session)
-            ExerciseProgressStore.recordFinishedSession(session, in: modelContext)
-            hintCache.invalidate()
-            coordinator.presentWellness(for: session)
-            coordinator.refresh()
-            coordinator.resetTrainNavigation(reason: "finishWorkout")
-        } catch {
-            errorMessage = error.localizedDescription
+        TrainKeyboard.dismiss()
+        Task {
+            await watchBridge.endWatchWorkout()
+            do {
+                try store.finishSession(session)
+                ExerciseProgressStore.recordFinishedSession(session, in: modelContext)
+                hintCache.invalidate()
+                coordinator.presentWellness(for: session)
+                coordinator.refresh()
+                coordinator.resetTrainNavigation(reason: "finishWorkout")
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
     private func discardWorkout() {
         restTimerCoordinator.markUserSkippedFeedback()
-        watchBridge.endWatchWorkout()
-        do {
-            try store.discardSession(session)
-            hintCache.invalidate()
-            coordinator.resetTrainNavigation(reason: "discardWorkout")
-            coordinator.refresh()
-        } catch {
-            errorMessage = error.localizedDescription
+        TrainKeyboard.dismiss()
+        Task {
+            await watchBridge.endWatchWorkout()
+            do {
+                try store.discardSession(session)
+                hintCache.invalidate()
+                coordinator.resetTrainNavigation(reason: "discardWorkout")
+                coordinator.refresh()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 
+}
+
+private struct WorkoutInteractivePopDisabled: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> UIViewController {
+        UIViewController()
+    }
+
+    func updateUIViewController(_ uiViewController: UIViewController, context: Context) {
+        DispatchQueue.main.async {
+            uiViewController.navigationController?.interactivePopGestureRecognizer?.isEnabled = false
+        }
+    }
 }

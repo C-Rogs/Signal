@@ -22,6 +22,7 @@ struct MainTabView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(HealthKitManager.self) private var healthKitManager
     @Environment(LiveWorkoutCoordinator.self) private var coordinator
+    @Environment(AppLifecycleBroker.self) private var lifecycleBroker
     @State private var selectedTab: AppTab = .dashboard
     @State private var isLaunchShellReady = false
 
@@ -44,14 +45,14 @@ struct MainTabView: View {
 
     var body: some View {
         tabShell
-            .onChange(of: coordinator.pendingTrainRoute) { _, route in
-                if case .activeWorkout = route {
-                    selectedTab = .train
-                }
-            }
             .onAppear {
                 coordinator.configure(modelContext: modelContext)
                 markLaunchShellReadyIfNeeded()
+                resumeLiveWorkoutAfterRelaunchIfNeeded()
+            }
+            .onChange(of: coordinator.presentedWorkoutSessionID) { _, sessionID in
+                guard sessionID != nil else { return }
+                selectedTab = .train
             }
             .onChange(of: showsWorkoutBanner) { _, _ in
                 markLaunchShellReadyIfNeeded()
@@ -63,6 +64,10 @@ struct MainTabView: View {
                 if phase == .active {
                     coordinator.configure(modelContext: modelContext)
                     coordinator.refresh()
+                    if coordinator.presentedWorkoutSessionID != nil {
+                        selectedTab = .train
+                        coordinator.acknowledgeWorkoutForegroundWithoutRemount()
+                    }
                 }
             }
             .onChange(of: coordinator.pendingWellnessSessionID) { _, sessionID in
@@ -82,6 +87,7 @@ struct MainTabView: View {
             }
             .sheet(item: wellnessSheetItem) { item in
                 TrainWellnessFinishSheet(session: item.session, healthKitManager: healthKitManager)
+                    .interactiveDismissDisabled(true)
             }
     }
 
@@ -89,14 +95,10 @@ struct MainTabView: View {
         Binding(
             get: { resolvedWellnessSession },
             set: { item in
-                if item == nil {
-                    if let sessionID = coordinator.pendingWellnessSessionID,
-                       let session = modelContext.model(for: sessionID) as? WorkoutSession
-                    {
-                        ExerciseProgressStore.recordFinishedSession(session, in: modelContext)
-                    }
-                    coordinator.dismissWellness()
-                }
+                guard item == nil else { return }
+                guard coordinator.pendingWellnessSessionID != nil else { return }
+                TrainWorkoutDiagnostics.record("wellnessDismiss interactive")
+                coordinator.requestWellnessSkipTeardown()
             }
         )
     }
@@ -117,17 +119,62 @@ struct MainTabView: View {
         }
     }
 
+    private func resumeLiveWorkoutAfterRelaunchIfNeeded() {
+        guard LiveWorkoutCoordinatorLaunchState.shouldResumeLiveWorkoutAfterRelaunch else { return }
+        guard coordinator.presentedWorkoutSessionID == nil else { return }
+        coordinator.refresh()
+        guard coordinator.activeSession != nil else {
+            LiveWorkoutCoordinatorLaunchState.noteLiveWorkoutViewing(false)
+            return
+        }
+        TrainWorkoutDiagnostics.record("mainTabResumeLiveWorkoutAfterRelaunch")
+        selectedTab = .train
+        coordinator.resumeWorkout()
+    }
+
+    private var tabShellIdentity: String {
+        if coordinator.isViewingActiveWorkout {
+            return "workout-\(coordinator.workoutSurfaceGeneration)"
+        }
+        return "tabs-\(lifecycleBroker.trueBackgroundGeneration)"
+    }
+
     @ViewBuilder
     private var tabShell: some View {
-        tabViewCore
-            .tabViewBottomAccessory {
-                if isLaunchShellReady, showsWorkoutBanner {
-                    LiveWorkoutBanner(selectedTab: $selectedTab)
-                        .opacity(tabBottomAccessoryVisible ? 1 : 0)
-                        .allowsHitTesting(tabBottomAccessoryVisible)
-                        .accessibilityHidden(!tabBottomAccessoryVisible)
+        ZStack {
+            tabViewCore
+                .id(tabShellIdentity)
+                .tabViewBottomAccessory {
+                    if isLaunchShellReady, showsWorkoutBanner {
+                        LiveWorkoutBanner(selectedTab: $selectedTab)
+                            .opacity(tabBottomAccessoryVisible ? 1 : 0)
+                            .allowsHitTesting(tabBottomAccessoryVisible)
+                            .accessibilityHidden(!tabBottomAccessoryVisible)
+                    }
                 }
+
+            if coordinator.isViewingActiveWorkout,
+               let sessionID = coordinator.presentedWorkoutSessionID
+            {
+                liveWorkoutOverlay(sessionID: sessionID)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func liveWorkoutOverlay(sessionID: PersistentIdentifier) -> some View {
+        NavigationStack {
+            ActiveWorkoutContainerView(sessionID: sessionID)
+        }
+        .id(coordinator.workoutSurfaceGeneration)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(tabBarBackground.ignoresSafeArea())
+        .zIndex(1)
+        .onAppear {
+            TrainWorkoutDiagnostics.record(
+                "liveWorkoutOverlay appear session=\(String(describing: sessionID)) gen=\(coordinator.workoutSurfaceGeneration)"
+            )
+        }
     }
 
     private var tabViewCore: some View {

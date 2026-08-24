@@ -201,8 +201,13 @@ Distilled from current (2026) practice for shipping native Apple apps with codin
   xcodebuild -scheme Signal -destination 'platform=iOS Simulator,name=iPhone 16 Pro' test
   ```
 
-### Protect Xcode-managed files (hooks)
-- **Block agent edits to `.pbxproj`, `.xcodeproj/`, `.xcworkspace/`, `.entitlements`, `.xib`, `.storyboard`.** The agent creates Swift files; you add them to targets and manage signing/capabilities/entitlements through the Xcode UI (a 5-second manual step that prevents hours of project-corruption recovery). The increased-memory-limit entitlement and all capabilities from M1 are therefore configured by you in Xcode, not by the agent.
+### Xcode project setup (guardrails)
+- Follow `.cursor/rules/xcode-project-setup.mdc`. Agents may edit `project.pbxproj`, entitlements, and Info plists when a milestone requires it.
+- **Prefer folder sync:** iOS, watch, widget, and test targets use `PBXFileSystemSynchronizedRootGroup`. New Swift under synced roots usually needs no project edit.
+- **When to edit:** build fails on missing target membership, build settings, SPM wiring, embed phases, or entitlements already provisioned on the team.
+- **Verify:** `build_device` (and watch install script if extensions touched) after every project-file change.
+- **Log:** **Xcode project** subsection in `AGENT-BUILD-UPDATES.md` with why, what, verify result.
+- **Human only:** Apple Developer portal provisioning, `DEVELOPMENT_TEAM` / signing changes unless explicitly requested, `.xib` / `.storyboard` (SwiftUI only).
 - Run `swiftformat` on every Swift file write (PostToolUse hook) for consistent formatting.
 
 ### Modern Swift patterns to enforce (agents regress to deprecated training-data patterns)
@@ -334,7 +339,7 @@ Use `.symbolRenderingMode(.hierarchical)` with `Primary` color by default.
 V1 does not push notifications. V3 introduces the morning briefing. When that milestone lands: add a `UNNotificationCategory` identifier `daily_briefing` and register it in the app delegate. No banner image is required for local notifications.
 
 ### Widget (future, V3+)
-A Lock Screen widget showing today's recovery score. Placeholder: add an empty `WidgetKit` extension target in M1 named `SignalWidget` but do not implement it yet. Having the target present from day one avoids a scheme reconfiguration later.
+A Lock Screen widget showing today's recovery score. Placeholder: add an empty `WidgetKit` extension target in M1 named `SignalWidget` but do not implement it yet (agent-owned pbxproj edit per `.cursor/rules/xcode-project-setup.mdc`).
 
 ### Distribution (TestFlight + Xcode Cloud)
 
@@ -373,21 +378,21 @@ Do **not** archive macOS or standalone watchOS in Cloud: the main target lists `
 Each milestone below is a discrete Composer task with its own acceptance check. Commit after each.
 
 ### M1. Project skeleton, entitlements, and app identity
-**Human (Xcode UI, not the agent — these touch protected project files):**
-- Create SwiftUI app named **Signal**, iOS 26 target, bundle id `com.cameronro.signal`, on a real device run scheme.
-- Add capabilities: HealthKit, Background Modes (Background fetch / Background processing + HealthKit background delivery).
-- Add entitlement `com.apple.developer.kernel.increased-memory-limit`.
-- Add `Info.plist` keys: `NSHealthShareUsageDescription`, `NSHealthUpdateUsageDescription`, and `UILaunchScreen` with the OLED black background token.
-- Add the SPM dependency (MLX Swift) and the empty `SignalWidget` target. (ObjectBox dropped; vector store is pure-Swift in SwiftData.)
-- Add each new Swift file the agent creates to the correct target as it goes.
+**Human (Apple Developer / signing only when agent cannot):**
+- Confirm team signing and capabilities in Xcode if agent hit provisioning blocks.
+- One-time: increased-memory-limit entitlement and HealthKit capabilities if not already on the team profile.
 
-**Agent (Swift source only):**
+**Agent (Swift + project setup):**
+- Edit `project.pbxproj`, entitlements, and plists when the milestone requires it (see `.cursor/rules/xcode-project-setup.mdc`).
+- Create SwiftUI app structure named **Signal**, iOS 26 target, bundle id `com.cameronro.Signal`.
+- Wire capabilities: HealthKit, Background Modes, increased-memory-limit entitlement, Info.plist usage strings, MLX Swift SPM, SignalWidget target.
+- Add each new Swift file to the correct target via folder sync or minimal pbxproj edit; verify with `build_device`.
 - `Core/Logging/Log.swift`: `os.Logger` with categories `healthkit`, `import`, `vectorstore`, `embedding`, `sync`, `ui`, `recovery`.
 - `Resources/Colors.xcassets`: add all named color tokens from the iOS assets section above. Set the Xcode global accent color to `Primary`.
 - `Resources/Typography.swift`: define the type scale as static `Font` extensions.
 - `Resources/Symbols.swift`: define the `Symbol` enum mapping semantic names to SF Symbol strings.
-- App icon: author the `AppIcon.appiconset` Contents.json with a 1024x1024 placeholder (solid `#000000` with a white waveform glyph is fine for now), including dark and tinted variant slots to avoid asset catalog warnings. (Human adds the catalog to the target if needed.)
-- The empty `SignalWidget` target is created by the human above; the agent leaves it untouched until V3.
+- App icon: author the `AppIcon.appiconset` Contents.json with a 1024x1024 placeholder (solid `#000000` with a white waveform glyph is fine for now), including dark and tinted variant slots to avoid asset catalog warnings. Add to target via folder sync or pbxproj edit if build requires it.
+- SignalWidget target: create via pbxproj when milestone requires it; leave implementation empty until V3.
 - **Accept:** builds and launches on device; true OLED black launch screen visible; logs confirm entitlement-backed memory headroom; HealthKit capability present; no asset catalog warnings.
 
 ### M2. Storage layer

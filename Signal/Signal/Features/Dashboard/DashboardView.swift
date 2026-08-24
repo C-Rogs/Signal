@@ -423,12 +423,11 @@ struct DashboardView: View {
             "\($0.date.timeIntervalSince1970)-\($0.dietaryEnergyKcal ?? 0)"
         }.joined(separator: "|")
         let syncStamp = healthKitManager.lastSyncFinishedAt?.timeIntervalSince1970 ?? 0
-        let syncing = healthKitManager.isSyncing
         let workoutHead = completedWorkouts.first.map {
             String(describing: $0.persistentModelID)
         } ?? "none"
         let units = "\(unitPreferences.massUnit.rawValue)-\(unitPreferences.distanceUnit.rawValue)"
-        return "\(metrics.count)-\(nutritionRows.count)-\(metricTail)-\(nutritionTail)-\(syncStamp)-\(syncing)-\(workoutHead)-\(units)"
+        return "\(metrics.count)-\(nutritionRows.count)-\(metricTail)-\(nutritionTail)-\(syncStamp)-\(workoutHead)-\(units)"
     }
 
     private var screenBackground: Color {

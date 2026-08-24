@@ -16,6 +16,7 @@ protocol LLMCoach: Sendable {
         threadKind: CoachThreadKind
     ) async throws -> AsyncThrowingStream<String, Error>
     func resetThread() async
+    func abandonActiveWork() async
     func compactThread(messages: [ChatMessage]) async throws -> CoachCompactResult
     var contextUsage: CoachContextUsageSnapshot { get async }
     func contextUsage(nextPrompt: String) async -> CoachContextUsageSnapshot

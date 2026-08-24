@@ -47,7 +47,6 @@ struct RootView: View {
             guard scenePhase == .active else { return }
             guard downloadState.phase != .ready else { return }
             guard !EmbeddingBackend.useNLContextualEmbeddingFallback else { return }
-            guard !lifecycleBroker.shouldSkipDeferredSystemWork() else { return }
             await runEmbeddingPreloadDeferred()
         }
     }
@@ -127,6 +126,7 @@ struct RootView: View {
         do {
             _ = try await GemmaEmbeddingService.shared.ensureLoaded()
             downloadState.markReady()
+            TrainWorkoutDiagnostics.recordMemory("embeddingPreloadReady")
             Log.ui.info("embedding preload finished")
         } catch EmbeddingServiceError.metalWorkNotPermittedInBackground {
             Log.ui.info("embedding preload paused; app is not active")
@@ -140,20 +140,24 @@ struct RootView: View {
     }
 
     private func runRootForegroundWork() {
+        EmbeddingRunPolicy.applicationDidBecomeActive()
+        paintHostWindowForScheme()
         if workoutCoordinator.isViewingActiveWorkout {
-            TrainWorkoutDiagnostics.record("root skipForegroundWork workoutViewing=true")
+            TrainWorkoutDiagnostics.record("root skipDeferredForegroundWork workoutViewing=true")
             return
         }
         if workoutCoordinator.activeSession != nil {
-            TrainWorkoutDiagnostics.record("root skipForegroundWork activeSessionMinimized=true")
+            TrainWorkoutDiagnostics.record("root skipDeferredForegroundWork activeSessionMinimized=true")
             return
         }
-        performRootForegroundWork()
+        performDeferredRootForegroundWork()
     }
 
-    private func performRootForegroundWork() {
-        EmbeddingRunPolicy.applicationDidBecomeActive()
-        paintHostWindowForScheme()
+    private func performDeferredRootForegroundWork() {
+        guard !healthKitManager.isSyncing else {
+            TrainWorkoutDiagnostics.record("root skipDeferredForegroundWork healthKitSyncing=true")
+            return
+        }
         healthKitManager.refreshAccessState()
         healthKitManager.syncOnForegroundIfReady()
         WatchConnectivityService.shared.retryPendingPush()
@@ -163,9 +167,11 @@ struct RootView: View {
     }
 
     private func runReflectionIfForegroundDue() {
+        guard !lifecycleBroker.resolvedIsInTrueBackground else { return }
         guard ReflectionSchedule.shouldRunOnForeground() else { return }
         let context = modelContext
         Task {
+            guard await ReflectionEngine.shared.mayStartReflection() else { return }
             await ReflectionEngine.shared.runReflection(in: context)
             await DailyBriefingScheduler.shared.refreshSchedule(in: context)
         }

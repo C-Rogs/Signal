@@ -116,7 +116,7 @@ Active workout: wrap section header `Button` → `path.append(.exerciseDetail(..
 
 - iOS 26+, `@Observable` view model, Swift 6
 - Privacy: bundled JSON only, no network
-- No .pbxproj; document `HevyExerciseGuides.json` + new Swift files for human targets
+- Xcode project: `.cursor/rules/xcode-project-setup.mdc`. Prefer folder sync; bundle `HevyExerciseGuides.json` in target if build requires it.
 
 ## On complete
 

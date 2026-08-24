@@ -61,9 +61,4 @@
 
 ## Human Xcode
 
-Add to **Signal** target (if not already synced):
-
-- `Features/Train/TrainChrome.swift`
-- `Features/Train/TrainSectionHeader.swift`
-- `Features/Train/TrainStatCard.swift`
-- `Features/Train/TrainStatusChip.swift`
+Empty if `build_device` passes. Folder sync picks up new Swift under `Signal/Signal/Signal/Features/Train/`. Agent edits `project.pbxproj` only if build fails (`.cursor/rules/xcode-project-setup.mdc`).

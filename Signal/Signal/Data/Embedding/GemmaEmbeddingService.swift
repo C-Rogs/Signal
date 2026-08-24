@@ -191,4 +191,13 @@ actor GemmaEmbeddingService: EmbeddingService {
         Log.embedding.info("hub cache path=\(hub.path, privacy: .public)")
         return hub
     }
+
+    func releaseModelIfIdle() async {
+        guard container != nil else { return }
+        loadTask?.cancel()
+        loadTask = nil
+        container = nil
+        Log.embedding.info("embedding model released for memory")
+        TrainWorkoutDiagnostics.recordMemory("embeddingReleased")
+    }
 }

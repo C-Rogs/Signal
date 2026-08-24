@@ -24,15 +24,12 @@ struct ExerciseDetailRoute: Hashable, Identifiable {
 }
 
 enum TrainRoute: Hashable {
-    case activeWorkout(PersistentIdentifier)
     case history(PersistentIdentifier)
     case editRoutine(PersistentIdentifier?)
     case exerciseDetail(ExerciseDetailRoute)
 
     var diagnosticLabel: String {
         switch self {
-        case .activeWorkout:
-            return "activeWorkout"
         case .history:
             return "history"
         case .editRoutine:
@@ -47,7 +44,6 @@ enum TrainRoute: Hashable {
 @Observable
 final class LiveWorkoutCoordinator {
     var activeSession: WorkoutSession?
-    var pendingTrainRoute: TrainRoute?
     var presentedWorkoutSessionID: PersistentIdentifier?
     var workoutSurfaceGeneration = 0
     var workoutSurfaceNeedsRefresh = false
@@ -55,14 +51,15 @@ final class LiveWorkoutCoordinator {
     var collapseWorkoutNavigationOnNextTrainAppear = true
     var isViewingActiveWorkout = false
     var isForegroundRecoveryInFlight = false
-    var trainNavigationResetToken = 0
-    var stripActiveWorkoutRouteToken = 0
+    private(set) var workoutBodyNeedsRemountAfterForeground = false
     var pendingHealthKitWriteNote: String?
     var pendingWellnessSessionID: PersistentIdentifier?
     var pendingWellnessMuscles: [Muscle] = []
+    var wellnessSkipTeardownRequested = false
 
     @ObservationIgnored private var lastRecordedScenePhase: ScenePhase = .active
     @ObservationIgnored private var didStartWatchForSessionIDs: Set<PersistentIdentifier> = []
+    @ObservationIgnored private var lastRecoveredBackgroundGeneration = 0
 
     private var modelContext: ModelContext?
     private var store: LiveWorkoutStore?
@@ -75,6 +72,20 @@ final class LiveWorkoutCoordinator {
             LiveWorkoutCoordinatorLaunchState.collapseNavigationOnNextTrainAppear = false
         }
         refresh()
+        restoreLiveWorkoutPresentationIfNeeded()
+    }
+
+    private func restoreLiveWorkoutPresentationIfNeeded() {
+        guard presentedWorkoutSessionID == nil else { return }
+        guard LiveWorkoutCoordinatorLaunchState.shouldResumeLiveWorkoutAfterRelaunch else { return }
+        guard let session = activeSession else { return }
+        presentedWorkoutSessionID = session.persistentModelID
+        isViewingActiveWorkout = true
+        AppLifecycleBroker.shared.isWorkoutOverlayPresented = true
+        lastRecoveredBackgroundGeneration = 0
+        TrainWorkoutDiagnostics.record(
+            "restoreLiveWorkoutPresentation session=\(String(describing: session.persistentModelID))"
+        )
     }
 
     func refresh() {
@@ -100,16 +111,18 @@ final class LiveWorkoutCoordinator {
     }
 
     func presentWorkout(sessionID: PersistentIdentifier) {
+        refresh()
         presentedWorkoutSessionID = sessionID
         isViewingActiveWorkout = true
         AppLifecycleBroker.shared.isWorkoutOverlayPresented = true
         LiveWorkoutCoordinatorLaunchState.noteLiveWorkoutViewing(true)
         workoutSurfaceNeedsRefresh = false
-        pendingTrainRoute = .activeWorkout(sessionID)
+        lastRecoveredBackgroundGeneration = AppLifecycleBroker.shared.trueBackgroundGeneration
         TrainWorkoutDiagnostics.beginSession("presentWorkout")
         TrainWorkoutDiagnostics.record(
             "presentWorkout session=\(String(describing: sessionID))"
         )
+        TrainWorkoutDiagnostics.recordMemory("presentWorkout")
     }
 
     func minimizeWorkout(source: String = "unknown") {
@@ -118,9 +131,46 @@ final class LiveWorkoutCoordinator {
 
     func noteWorkoutViewDisappearedWhilePresented(scenePhase: ScenePhase) {
         guard presentedWorkoutSessionID != nil else { return }
+        guard scenePhase == .background else {
+            TrainWorkoutDiagnostics.record(
+                "workoutViewDisappearedWhilePresented scenePhase=\(scenePhase) ignored"
+            )
+            return
+        }
+        workoutBodyNeedsRemountAfterForeground = true
         TrainWorkoutDiagnostics.record(
-            "workoutViewDisappearedWhilePresented scenePhase=\(scenePhase) trueBackground=\(AppLifecycleBroker.shared.resolvedIsInTrueBackground)"
+            "workoutViewDisappearedWhilePresented scenePhase=\(scenePhase) trueBackground=\(AppLifecycleBroker.shared.resolvedIsInTrueBackground) remountPending=true"
         )
+    }
+
+    func consumeWorkoutBodyRemountAfterForeground() -> Bool {
+        let pending = workoutBodyNeedsRemountAfterForeground
+        workoutBodyNeedsRemountAfterForeground = false
+        if pending {
+            TrainWorkoutDiagnostics.record("consumeWorkoutBodyRemountAfterForeground pending=true")
+        }
+        return pending
+    }
+
+    func recoverWorkoutSurfaceAfterTrueBackground() {
+        acknowledgeWorkoutForegroundWithoutRemount()
+    }
+
+    func acknowledgeWorkoutForegroundWithoutRemount() {
+        guard presentedWorkoutSessionID != nil else { return }
+        let backgroundGeneration = AppLifecycleBroker.shared.trueBackgroundGeneration
+        lastRecoveredBackgroundGeneration = backgroundGeneration
+        if workoutBodyNeedsRemountAfterForeground {
+            workoutBodyNeedsRemountAfterForeground = false
+            bumpWorkoutSurfaceGeneration(reason: "trueBackgroundRemount", previousPhase: .background)
+            TrainWorkoutDiagnostics.record(
+                "workoutForegroundRemount gen=\(workoutSurfaceGeneration) bgGen=\(backgroundGeneration)"
+            )
+        } else {
+            TrainWorkoutDiagnostics.record(
+                "workoutForegroundAck overlayMounted skipRemount gen=\(workoutSurfaceGeneration) bgGen=\(backgroundGeneration)"
+            )
+        }
     }
 
     func markReadyForScenePhaseRefresh() {}
@@ -142,25 +192,16 @@ final class LiveWorkoutCoordinator {
         )
     }
 
-    func syncWorkoutNavigationDismissed(source: String) {
-        guard isViewingActiveWorkout else { return }
-        dismissWorkoutOverlay(reason: "syncWorkoutNavigationDismissed source=\(source)")
-    }
-
-    func requestStripActiveWorkoutRoute() {
-        stripActiveWorkoutRouteToken += 1
-    }
-
     private func dismissWorkoutOverlay(reason: String) {
         presentedWorkoutSessionID = nil
         isViewingActiveWorkout = false
-        pendingTrainRoute = nil
+        workoutBodyNeedsRemountAfterForeground = false
+        lastRecoveredBackgroundGeneration = 0
         AppLifecycleBroker.shared.isWorkoutOverlayPresented = false
         AppLifecycleBroker.shared.isLiveWorkoutSetFieldEditing = false
         LiveWorkoutCoordinatorLaunchState.noteLiveWorkoutViewing(false)
         workoutSurfaceNeedsRefresh = false
-        requestStripActiveWorkoutRoute()
-        trainNavigationResetToken += 1
+        DeferredSystemWorkPolicy.noteTrainInteractionEnded()
         TrainWorkoutDiagnostics.record(reason)
     }
 
@@ -186,7 +227,6 @@ final class LiveWorkoutCoordinator {
 
     func resetTrainNavigation(reason: String) {
         dismissWorkoutOverlay(reason: "resetTrainNavigation \(reason)")
-        pendingTrainRoute = nil
     }
 
     func hasStartedWatch(for sessionID: PersistentIdentifier) -> Bool {
@@ -216,8 +256,19 @@ final class LiveWorkoutCoordinator {
         pendingWellnessMuscles = WorkoutMusclesWorked.muscles(for: session)
     }
 
+    func requestWellnessSkipTeardown() {
+        wellnessSkipTeardownRequested = true
+    }
+
+    func consumeWellnessSkipTeardownRequest() -> Bool {
+        let requested = wellnessSkipTeardownRequested
+        wellnessSkipTeardownRequested = false
+        return requested
+    }
+
     func dismissWellness() {
         pendingWellnessSessionID = nil
         pendingWellnessMuscles = []
+        DeferredSystemWorkPolicy.noteTrainInteractionEnded()
     }
 }

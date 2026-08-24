@@ -6,7 +6,9 @@ Recovery score + HRV band on the Lock Screen and Home Screen. **No watch require
 
 The **SignalWidgetExtension** target is in the project (embedded in Signal). Bundle ID: `com.cameronro.Signal.SignalWidget`. Shared types are symlinks into `Signal/Data/Watch/`.
 
-If you recreate the target manually:
+**Agent:** edit `project.pbxproj` and entitlements when setup or target membership is required. Follow `.cursor/rules/xcode-project-setup.mdc`. Verify with `build_device`.
+
+If you recreate the target:
 
 1. File → New Target → Widget Extension (iOS), name `SignalWidget`, uncheck Configuration App Intent.
 2. Delete the Xcode template widget file if it duplicates `@main`.
@@ -15,7 +17,7 @@ If you recreate the target manually:
    - `Signal/Data/Watch/WatchPayload.swift`
    - `Signal/Data/Watch/RecoveryWidgetSnapshot.swift`
    - `Signal/Data/Watch/WatchPayloadCache.swift`
-4. Signing & Capabilities → **App Groups** → `group.com.cameronro.signal` (same as main Signal target).
+4. App Groups → `group.com.cameronro.signal` (same as main Signal target).
 5. Build Settings → **Code Signing Entitlements** → `SignalWidget/SignalWidget.entitlements`.
 
 Optional: add `Resources/Colors.xcassets` (Positive, Warning, Negative) to SignalWidget for Home Screen color tokens.

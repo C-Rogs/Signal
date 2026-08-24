@@ -12,59 +12,19 @@ actor SetHRAttributionTrigger {
     )
     private var delayedFinishTask: Task<Void, Never>?
     private var observationTask: Task<Void, Never>?
+    private var started = false
 
-    private init() {
+    private init() {}
+
+    func startIfNeeded() {
+        guard !started else { return }
+        started = true
         observationTask = Task { [weak self] in
-            await self?.observe()
+            await self?.observeBackground()
         }
     }
 
-    private func observe() async {
-        let workoutFinish = NotificationCenter.default.notifications(
-            named: Notification.Name("workoutDidFinish"),
-            object: nil
-        )
-        let deltaFinish = NotificationCenter.default.notifications(
-            named: Notification.Name("healthKitProcessDeltaDidFinish"),
-            object: nil
-        )
-        let background = NotificationCenter.default.notifications(
-            named: UIApplication.didEnterBackgroundNotification,
-            object: nil
-        )
-
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask {
-                for await notification in workoutFinish {
-                    guard let sessionID = notification.userInfo?["sessionID"] as? PersistentIdentifier,
-                          let container = notification.userInfo?["modelContainer"] as? ModelContainer
-                    else { continue }
-                    await self.scheduleDelayedAttribution(
-                        sessionID: sessionID,
-                        modelContainer: container
-                    )
-                }
-            }
-            group.addTask {
-                for await notification in deltaFinish {
-                    guard let container = notification.userInfo?["modelContainer"] as? ModelContainer,
-                          let span = notification.userInfo?["newHeartRateSampleSpan"] as? DateInterval
-                    else { continue }
-                    await SetHRAttributionService.shared.attributeSessions(
-                        overlapping: span,
-                        modelContainer: container
-                    )
-                }
-            }
-            group.addTask {
-                for await _ in background {
-                    await self.cancelDelayedAttribution()
-                }
-            }
-        }
-    }
-
-    private func scheduleDelayedAttribution(
+    func scheduleDelayedAttribution(
         sessionID: PersistentIdentifier,
         modelContainer: ModelContainer
     ) {
@@ -77,6 +37,16 @@ actor SetHRAttributionTrigger {
             }
             guard !Task.isCancelled else { return }
             await runAttribution(sessionID: sessionID, modelContainer: modelContainer)
+        }
+    }
+
+    private func observeBackground() async {
+        let background = NotificationCenter.default.notifications(
+            named: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        for await _ in background {
+            await cancelDelayedAttribution()
         }
     }
 

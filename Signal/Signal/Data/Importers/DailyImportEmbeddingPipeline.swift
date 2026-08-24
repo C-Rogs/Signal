@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import UIKit
 
 enum DailyImportEmbeddingPipeline {
     static let metricBatchSize = 64
@@ -93,28 +94,42 @@ enum DailyImportEmbeddingPipeline {
             }
             guard !batch.isEmpty else { continue }
 
+            var embeddedItems: [(dayKey: String, embeddingText: String, vector: [Float])] = []
+            embeddedItems.reserveCapacity(batch.count)
             for item in batch {
                 try Task.checkCancellation()
-                while !(await MainActor.run { EmbeddingRunPolicy.mayUseMetal }) {
-                    await EmbeddingRunPolicy.waitUntilMayUseMetal()
-                }
+                try await assertEmbeddingPermitted()
                 let vector = try await embeddingService.embed(item.embeddingText, kind: .document)
-                try await MainActor.run {
-                    let context = ModelContext(modelContainer)
-                    let store = SwiftDataVectorStore(context: context)
+                embeddedItems.append((item.dayKey, item.embeddingText, vector))
+            }
+
+            guard !embeddedItems.isEmpty else { continue }
+            try await MainActor.run {
+                let context = ModelContext(modelContainer)
+                let store = SwiftDataVectorStore(context: context)
+                for item in embeddedItems {
                     try store.upsert(
                         dayKey: item.dayKey,
                         metricKind: DailyMetricStore.dailyVectorKind,
                         summaryText: item.embeddingText,
-                        vector: vector
+                        vector: item.vector,
+                        saveImmediately: false
                     )
-                    try context.save()
                 }
-                vectorsWritten += 1
-                onVectorsWritten(vectorsWritten)
+                try context.save()
             }
+            vectorsWritten += embeddedItems.count
+            onVectorsWritten(vectorsWritten)
         }
         return vectorsWritten
+    }
+
+    private static func assertEmbeddingPermitted() async throws {
+        try Task.checkCancellation()
+        let permitted = await MainActor.run { EmbeddingRunPolicy.mayUseMetal }
+        guard permitted else {
+            throw CancellationError()
+        }
     }
 }
 

@@ -13,6 +13,8 @@ enum EmbeddingLoadPhase: Equatable {
 final class EmbeddingDownloadState {
     static let shared = EmbeddingDownloadState()
 
+    private static let readyDefaultsKey = "embeddingInitialLoadComplete"
+
     var phase: EmbeddingLoadPhase = .idle
     var fractionCompleted: Double = 0
     var statusMessage = ""
@@ -23,7 +25,11 @@ final class EmbeddingDownloadState {
 
     var isLoadingEmbeddings: Bool { phase == .downloading }
 
-    private init() {}
+    private init() {
+        if UserDefaults.standard.bool(forKey: Self.readyDefaultsKey) {
+            phase = .ready
+        }
+    }
 
     func begin(message: String) {
         phase = .downloading
@@ -47,6 +53,7 @@ final class EmbeddingDownloadState {
         fractionCompleted = 1
         statusMessage = ""
         errorMessage = nil
+        UserDefaults.standard.set(true, forKey: Self.readyDefaultsKey)
     }
 
     func fail(_ message: String) {

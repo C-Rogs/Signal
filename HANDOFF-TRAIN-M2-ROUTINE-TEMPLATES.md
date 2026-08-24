@@ -31,7 +31,7 @@ Owner workflow: plan in Gemini → paste → **Save as Routine** → start from 
 - Save finished workout → routine (v2)
 - Routine folders / scheduling / Coach "start routine X"
 - Cardio distance/duration presets unless parser already provides them (support fields if easy)
-- `.pbxproj` edits
+- Unrelated Xcode project changes
 - Watch changes
 - Changing P0 Train stability (`TrainScenePhaseKeyboardPolicy`, `isViewingActiveWorkout`, accessory freeze)
 
@@ -161,8 +161,8 @@ Per `.cursorrules`:
 
 1. **Default:** `build_device` → `install_app` → `launch_app` on iPhone `00008140-001E34E10A01801C`
 2. **Do not run sim** unless compile-fix is faster or unit tests required (`test_sim` only for test milestone coverage)
-3. **Agent-owned:** grep/read `.pbxproj` for new file names; fix compile errors before escalating
-4. **Human Xcode section:** leave empty if `build_device` passes
+3. **Agent-owned:** prefer folder sync; grep/read `project.pbxproj` when build fails; fix target membership per `.cursor/rules/xcode-project-setup.mdc`
+4. **Human Xcode section:** empty if `build_device` passes; log any pbxproj edits under **Xcode project** in `AGENT-BUILD-UPDATES.md`
 
 ### Gate A (agent — required)
 

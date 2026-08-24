@@ -67,27 +67,24 @@ final class TrainApplicationLifecycleTests: XCTestCase {
         XCTAssertTrue(broker.shouldSkipDeferredSystemWork())
     }
 
-    func testShouldSkipDeferredSystemWorkWhileLiveSessionMinimized() {
+    func testShouldNotSkipDeferredSystemWorkWhileLiveSessionMinimized() {
         broker.isLiveWorkoutSessionInProgress = true
-        XCTAssertTrue(broker.shouldSkipDeferredSystemWork())
+        XCTAssertFalse(broker.shouldSkipDeferredSystemWork())
     }
 
-    func testPathPopGraceActiveAfterForeground() {
+    func testRecentlyEnteredForegroundAfterForeground() {
         broker.setLastWillEnterForegroundForTesting(Date())
-        XCTAssertTrue(broker.pathPopGraceActive)
         XCTAssertTrue(broker.recentlyEnteredForeground)
     }
 
-    func testPathPopGraceInactiveAfterGraceWindow() {
+    func testRecentlyEnteredForegroundInactiveAfterWindow() {
         broker.setLastWillEnterForegroundForTesting(Date().addingTimeInterval(-3))
-        XCTAssertFalse(broker.pathPopGraceActive)
+        XCTAssertFalse(broker.recentlyEnteredForeground)
     }
 
-    func testBackgroundFocusDismissGenerationIncrementsOnWorkoutBackground() {
-        let initial = broker.backgroundFocusDismissGeneration
+    func testWorkoutBackgroundDismissesKeyboardWithoutFocusBroadcast() {
         broker.isWorkoutOverlayPresented = true
         NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
-        XCTAssertEqual(broker.backgroundFocusDismissGeneration, initial + 1)
         XCTAssertTrue(broker.isInTrueBackground)
     }
 }

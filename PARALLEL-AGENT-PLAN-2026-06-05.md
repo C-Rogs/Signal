@@ -15,8 +15,8 @@ Central coordination doc for **parallel implementation agents** (streams A1–A7
 
 1. **Claim one stream** (A1–A7). Edit the Status table below: `IN PROGRESS — <agent/note>` before coding.
 2. **Build lock (integrator):** Only **one** `build_sim` / `test_sim` / `xcodebuild` at a time on pinned sim `20DDD35B-812A-49BE-9DCF-0685401ACC15`. Agents ship code; integrator runs Gate A sequentially. Kill stray builds before starting (`pkill -f "xcodebuild.*Signal"`). Shutdown booted sims after tests (`xcrun simctl shutdown booted`).
-3. **Do not edit `.pbxproj` / entitlements.** List new Swift files for human target membership.
-3. **Conflict zones** — coordinate before touching:
+3. **Xcode project:** Follow `.cursor/rules/xcode-project-setup.mdc`. Prefer folder sync; edit `project.pbxproj` when build requires it; verify with `build_device`; log in `AGENT-BUILD-UPDATES`.
+4. **Conflict zones** — coordinate before touching:
    | Files | Streams |
    |-------|---------|
    | `ActiveWorkoutView.swift`, `SetRowView.swift`, `TrainHomeView.swift`, `TrainKeyboard.swift` | **A1 only** (unless A1 merged) |
